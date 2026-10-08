@@ -1,0 +1,13 @@
+{
+  "name": "Axis Transport",
+  "short_name": "Axis",
+  "description": "Application web Axis Transport",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f7fc",
+  "theme_color": "#0b3c74",
+  "lang": "fr",
+  "icons": [
+    { "src": "/axis-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

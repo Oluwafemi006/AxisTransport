@@ -1,0 +1,43 @@
+# Secrets et configuration locale
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+.python-packages/
+__pycache__/
+*.py[cod]
+*.sqlite3
+db.sqlite3
+media/
+staticfiles/
+coverage/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Flutter / Android / iOS
+build/
+.dart_tool/
+.gradle/
+.kotlin/
+.idea/
+*.iml
+local.properties
+.flutter-plugins-dependencies
+Pods/
+*.jks
+*.keystore
+key.properties
+
+# Divers
+.dist/
+.DS_Store
+
+# Dépôt git indépendant, exclu du dépôt racine pour l'instant
+mobile-expo/

@@ -1,0 +1,80 @@
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+
+export class ApiError extends Error {
+  status: number;
+  details: unknown;
+
+  constructor(message: string, status: number, details: unknown) {
+    super(message);
+    this.status = status;
+    this.details = details;
+  }
+}
+
+export function getAccessToken() {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem("axis_access_token");
+}
+
+export function setTokens(access: string, refresh: string) {
+  window.localStorage.setItem("axis_access_token", access);
+  window.localStorage.setItem("axis_refresh_token", refresh);
+}
+
+export function clearTokens() {
+  window.localStorage.removeItem("axis_access_token");
+  window.localStorage.removeItem("axis_refresh_token");
+}
+
+function errorMessage(payload: unknown) {
+  if (typeof payload === "string") return payload;
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    const detail = record.detail;
+    if (typeof detail === "string") return detail;
+    const first = Object.values(record)[0];
+    if (Array.isArray(first) && typeof first[0] === "string") return first[0];
+    if (typeof first === "string") return first;
+  }
+  return "Une erreur est survenue.";
+}
+
+export async function apiFetch<T>(path: string, init: RequestInit = {}, authenticated = true): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (!(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
+  if (authenticated) {
+    const token = getAccessToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+  const response = await fetch(`${API_URL}${path}`, { ...init, headers, cache: "no-store" });
+  const payload = response.status === 204 ? null : await response.json().catch(() => null);
+  if (!response.ok) throw new ApiError(errorMessage(payload), response.status, payload);
+  return payload as T;
+}
+
+export async function apiList<T>(path: string, authenticated = true): Promise<T[]> {
+  const payload = await apiFetch<T[] | { results: T[] }>(path, {}, authenticated);
+  return Array.isArray(payload) ? payload : payload.results;
+}
+
+export async function login(username: string, password: string) {
+  const tokens = await apiFetch<{ access: string; refresh: string }>(
+    "/auth/token/",
+    { method: "POST", body: JSON.stringify({ username, password }) },
+    false,
+  );
+  setTokens(tokens.access, tokens.refresh);
+  return tokens;
+}
+
+export function money(amount: string | number | null, currency = "XOF") {
+  if (amount === null || amount === undefined || amount === "") return "À configurer";
+  return new Intl.NumberFormat("fr-FR", { style: "currency", currency, maximumFractionDigits: 0 }).format(
+    Number(amount),
+  );
+}
+
+export function formatDate(value: string) {
+  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+

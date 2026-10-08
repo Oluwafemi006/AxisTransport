@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: axis_transport
+      POSTGRES_USER: axis
+      POSTGRES_PASSWORD: axis
+    volumes:
+      - axis_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U axis -d axis_transport"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-unsafe-local-compose-key}
+      DJANGO_DEBUG: "true"
+      DJANGO_ALLOWED_HOSTS: "*,localhost,127.0.0.1,backend,${AXIS_LAN_IP:-127.0.0.1}"
+      DJANGO_CORS_ALLOWED_ORIGINS: http://localhost:3000,http://${AXIS_LAN_IP:-127.0.0.1}:3000
+      DATABASE_URL: postgresql://axis:axis@db:5432/axis_transport
+      AXIS_ADMIN_USERNAME: ${AXIS_ADMIN_USERNAME:-}
+      AXIS_ADMIN_PASSWORD: ${AXIS_ADMIN_PASSWORD:-}
+    command: >-
+      sh -c "python manage.py migrate &&
+      python manage.py bootstrap_axis &&
+      gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    volumes:
+      - ./backend:/app
+      - axis_media:/app/media
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000/api
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  axis_postgres_data:
+  axis_media:

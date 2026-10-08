@@ -1,0 +1,174 @@
+export type Role = "CLIENT" | "COUNTER" | "CONTROLLER" | "ADMIN";
+
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  role: Role;
+  role_display: string;
+}
+
+export interface Location {
+  id: number;
+  name: string;
+  address: string;
+  active: boolean;
+}
+
+export interface Route {
+  id: number;
+  origin: number;
+  destination: number;
+  origin_detail: Location;
+  destination_detail: Location;
+  label: string;
+  active: boolean;
+}
+
+export interface Vehicle {
+  id: number;
+  category: "BUS" | "RENTAL";
+  category_display: string;
+  name: string;
+  registration_number: string | null;
+  capacity: number | null;
+  seat_configuration: Array<{ label: string; row?: number; column?: number }>;
+  state: "ACTIVE" | "MAINTENANCE" | "UNAVAILABLE";
+  state_display: string;
+  base_location: number | null;
+  base_location_detail?: Location;
+  description: string;
+  rental_daily_rate: string | null;
+  driver_available: boolean;
+}
+
+export interface Fare {
+  id: number;
+  name: string;
+  amount: string;
+  currency: string;
+}
+
+export interface Trip {
+  id: number;
+  route: number;
+  route_detail: Route;
+  vehicle: number;
+  vehicle_detail: Vehicle;
+  departure_at: string;
+  arrival_at: string | null;
+  status: string;
+  status_display: string;
+  note: string;
+  available_seats: number;
+  current_fare: Fare | null;
+}
+
+export interface Seat {
+  id: number;
+  trip: number;
+  number: string;
+  row: number | null;
+  column: number | null;
+  status: "AVAILABLE" | "HELD" | "PAID";
+  status_display: string;
+  hold_expires_at: string | null;
+}
+
+export interface Ticket {
+  id: number;
+  reference: string;
+  trip: number;
+  trip_detail: Trip;
+  seat: number;
+  seat_detail: Seat;
+  passenger_name: string;
+  passenger_phone: string;
+  status: string;
+  status_display: string;
+  qr_token: string;
+  channel: string;
+  channel_display: string;
+  reservation_expires_at: string | null;
+  amount: string;
+  currency: string;
+  created_at: string;
+}
+
+export interface ParcelHistory {
+  id: number;
+  to_status: string;
+  to_status_display: string;
+  changed_at: string;
+  changed_by_name: string;
+}
+
+export interface Parcel {
+  id: number;
+  tracking_number: string;
+  sender_name: string;
+  sender_phone: string;
+  recipient_name: string;
+  recipient_phone: string;
+  origin: number;
+  destination: number;
+  origin_detail: Location;
+  destination_detail: Location;
+  trip: number | null;
+  description: string;
+  weight_kg: string | null;
+  status: string;
+  status_display: string;
+  pickup_recipient_identity: string;
+  status_history: ParcelHistory[];
+}
+
+export interface RentalBooking {
+  id: number;
+  reference: string;
+  vehicle: number;
+  vehicle_detail: Vehicle;
+  starts_at: string;
+  ends_at: string;
+  with_driver: boolean;
+  status: string;
+  status_display: string;
+}
+
+export interface PaymentMethod {
+  id: number;
+  code: string;
+  label: string;
+  active: boolean;
+}
+
+export interface FeatureFlag {
+  id: number;
+  key: string;
+  label: string;
+  enabled: boolean;
+  configuration: Record<string, unknown>;
+}
+
+export interface SystemSetting {
+  id: number;
+  key: string;
+  value: unknown;
+  description: string;
+}
+
+export interface FareRule {
+  id: number;
+  route: number;
+  route_detail: Route;
+  name: string;
+  rule_type: "STANDARD" | "ADVANCE" | "SAME_DAY" | "PROMOTION";
+  rule_type_display: string;
+  amount: string;
+  currency: string;
+  advance_days: number | null;
+  active: boolean;
+}
