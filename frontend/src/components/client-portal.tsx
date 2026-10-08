@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import type { Checkout, Location, Parcel, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
+import type { Checkout, Contact, Location, Parcel, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 
 type ClientTab = "accueil" | "billets" | "colis" | "location" | "profil";
@@ -18,6 +18,8 @@ export function ClientPortal() {
   const [parcels, setParcels] = useState<Parcel[]>([]);
   const [rentals, setRentals] = useState<RentalBooking[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  // Coordonnées lues dans les réglages admin ; vides tant qu'elles ne sont pas renseignées.
+  const [contact, setContact] = useState<Contact>({ contact_phone: "", contact_whatsapp: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -61,6 +63,7 @@ export function ClientPortal() {
       setLocations(activeLocations);
       setVehicles(rentalVehicles);
       setPaymentMethods(methods);
+      apiFetch<Contact>("/client/contact/", {}, false).then(setContact).catch(() => undefined);
       await loadPrivate();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "L’API Axis est indisponible.");
@@ -102,7 +105,7 @@ export function ClientPortal() {
       <div className="top">
         <div className="wrap">
           <span>Axe Parakou – Cotonou</span>
-          <span>Téléphone : +229 01 23 45 67 89</span>
+          {contact.contact_phone && <span>Téléphone : {contact.contact_phone}</span>}
           <span>Voyagez en toute confiance</span>
         </div>
       </div>
@@ -254,11 +257,6 @@ export function ClientPortal() {
                     <h3>Suivi de colis</h3>
                     <p>Suivez votre colis étape par étape jusqu'au retrait.</p>
                   </div>
-                  <div>
-                    <div className="ic">🔁</div>
-                    <h3>Assistance 24/7</h3>
-                    <p>Notre équipe est toujours disponible pour vous accompagner.</p>
-                  </div>
                 </div>
               </div>
 
@@ -353,8 +351,14 @@ export function ClientPortal() {
             <div>
               <h4>Assistance</h4>
               <a href="#">FAQ</a>
-              <a href="#">Contact</a>
               <a href="#">Suivi de colis</a>
+            </div>
+            <div>
+              <h4>Contact</h4>
+              <p style={{ opacity: '.8', marginBottom: '6px' }}>Téléphone : {contact.contact_phone || "À renseigner"}</p>
+              <p style={{ opacity: '.8', marginBottom: '10px' }}>WhatsApp : {contact.contact_whatsapp || "À renseigner"}</p>
+              {contact.contact_phone && <a className="btn s" href={`tel:${contact.contact_phone.replace(/[^+\d]/g, "")}`}>Appeler</a>}
+              {contact.contact_whatsapp && <a className="btn s" style={{ marginLeft: contact.contact_phone ? '8px' : 0 }} href={`https://wa.me/${contact.contact_whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">WhatsApp</a>}
             </div>
           </div>
           <div className="copy">© {new Date().getFullYear()} AXIS Transport · Mentions légales · Politique de confidentialité</div>

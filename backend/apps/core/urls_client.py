@@ -66,6 +66,7 @@ from .services import (
 from .views import (
     FedaPayWebhookView,
     KKiaPayWebhookView,
+    PublicContactView,
     PublicTicketDetailView,
     checkout_response,
     refund_due_response,
@@ -492,6 +493,7 @@ client_router.register("rentals", ClientRentalViewSet, basename="client-rental")
 
 client_urlpatterns = [
     path("tickets/public/<str:reference>/", PublicTicketDetailView.as_view(), name="public-ticket-detail"),
+    path("contact/", PublicContactView.as_view(), name="public-contact"),
     path("webhooks/kkiapay/", KKiaPayWebhookView.as_view(), name="kkiapay-webhook"),
     path("webhooks/fedapay/", FedaPayWebhookView.as_view(), name="fedapay-webhook"),
     path("", include(client_router.urls)),

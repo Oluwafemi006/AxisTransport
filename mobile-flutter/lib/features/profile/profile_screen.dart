@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/session.dart';
 import '../../core/theme.dart';
+import '../../shared/contact_actions.dart';
 import '../../shared/widgets.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -144,6 +145,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ],
           ),
         ),
+        const ContactActions(),
       ],
     );
   }

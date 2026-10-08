@@ -147,6 +147,11 @@ export interface PaymentMethod {
   online?: boolean;
 }
 
+export interface Contact {
+  contact_phone: string;
+  contact_whatsapp: string;
+}
+
 export interface Checkout {
   transaction_id: string;
   payment_url: string | null;

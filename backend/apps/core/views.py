@@ -115,6 +115,21 @@ def health(request):
     return Response({"status": "ok", "service": "axis-transport-api"})
 
 
+CONTACT_SETTING_KEYS = ("contact_phone", "contact_whatsapp")
+
+
+class PublicContactView(APIView):
+    """Coordonnées publiques d'Axis, lues dans les réglages admin. Chaîne vide tant qu'elles ne sont pas renseignées."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        values = dict(SystemSetting.objects.filter(key__in=CONTACT_SETTING_KEYS).values_list("key", "value"))
+        return Response(
+            {key: values[key].strip() if isinstance(values.get(key), str) else "" for key in CONTACT_SETTING_KEYS}
+        )
+
+
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
 

@@ -2,7 +2,7 @@ import os
 
 from django.core.management.base import BaseCommand
 
-from apps.core.models import FeatureFlag, Location, Route, User, Vehicle
+from apps.core.models import FeatureFlag, Location, Route, SystemSetting, User, Vehicle
 
 
 class Command(BaseCommand):
@@ -20,6 +20,13 @@ class Command(BaseCommand):
         )
         for key in FeatureFlag.Key.values:
             FeatureFlag.objects.get_or_create(key=key, defaults={"enabled": False})
+
+        # Coordonnées publiques : créées vides, à renseigner par l'administrateur.
+        for key, description in (
+            ("contact_phone", "Téléphone de contact affiché aux clients"),
+            ("contact_whatsapp", "Numéro WhatsApp affiché aux clients"),
+        ):
+            SystemSetting.objects.get_or_create(key=key, defaults={"value": "", "description": description})
 
         from apps.core.models import PaymentMethod
         from decimal import Decimal

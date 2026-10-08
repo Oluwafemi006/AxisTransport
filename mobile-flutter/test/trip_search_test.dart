@@ -25,7 +25,7 @@ void main() {
     final trips = await ApiClient(dio: dio).searchTrips(search);
 
     expect(trips, isEmpty);
-    expect(captured?.path, '/trips/');
+    expect(captured?.path, '/client/trips/');
     expect(captured?.queryParameters, {
       'origin': '1',
       'destination': '2',

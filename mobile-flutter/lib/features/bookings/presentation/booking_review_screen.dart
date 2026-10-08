@@ -155,7 +155,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
           ),
           const SizedBox(height: 20),
           Text(
-            trip!.route.label,
+            trip.route.label,
             style: const TextStyle(
               color: AxisColors.navyDark,
               fontSize: 22,

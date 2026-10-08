@@ -149,6 +149,15 @@ class ApiClient {
     return _list('/client/seats/?trip=$tripId', (json) => Seat.fromJson(json));
   }
 
+  /// Coordonnées publiques d'Axis (réglages admin). Chaînes vides si non renseignées.
+  Future<Map<String, String>> contact() async {
+    final payload = await _request<Map<String, dynamic>>('/client/contact/');
+    return {
+      'phone': payload['contact_phone'] as String? ?? '',
+      'whatsapp': payload['contact_whatsapp'] as String? ?? '',
+    };
+  }
+
   Future<List<PaymentMethod>> paymentMethods() {
     return _list('/client/payment-methods/', (json) => PaymentMethod.fromJson(json));
   }

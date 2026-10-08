@@ -320,8 +320,9 @@ void main() {
 
     expect(find.text('Siège 3A'), findsOneWidget);
     expect(find.text('Siège 3B'), findsOneWidget);
-    expect(find.text('10 000 XOF'), findsOneWidget);
-    expect(find.text('Bloquer les sièges'), findsOneWidget);
+    // Prix des billets + total hors frais : les frais ne viennent du serveur qu'après le blocage.
+    expect(find.text('10 000 XOF'), findsNWidgets(2));
+    expect(find.text('Valider et Bloquer les sièges'), findsOneWidget);
     expect(find.textContaining('réservation atomique'), findsNothing);
   });
 }
