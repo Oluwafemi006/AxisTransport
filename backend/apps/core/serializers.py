@@ -24,7 +24,7 @@ from .models import (
     User,
     Vehicle,
 )
-from .payments import payment_quote
+from .payments import ONLINE_PROVIDERS, payment_quote
 from .services import rental_is_available, resolve_fare
 
 
@@ -464,9 +464,15 @@ class PaymentMethodSerializer(serializers.ModelSerializer):
 
 
 class PublicPaymentMethodSerializer(serializers.ModelSerializer):
+    # Vrai si le moyen se paie en ligne ; faux s'il n'est encaissable qu'au guichet.
+    online = serializers.SerializerMethodField()
+
     class Meta:
         model = PaymentMethod
-        fields = ["id", "code", "label", "fee_percentage", "active"]
+        fields = ["id", "code", "label", "fee_percentage", "active", "online"]
+
+    def get_online(self, obj):
+        return obj.code.upper() in ONLINE_PROVIDERS
 
 
 class TransactionSerializer(serializers.ModelSerializer):

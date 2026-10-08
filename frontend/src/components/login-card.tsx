@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { login } from "@/lib/api";
+import { API_URL, login } from "@/lib/api";
 
 export function LoginCard({ title, onSuccess, allowRegistration = false }: { title: string; onSuccess: () => void; allowRegistration?: boolean }) {
   const [registering, setRegistering] = useState(false);
@@ -19,7 +19,7 @@ export function LoginCard({ title, onSuccess, allowRegistration = false }: { tit
     setError("");
     try {
       if (registering) {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api"}/auth/register/`, {
+        const response = await fetch(`${API_URL}/auth/register/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ username, password, first_name: firstName, last_name: lastName, phone }),

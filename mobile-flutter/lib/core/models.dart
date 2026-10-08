@@ -237,6 +237,7 @@ class PaymentMethod {
     required this.label,
     required this.active,
     this.feePercentage = 0.0,
+    this.online = false,
   });
 
   final int id;
@@ -244,6 +245,9 @@ class PaymentMethod {
   final String label;
   final bool active;
   final double feePercentage;
+
+  /// Vrai si le moyen se paie en ligne ; faux s'il n'est encaissable qu'au guichet.
+  final bool online;
 
   factory PaymentMethod.fromJson(Map<String, dynamic> json) {
     return PaymentMethod(
@@ -254,6 +258,55 @@ class PaymentMethod {
       feePercentage: (json['fee_percentage'] is num)
           ? (json['fee_percentage'] as num).toDouble()
           : double.tryParse(json['fee_percentage']?.toString() ?? '0') ?? 0.0,
+      online: json['online'] as bool? ?? false,
+    );
+  }
+}
+
+/// Montant à payer pour un moyen de paiement, calculé par le serveur (frais inclus).
+class PaymentQuote {
+  const PaymentQuote({
+    required this.paymentMethod,
+    required this.amount,
+    required this.feeAmount,
+    required this.total,
+    required this.currency,
+  });
+
+  final int paymentMethod;
+  final num amount;
+  final num feeAmount;
+  final num total;
+  final String currency;
+
+  factory PaymentQuote.fromJson(Map<String, dynamic> json) {
+    return PaymentQuote(
+      paymentMethod: json['payment_method'] as int,
+      amount: asNum(json['amount']),
+      feeAmount: asNum(json['fee_amount']),
+      total: asNum(json['total']),
+      currency: json['currency'] as String? ?? 'XOF',
+    );
+  }
+}
+
+/// Transaction créée par le serveur chez le prestataire de paiement.
+class PaymentCheckout {
+  const PaymentCheckout({
+    required this.transactionId,
+    required this.quote,
+    this.paymentUrl,
+  });
+
+  final String transactionId;
+  final String? paymentUrl;
+  final PaymentQuote quote;
+
+  factory PaymentCheckout.fromJson(Map<String, dynamic> json) {
+    return PaymentCheckout(
+      transactionId: json['transaction_id'].toString(),
+      paymentUrl: json['payment_url'] as String?,
+      quote: PaymentQuote.fromJson(json),
     );
   }
 }
@@ -334,6 +387,7 @@ class BookingReservation {
     required this.amount,
     required this.currency,
     required this.tickets,
+    this.paymentQuotes = const [],
     this.guestAccessToken,
     this.reservationExpiresAt,
   });
@@ -345,10 +399,18 @@ class BookingReservation {
   final num amount;
   final String currency;
   final List<Ticket> tickets;
+  final List<PaymentQuote> paymentQuotes;
   final String? guestAccessToken;
   final DateTime? reservationExpiresAt;
 
   bool get isConfirmed => status == 'CONFIRMED';
+
+  PaymentQuote? quoteFor(int paymentMethod) {
+    for (final quote in paymentQuotes) {
+      if (quote.paymentMethod == paymentMethod) return quote;
+    }
+    return null;
+  }
 
   factory BookingReservation.fromJson(Map<String, dynamic> json) {
     final tickets = json['tickets'] as List? ?? const [];
@@ -366,6 +428,10 @@ class BookingReservation {
       tickets: tickets
           .whereType<Map>()
           .map((item) => Ticket.fromJson(Map<String, dynamic>.from(item)))
+          .toList(),
+      paymentQuotes: (json['payment_quotes'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => PaymentQuote.fromJson(Map<String, dynamic>.from(item)))
           .toList(),
     );
   }

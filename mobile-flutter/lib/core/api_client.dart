@@ -253,6 +253,23 @@ class ApiClient {
     return BookingReservation.fromJson(payload);
   }
 
+  /// Demande au serveur de créer la transaction de paiement (montant fixé côté serveur).
+  Future<PaymentCheckout> checkoutBooking({
+    required int bookingId,
+    required int paymentMethod,
+    String? guestAccessToken,
+  }) async {
+    final payload = await _request<Map<String, dynamic>>(
+      '/client/bookings/$bookingId/checkout/',
+      data: {'payment_method': paymentMethod},
+      auth: true,
+      headers: guestAccessToken == null
+          ? null
+          : {'X-Booking-Token': guestAccessToken},
+    );
+    return PaymentCheckout.fromJson(payload);
+  }
+
   Future<BookingReservation> payBooking({
     required int bookingId,
     required int paymentMethod,

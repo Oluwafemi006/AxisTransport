@@ -143,6 +143,20 @@ export interface PaymentMethod {
   code: string;
   label: string;
   active: boolean;
+  fee_percentage?: string | number;
+  online?: boolean;
+}
+
+export interface Checkout {
+  transaction_id: string;
+  payment_url: string | null;
+  simulated: boolean;
+  payment_method: number;
+  label: string;
+  amount: string | number;
+  fee_amount: string | number;
+  total: string | number;
+  currency: string;
 }
 
 export interface FeatureFlag {

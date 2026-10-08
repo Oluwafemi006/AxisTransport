@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/formatters.dart';
 import '../../../core/theme.dart';
@@ -19,14 +20,56 @@ class BookingReviewScreen extends ConsumerStatefulWidget {
   ConsumerState<BookingReviewScreen> createState() => _BookingReviewScreenState();
 }
 
-class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen> {
+class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
+    with WidgetsBindingObserver {
   PaymentMethod? _selectedMethod;
-  final _phoneController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void dispose() {
-    _phoneController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  // Au retour de la page de paiement, on demande au serveur de vérifier.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final current = ref.read(bookingCheckoutProvider).value;
+    if (current?.checkout != null && !current!.busy) _verifyPayment();
+  }
+
+  Future<void> _openPaymentPage(String url) async {
+    final opened = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible d\'ouvrir la page de paiement.')),
+      );
+    }
+  }
+
+  Future<void> _startPayment() async {
+    final method = _selectedMethod;
+    if (method == null) return;
+    final checkout = await ref.read(bookingCheckoutProvider.notifier).startPayment(method);
+    if (checkout == null) return;
+    if (checkout.paymentUrl == null) {
+      await _verifyPayment();
+    } else {
+      await _openPaymentPage(checkout.paymentUrl!);
+    }
+  }
+
+  Future<void> _verifyPayment() async {
+    final ticket = await ref.read(bookingCheckoutProvider.notifier).pay();
+    if (ticket != null && mounted) {
+      context.go('/billets/ticket/${ticket.id}', extra: ticket);
+    }
   }
 
   @override
@@ -65,11 +108,13 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen> {
       );
     }
 
-    final isBusy = checkoutState.isLoading;
-    final errorMessage = checkoutState.hasError ? checkoutState.error.toString() : null;
     final stateData = checkoutState.value;
+    final isBusy = checkoutState.isLoading || (stateData?.busy ?? false);
+    final errorMessage =
+        checkoutState.hasError ? checkoutState.error.toString() : stateData?.error;
     final methods = stateData?.methods ?? [];
     final pending = stateData?.reservation;
+    final checkout = stateData?.checkout;
 
     final successMessage = (pending != null && !checkoutState.hasError) 
         ? 'Sièges réservés temporairement. Finalisez le paiement.'
@@ -80,20 +125,14 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen> {
       _selectedMethod = methods.first;
     }
 
-    // Pré-remplir le numéro de téléphone avec celui du premier passager adulte si vide
-    if (_phoneController.text.isEmpty && draft.passengers.isNotEmpty) {
-      final contact = draft.passengers.firstWhere(
-        (p) => p.phone.isNotEmpty, 
-        orElse: () => draft.passengers.first,
-      );
-      _phoneController.text = contact.phone;
-    }
-
+    // Frais et total viennent du serveur (jamais calculés dans l'application).
+    final quote = checkout?.quote ??
+        (_selectedMethod == null ? null : pending?.quoteFor(_selectedMethod!.id));
     final currency = trip!.currentFare?.currency ?? 'XOF';
     final baseAmount = pending?.amount ?? draft.totalAmount;
     final feePercent = _selectedMethod?.feePercentage ?? 0.0;
-    final feeAmount = (baseAmount * feePercent) / 100.0;
-    final totalToPay = baseAmount + feeAmount;
+    final feeAmount = quote?.feeAmount ?? 0;
+    final totalToPay = quote?.total ?? baseAmount;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Récapitulatif')),
@@ -184,7 +223,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen> {
                     ),
                   ],
                 ),
-                if (feePercent > 0) ...[
+                if (quote != null && feeAmount > 0) ...[
                   const SizedBox(height: 6),
                   Row(
                     children: [
@@ -204,10 +243,10 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen> {
                 const Divider(height: 20),
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'Total à payer',
-                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                        quote == null ? 'Total hors frais de paiement' : 'Total à payer',
+                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
                       ),
                     ),
                     Text(
@@ -260,7 +299,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen> {
                     ),
                     selected: isSelected,
                     onSelected: (selected) {
-                      if (selected) {
+                      if (selected && checkout == null) {
                         setState(() {
                           _selectedMethod = method;
                         });
@@ -270,41 +309,30 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen> {
                 }).toList(),
               ),
               const SizedBox(height: 16),
-              if (_selectedMethod != null) ...[
-                TextField(
-                  controller: _phoneController,
-                  decoration: const InputDecoration(
-                    labelText: 'Numéro de compte (Mobile Money)',
-                    hintText: 'Ex: 0102030405',
-                    prefixIcon: Icon(Icons.phone_android),
-                  ),
-                  keyboardType: TextInputType.phone,
+              if (checkout != null) ...[
+                const Notice(
+                  'Terminez le paiement sur la page FedaPay, puis revenez ici : '
+                  'vos billets sont émis dès que le paiement est confirmé.',
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 FilledButton(
-                  onPressed: isBusy 
-                      ? null 
-                      : () async {
-                          if (_phoneController.text.trim().isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Veuillez entrer un numéro de paiement')),
-                            );
-                            return;
-                          }
-                          final ticket = await checkoutNotifier.pay(_selectedMethod!);
-                          if (ticket != null && context.mounted) {
-                            context.go('/billets/ticket/${ticket.id}', extra: ticket);
-                          } else if (ticket == null && !checkoutState.hasError && context.mounted) {
-                            context.go('/billets');
-                          }
-                        },
+                  onPressed: isBusy ? null : _verifyPayment,
+                  child: Text(isBusy ? 'Vérification…' : 'J\'ai payé · Vérifier le paiement'),
+                ),
+                if (checkout.paymentUrl != null) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: isBusy ? null : () => _openPaymentPage(checkout.paymentUrl!),
+                    child: const Text('Rouvrir la page de paiement'),
+                  ),
+                ],
+              ] else if (_selectedMethod != null)
+                FilledButton(
+                  onPressed: isBusy ? null : _startPayment,
                   child: Text(
-                    isBusy
-                        ? 'Traitement...'
-                        : 'Payer ${formatMoney(totalToPay, currency)}',
+                    isBusy ? 'Traitement...' : 'Payer ${formatMoney(totalToPay, currency)}',
                   ),
                 ),
-              ],
             ],
           ],
           if (errorMessage != null) ...[

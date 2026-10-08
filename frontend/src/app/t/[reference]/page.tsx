@@ -9,7 +9,6 @@ interface PublicTicketData {
   status: string;
   status_display: string;
   passenger_name: string;
-  passenger_phone: string;
   seat_label: string;
   origin: string;
   destination: string;
@@ -177,9 +176,6 @@ export default function PublicTicketPage() {
               <div className="font-bold text-slate-900 truncate">
                 {ticket.passenger_name || "Nom non spécifié"}
               </div>
-              {ticket.passenger_phone && (
-                <div className="text-xs text-slate-500 mt-0.5">{ticket.passenger_phone}</div>
-              )}
             </div>
 
             <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">

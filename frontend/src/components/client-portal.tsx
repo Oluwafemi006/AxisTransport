@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import type { Location, Parcel, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
+import type { Checkout, Location, Parcel, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 
 type ClientTab = "accueil" | "billets" | "colis" | "location" | "profil";
@@ -33,9 +33,9 @@ export function ClientPortal() {
         return;
       }
       const [myTickets, myParcels, myRentals] = await Promise.all([
-        apiList<Ticket>("/tickets/"),
-        apiList<Parcel>("/parcels/"),
-        apiList<RentalBooking>("/rentals/"),
+        apiList<Ticket>("/client/tickets/"),
+        apiList<Parcel>("/client/parcels/"),
+        apiList<RentalBooking>("/client/rentals/"),
       ]);
       setUser(me);
       setTickets(myTickets);
@@ -52,10 +52,10 @@ export function ClientPortal() {
     setError("");
     try {
       const [availableTrips, activeLocations, rentalVehicles, methods] = await Promise.all([
-        apiList<Trip>("/trips/", false),
-        apiList<Location>("/locations/", false),
-        apiList<Vehicle>("/vehicles/?category=RENTAL&state=ACTIVE", false),
-        apiList<PaymentMethod>("/payment-methods/", false),
+        apiList<Trip>("/client/trips/", false),
+        apiList<Location>("/client/locations/", false),
+        apiList<Vehicle>("/client/vehicles/", false),
+        apiList<PaymentMethod>("/client/payment-methods/", false),
       ]);
       setTrips(availableTrips);
       setLocations(activeLocations);
@@ -376,6 +376,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
   const [passengerName, setPassengerName] = useState("");
   const [phone, setPhone] = useState("");
   const [pending, setPending] = useState<Ticket | null>(null);
+  const [checkout, setCheckout] = useState<Checkout | null>(null);
   const [message, setMessage] = useState("");
   const selectedTrip = trips.find((trip) => String(trip.id) === tripId);
 
@@ -388,7 +389,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
 
   useEffect(() => {
     if (!tripId) return setSeats([]);
-    apiList<Seat>(`/seats/?trip=${tripId}`, false).then(setSeats).catch((reason) => setMessage(reason.message));
+    apiList<Seat>(`/client/seats/?trip=${tripId}`, false).then(setSeats).catch((reason) => setMessage(reason.message));
   }, [tripId]);
 
   async function reserve(event: FormEvent) {
@@ -397,20 +398,38 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     try {
       const ticket = await apiFetch<Ticket>("/client/tickets/", { method: "POST", body: JSON.stringify({ trip: Number(tripId), seat: Number(seatId), passenger_name: passengerName, passenger_phone: phone }) }, !!user);
       setPending(ticket);
+      setCheckout(null);
       setMessage("Siège réservé temporairement. Finalisez le paiement avant l’expiration.");
       await onChanged();
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Réservation impossible."); }
   }
 
-  async function pay(method: PaymentMethod) {
+  // Le serveur crée la transaction et fixe le montant ; le site ne fait qu'ouvrir la page de paiement.
+  async function startPayment(method: PaymentMethod) {
     if (!pending) return;
     setMessage("");
     try {
-      const response = await apiFetch<{ ticket: Ticket }>(`/client/tickets/${pending.id}/pay/`, { method: "POST", body: JSON.stringify({ payment_method: method.id }) }, !!user);
+      const created = await apiFetch<Checkout>(`/client/tickets/${pending.id}/checkout/`, { method: "POST", body: JSON.stringify({ payment_method: method.id }) });
+      setCheckout(created);
+      if (created.payment_url) {
+        window.open(created.payment_url, "_blank", "noopener");
+        setMessage("La page de paiement s’est ouverte dans un nouvel onglet. Revenez ici une fois le paiement terminé.");
+      } else {
+        await confirmPayment(created);
+      }
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Paiement impossible."); }
+  }
+
+  async function confirmPayment(current: Checkout | null = checkout) {
+    if (!pending || !current) return;
+    setMessage("");
+    try {
+      const response = await apiFetch<{ ticket: Ticket }>(`/client/tickets/${pending.id}/pay/`, { method: "POST", body: JSON.stringify({ payment_method: current.payment_method, external_reference: current.transaction_id }) });
       setPending(response.ticket);
+      setCheckout(null);
       setMessage("Paiement confirmé, ticket émis.");
       await onChanged();
-    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Paiement impossible."); }
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Paiement non confirmé."); }
   }
 
   return (
@@ -464,11 +483,22 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
           <div style={{ background: 'var(--warnbg)', color: 'var(--warn)', padding: '20px', borderRadius: '12px', marginTop: '20px', border: '1px solid #f2dfb6' }}>
             <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>Finaliser la réservation {pending.reference}</p>
             <p style={{ fontSize: '14px', marginBottom: '16px' }}>Expiration : {pending.reservation_expires_at ? formatDate(pending.reservation_expires_at) : "—"}</p>
+            {checkout && (
+              <div style={{ marginBottom: '16px' }}>
+                <p style={{ fontSize: '14px' }}>Prix : {money(checkout.amount, checkout.currency)} · Frais de paiement : {money(checkout.fee_amount, checkout.currency)}</p>
+                <p style={{ fontWeight: 'bold', margin: '6px 0 12px' }}>Total à payer : {money(checkout.total, checkout.currency)}</p>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  {checkout.payment_url && <a className="btn" href={checkout.payment_url} target="_blank" rel="noreferrer">Rouvrir la page de paiement</a>}
+                  <button type="button" className="btn p" onClick={() => void confirmPayment()}>J’ai payé · vérifier</button>
+                </div>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              {paymentMethods.map((method) => (
-                <button key={method.id} type="button" className="btn" onClick={() => void pay(method)}>Payer avec {method.label}</button>
+              {paymentMethods.filter((method) => method.online).map((method) => (
+                <button key={method.id} type="button" className="btn" onClick={() => void startPayment(method)}>Payer avec {method.label}</button>
               ))}
             </div>
+            {paymentMethods.filter((method) => method.online).length === 0 && <p style={{ fontSize: '14px' }}>Aucun paiement en ligne n’est disponible. Réglez votre billet au guichet.</p>}
           </div>
         )}
         
@@ -530,7 +560,7 @@ function Parcels({ user, locations, parcels, onAuthenticated, onChanged }: { use
   async function submit(event: FormEvent) { 
     event.preventDefault(); setMessage(""); 
     try { 
-      await apiFetch<Parcel>("/parcels/", { method: "POST", body: JSON.stringify({ ...form, origin: Number(form.origin), destination: Number(form.destination), weight_kg: form.weight_kg || null }) }); 
+      await apiFetch<Parcel>("/client/parcels/", { method: "POST", body: JSON.stringify({ ...form, origin: Number(form.origin), destination: Number(form.destination), weight_kg: form.weight_kg || null }) }); 
       setMessage("Colis enregistré. Le numéro de suivi est disponible dans votre historique."); 
       await onChanged(); 
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Enregistrement impossible."); } 
