@@ -5,8 +5,9 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from apps.core.models import FareRule, Location, PaymentMethod, Route, SystemSetting, Trip, User, Vehicle
-from apps.core.services import generate_trip_seats
+from apps.core.models import FareRule, Location, PaymentMethod, Route, Seat, SystemSetting, Trip, User, Vehicle
+from apps.core.payments import settle_booking_payment
+from apps.core.services import generate_trip_seats, reserve_booking
 
 DEMO_ACCOUNTS = [
     ("demo_client", User.Role.CLIENT, "Client"),
@@ -21,6 +22,11 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--password", default="demo-axis-2026", help="Mot de passe des comptes de démonstration.")
+        parser.add_argument(
+            "--with-ticket",
+            action="store_true",
+            help="Crée aussi un billet DÉMO émis sur un départ d'aujourd'hui, pour tester le scan.",
+        )
 
     def handle(self, *args, **options):
         if not settings.DEBUG:
@@ -81,6 +87,9 @@ class Command(BaseCommand):
             generate_trip_seats(trip)
             created_trips += int(created)
 
+        if options["with_ticket"]:
+            self._issue_demo_ticket(route, vehicle)
+
         self.stdout.write(self.style.SUCCESS("Données de DÉMONSTRATION prêtes."))
         self.stdout.write(f"Comptes : {', '.join(name for name, _, _ in DEMO_ACCOUNTS)} / mot de passe : {options['password']}")
         self.stdout.write(f"Parcours : {route} · véhicule : {vehicle.name} ({len(seat_plan)} sièges) · voyages créés : {created_trips}")
@@ -88,3 +97,50 @@ class Command(BaseCommand):
             "Paiement simulé : "
             + ("ACTIF" if settings.AXIS_PAYMENT_SIMULATION else "inactif (AXIS_PAYMENT_SIMULATION=true pour l'activer)")
         )
+
+    def _issue_demo_ticket(self, route, vehicle):
+        """
+        Billet DÉMO émis par le chemin normal (réservation puis encaissement guichet).
+        Sans voyage sélectionné, le contrôle n'accepte un billet que le jour de son départ :
+        le départ est donc placé aujourd'hui, dans les deux heures si la journée le permet.
+        """
+        now = timezone.now()
+        end_of_day = timezone.make_aware(datetime.combine(timezone.localdate(), time(23, 59)))
+        trip = (
+            Trip.objects.filter(
+                route=route,
+                note="Voyage DÉMO",
+                status=Trip.Status.SCHEDULED,
+                departure_at__gt=now,
+                departure_at__lte=end_of_day,
+                seats__status=Seat.Status.AVAILABLE,
+            )
+            .order_by("departure_at")
+            .first()
+        )
+        if trip is None:
+            trip = Trip.objects.create(
+                route=route,
+                vehicle=vehicle,
+                departure_at=min(now + timedelta(hours=2), end_of_day),
+                note="Voyage DÉMO",
+            )
+            generate_trip_seats(trip)
+        seat = trip.seats.filter(status=Seat.Status.AVAILABLE).order_by("row", "column", "number").first()
+        if seat is None:
+            raise CommandError("Aucun siège libre sur le voyage DÉMO d'aujourd'hui.")
+
+        booking, _ = reserve_booking(
+            trip=trip, passengers=[{"full_name": "Passager DÉMO", "seat": seat}], channel="COUNTER"
+        )
+        settlement = settle_booking_payment(
+            booking,
+            payment_method=PaymentMethod.objects.get(code="especes-demo"),
+            actor=User.objects.get(username="demo_guichet"),
+        )
+        ticket = settlement.tickets[0]
+        departure = timezone.localtime(trip.departure_at)
+        self.stdout.write(self.style.SUCCESS(f"Billet DÉMO émis : {ticket.reference}"))
+        self.stdout.write(f"  Départ : {departure:%d/%m/%Y %H:%M} · siège {seat.number} · QR : {ticket.qr_token}")
+        self.stdout.write(f"  À afficher en grand sur le PC : /t/{ticket.reference} (site web)")
+        self.stdout.write(f"  Scannable aujourd'hui seulement ({departure:%d/%m/%Y}) ; relancer la commande un autre jour.")

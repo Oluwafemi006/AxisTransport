@@ -428,3 +428,32 @@ class SeedDemoTests(TestCase):
         self.assertEqual(trips.first().seats.count(), 12)
         self.assertEqual(FareRule.objects.filter(name="Tarif DÉMO").count(), 1)
         self.assertFalse(PaymentMethod.objects.get(code="SIMULATION").active)
+
+    @override_settings(DEBUG=False)
+    def test_ticket_option_also_refuses_outside_debug(self):
+        with self.assertRaises(CommandError):
+            call_command("seed_demo", with_ticket=True, stdout=StringIO())
+        self.assertEqual(Ticket.objects.count(), 0)
+
+    @override_settings(DEBUG=True, AXIS_PAYMENT_SIMULATION=False)
+    def test_ticket_option_issues_a_ticket_scannable_today(self):
+        output = StringIO()
+        call_command("seed_demo", with_ticket=True, stdout=output)
+        ticket = Ticket.objects.get()
+        self.assertEqual(ticket.status, Ticket.Status.ISSUED)
+        self.assertIn(ticket.reference, output.getvalue())
+        self.assertEqual(timezone.localdate(ticket.trip.departure_at), timezone.localdate())
+        self.assertEqual(ticket.trip.note, "Voyage DÉMO")
+        self.assertEqual(PaymentReceipt.objects.get().source, PaymentReceipt.Source.COUNTER)
+        self.assertEqual(Transaction.objects.get(ticket=ticket).status, Transaction.Status.SUCCEEDED)
+
+        # Le contrôleur DÉMO peut le valider, sans indiquer de voyage.
+        from apps.core.services import validate_ticket
+
+        checked, _ = validate_ticket(qr_token=ticket.qr_token, controller=User.objects.get(username="demo_controleur"))
+        self.assertEqual(checked.status, Ticket.Status.CHECKED)
+
+        # Une seconde exécution émet un autre billet, sur un autre siège.
+        call_command("seed_demo", with_ticket=True, stdout=StringIO())
+        self.assertEqual(Ticket.objects.count(), 2)
+        self.assertEqual(Ticket.objects.values("seat").distinct().count(), 2)
