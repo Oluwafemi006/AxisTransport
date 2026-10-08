@@ -9,7 +9,9 @@ if (!process.env.NEXT_PUBLIC_API_URL) {
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  output: "standalone",
+  // Sortie « standalone » pour l'image Docker (server.js autonome). Sur Vercel (variable VERCEL),
+  // la plateforme produit sa propre sortie : « standalone » y fait échouer la fin du build.
+  ...(process.env.VERCEL ? {} : { output: "standalone" as const }),
 };
 
 export default nextConfig;

@@ -1,5 +1,10 @@
 # Déploiement — Axis Transport
 
+> **À savoir avant de déployer le site sur Vercel.** Le site n'affichera ni villes ni départs tant que
+> l'API n'est pas déployée **en HTTPS**, avec l'adresse Vercel du site dans `DJANGO_CORS_ALLOWED_ORIGINS`.
+> D'ici là, `NEXT_PUBLIC_API_URL` peut porter une valeur d'exemple pour que le build passe ;
+> il faudra la corriger puis redéployer quand l'API sera en ligne.
+
 Ce document ne contient aucun secret. Les valeurs données sont des exemples : `exemple.test` n'est pas un vrai domaine.
 
 ## 1. Frontend web sur Vercel
@@ -18,6 +23,9 @@ Ce document ne contient aucun secret. Les valeurs données sont des exemples : `
 | `NEXT_PUBLIC_API_URL` | Adresse de l'API, **terminée par `/api/v1`**, sans barre finale. Obligatoire : le build échoue si elle manque. | `https://api.exemple.test/api/v1` |
 
 C'est la seule variable. Elle est lue au moment du build : après l'avoir changée, il faut redéployer.
+
+`VERCEL` est définie automatiquement par Vercel : il n'y a rien à saisir. Quand elle est présente,
+`next.config.ts` n'active pas la sortie `standalone`, réservée à l'image Docker.
 
 Points d'attention :
 
