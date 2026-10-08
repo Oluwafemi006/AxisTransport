@@ -182,7 +182,7 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                       ),
                       const SizedBox(height: 7),
                       Text(
-                        'Montant : ${formatMoney(item.amount, item.currency)}',
+                        'Prix du billet : ${formatMoney(item.amount, item.currency)}',
                         style: const TextStyle(color: Color(0xFFE2ECF7)),
                       ),
                     ],

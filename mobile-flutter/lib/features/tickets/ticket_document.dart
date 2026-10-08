@@ -36,7 +36,8 @@ List<(String, String)> ticketFields(Ticket ticket) {
     ),
     ('Siège', _orMissing(ticket.seat.number)),
     ('Passager', _orMissing(ticket.passengerName)),
-    ('Montant', formatMoney(ticket.amount, ticket.currency)),
+    // Prix du billet seul (tarif) : les frais de paiement n'apparaissent jamais sur le billet.
+    ('Prix du billet', formatMoney(ticket.amount, ticket.currency)),
     ('Statut', _orMissing(ticket.statusDisplay)),
   ];
 }

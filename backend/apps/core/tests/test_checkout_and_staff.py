@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 from decimal import Decimal
 from io import StringIO
@@ -138,6 +139,49 @@ class FeesAndCheckoutTests(APITestCase):
             response = self.pay(external_reference="1001")
         self.assertEqual(response.status_code, 400, response.data)
         self.assertEqual(PaymentReceipt.objects.count(), 0)
+
+
+@override_settings(**FEDAPAY_SETTINGS)
+class TicketShowsFareOnlyTests(APITestCase):
+    """Le billet porte le prix du billet (tarif), jamais le total payé avec les frais."""
+
+    def setUp(self):
+        self.context = build_operational_context()
+        FareRule.objects.filter(route=self.context["route"]).update(amount=Decimal("7500.00"))
+        self.fedapay = PaymentMethod.objects.create(
+            code="FEDAPAY", label="FedaPay", active=True, fee_percentage=Decimal("1.80")
+        )
+        self.booking = make_booking(self.context, customer=self.context["client"], seats=1)
+        self.client.force_authenticate(self.context["client"])
+
+    def test_ticket_keeps_fare_when_total_paid_includes_fees(self):
+        quote = self.client.get(f"/api/v1/client/bookings/{self.booking.pk}/").data["payment_quotes"]
+        total = next(Decimal(str(item["total"])) for item in quote if item["code"] == "FEDAPAY")
+        self.assertEqual(total, Decimal("7635"))  # 7 500 + 1,80 % = 7 635
+
+        with mock.patch(FETCH, return_value=fedapay_transaction(self.booking, amount=7635)):
+            paid = self.client.post(
+                f"/api/v1/client/bookings/{self.booking.pk}/pay/",
+                {"payment_method": self.fedapay.pk, "external_reference": "1001"},
+                format="json",
+            )
+        self.assertEqual(paid.status_code, 200, paid.data)
+
+        ticket = Ticket.objects.get(booking=self.booking)
+        self.assertEqual(ticket.amount, Decimal("7500.00"))
+        self.assertEqual(Transaction.objects.get(ticket=ticket).amount, Decimal("7500.00"))
+        # Le total payé, frais inclus, ne vit que dans le reçu de paiement.
+        self.assertEqual(PaymentReceipt.objects.get(booking=self.booking).amount, Decimal("7635.00"))
+
+        issued = paid.data["booking"]["tickets"][0]
+        self.assertEqual(Decimal(str(issued["amount"])), Decimal("7500.00"))
+        mine = self.client.get(f"/api/v1/client/tickets/{ticket.pk}/").data
+        self.assertEqual(Decimal(str(mine["amount"])), Decimal("7500.00"))
+        public = self.client.get(f"/api/v1/client/tickets/public/{ticket.reference}/").json()
+        self.assertEqual(Decimal(str(public["amount"])), Decimal("7500.00"))
+        self.assertEqual(public["formatted_amount"], "7 500 XOF")
+        self.assertNotIn("7635", json.dumps(public))
+        self.assertNotIn("7 635", json.dumps(public, ensure_ascii=False))
 
 
 @override_settings(**FEDAPAY_SETTINGS)

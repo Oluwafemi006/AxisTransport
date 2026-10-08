@@ -46,6 +46,20 @@ void main() {
       expect(fields['Départ'], contains('08:00'));
     });
 
+    test('le billet affiche le prix du billet, jamais un total avec frais', () async {
+      // Billet à 7 500 XOF payé 7 635 XOF (frais de 1,80 %) : le serveur ne met que le tarif dans le billet.
+      final ticket = Ticket.fromJson({..._ticket().toJson(), 'amount': '7500.00'});
+      final fields = ticketFields(ticket);
+      final labels = fields.map((item) => item.$1).toList();
+      expect(labels, contains('Prix du billet'));
+      expect(labels, isNot(contains('Montant')));
+      final price = fields.firstWhere((item) => item.$1 == 'Prix du billet').$2;
+      expect(price.replaceAll(RegExp(r'\s'), ''), '7500XOF');
+      final everything = [...fields.map((item) => item.$2), ticketShareText(ticket)].join(' ');
+      expect(everything, isNot(contains('635')));
+      expect(everything, isNot(contains('650')));
+    });
+
     test('l’heure d’arrivée est affichée quand le serveur la fournit', () {
       final fields = ticketFields(_ticket(arrivalAt: DateTime(2026, 10, 9, 14, 30)));
       expect(fields.firstWhere((item) => item.$1 == 'Arrivée prévue').$2, contains('14:30'));

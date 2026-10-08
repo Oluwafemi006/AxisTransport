@@ -126,7 +126,7 @@ export default function PublicTicketPage() {
       ["Départ", ticket.departure_at ? formatDate(ticket.departure_at) : ""],
       ["Siège", ticket.seat_label],
       ["Passager", ticket.passenger_name],
-      ["Montant", ticket.formatted_amount],
+      ["Prix du billet", ticket.formatted_amount],
       ["Statut", ticket.status_display],
     ];
     rows.forEach(([label, value], index) => {
@@ -242,9 +242,9 @@ export default function PublicTicketPage() {
             </div>
           </div>
 
-          {/* Amount Paid */}
+          {/* Prix du billet seul : les frais de paiement n'apparaissent jamais sur le billet */}
           <div className="bg-slate-900 text-white p-4 rounded-2xl flex items-center justify-between shadow-lg">
-            <span className="text-xs font-medium text-slate-300">Montant réglé</span>
+            <span className="text-xs font-medium text-slate-300">Prix du billet</span>
             <span className="text-xl font-black tracking-tight text-emerald-400">
               {ticket.formatted_amount}
             </span>
