@@ -55,10 +55,9 @@ from .serializers import (
     TransactionSerializer,
     TripSerializer,
 )
+from .payments import settle_booking_payment, settle_ticket_payment
 from .services import (
     hash_guest_token,
-    pay_and_issue_booking,
-    pay_and_issue_ticket,
     release_expired_holds,
     reserve_booking,
     reserve_ticket,
@@ -233,35 +232,20 @@ class ClientTicketViewSet(viewsets.GenericViewSet):
         ).first()
         if not payment_method:
             raise ValidationError({"payment_method": "Moyen de paiement introuvable ou inactif."})
-            
-        external_reference = request.data.get("external_reference", "")
-        
-        # Vérification du paiement selon le prestataire
-        if payment_method.code == "KKIAPAY" and external_reference:
-            from .services import verify_kkiapay_transaction
-            try:
-                verify_kkiapay_transaction(external_reference)
-            except DjangoValidationError as exc:
-                raise service_validation_error(exc)
-        elif payment_method.code == "FEDAPAY" and external_reference:
-            from .services import verify_fedapay_transaction
-            try:
-                verify_fedapay_transaction(external_reference)
-            except DjangoValidationError as exc:
-                raise service_validation_error(exc)
 
+        # La vérification du paiement (statut, montant, unicité) est faite par settle_ticket_payment.
         try:
-            ticket, payment = pay_and_issue_ticket(
+            settlement = settle_ticket_payment(
                 ticket,
                 payment_method=payment_method,
                 actor=request.user,
-                external_reference=external_reference,
+                external_reference=request.data.get("external_reference", ""),
             )
         except DjangoValidationError as exc:
             raise service_validation_error(exc)
         return Response({
-            "ticket": TicketSerializer(ticket).data,
-            "transaction": TransactionSerializer(payment).data,
+            "ticket": TicketSerializer(settlement.target).data,
+            "transaction": TransactionSerializer(settlement.transactions[0]).data,
         })
 
 
@@ -373,35 +357,22 @@ class ClientBookingViewSet(viewsets.GenericViewSet):
         ).first()
         if not payment_method:
             raise ValidationError({"payment_method": "Moyen de paiement introuvable ou inactif."})
-            
-        external_reference = request.data.get("external_reference", "")
-        
-        # Vérification du paiement selon le prestataire
-        if payment_method.code == "KKIAPAY" and external_reference:
-            from .services import verify_kkiapay_transaction
-            try:
-                verify_kkiapay_transaction(external_reference)
-            except DjangoValidationError as exc:
-                raise service_validation_error(exc)
-        elif payment_method.code == "FEDAPAY" and external_reference:
-            from .services import verify_fedapay_transaction
-            try:
-                verify_fedapay_transaction(external_reference)
-            except DjangoValidationError as exc:
-                raise service_validation_error(exc)
 
         actor = request.user if request.user.is_authenticated else None
+        # La vérification du paiement (statut, montant, unicité) est faite par settle_booking_payment.
         try:
-            booking, _, payments = pay_and_issue_booking(
+            settlement = settle_booking_payment(
                 booking,
                 payment_method=payment_method,
                 actor=actor,
-                external_reference=external_reference,
+                external_reference=request.data.get("external_reference", ""),
             )
         except DjangoValidationError as exc:
             raise service_validation_error(exc)
         booking = self.BASE_QUERYSET.get(pk=booking.pk)
-        transactions = TransactionSerializer(payments, many=True, context={"request": request}).data
+        transactions = TransactionSerializer(
+            settlement.transactions, many=True, context={"request": request}
+        ).data
         return Response({"booking": self._serialized_booking(booking), "transactions": transactions})
 
 

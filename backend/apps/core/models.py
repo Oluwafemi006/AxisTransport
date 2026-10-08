@@ -549,3 +549,47 @@ class Transaction(TimeStampedModel):
 
     def __str__(self):
         return self.reference
+
+
+class PaymentReceipt(TimeStampedModel):
+    """Preuve de paiement vérifiée côté serveur. Aucun billet n'est émis sans elle."""
+
+    class Source(models.TextChoices):
+        CLIENT = "CLIENT", "Confirmation client"
+        WEBHOOK = "WEBHOOK", "Webhook prestataire"
+        COUNTER = "COUNTER", "Encaissement guichet"
+
+    provider = models.CharField(max_length=40)
+    external_id = models.CharField(max_length=120)
+    booking = models.ForeignKey(
+        Booking, on_delete=models.PROTECT, related_name="payment_receipts", null=True, blank=True
+    )
+    ticket = models.ForeignKey(
+        Ticket, on_delete=models.PROTECT, related_name="payment_receipts", null=True, blank=True
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, default="XOF")
+    source = models.CharField(max_length=16, choices=Source.choices)
+    recorded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["provider", "external_id"], name="unique_provider_payment"),
+            models.UniqueConstraint(
+                fields=["booking"], condition=Q(booking__isnull=False), name="unique_receipt_per_booking"
+            ),
+            models.UniqueConstraint(
+                fields=["ticket"], condition=Q(ticket__isnull=False), name="unique_receipt_per_ticket"
+            ),
+            models.CheckConstraint(
+                condition=(
+                    (Q(booking__isnull=False) & Q(ticket__isnull=True))
+                    | (Q(booking__isnull=True) & Q(ticket__isnull=False))
+                ),
+                name="receipt_exactly_one_target",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.provider}:{self.external_id}"

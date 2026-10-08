@@ -119,18 +119,16 @@ SIMPLE_JWT = {
 # --- Payment Provider Configuration ---
 ACTIVE_PAYMENT_PROVIDER = os.environ.get("ACTIVE_PAYMENT_PROVIDER", "fedapay").lower()
 
-# --- KKiaPay Configuration ---
-KKIAPAY_PUBLIC_KEY = os.environ.get("KKIAPAY_PUBLIC_KEY", "")
-KKIAPAY_PRIVATE_KEY = os.environ.get("KKIAPAY_PRIVATE_KEY", "")
-KKIAPAY_SECRET = os.environ.get("KKIAPAY_SECRET", "")
-KKIAPAY_SANDBOX = os.environ.get("KKIAPAY_SANDBOX", "true").lower() == "true"
-
-# --- FedaPay Configuration ---
 # Public Web URL for sharing tickets
 PUBLIC_WEB_URL = os.environ.get("PUBLIC_WEB_URL", "https://axis.bj")
 
+# --- FedaPay Configuration ---
 FEDAPAY_SECRET_KEY = os.environ.get("FEDAPAY_SECRET_KEY", "")
 FEDAPAY_WEBHOOK_SECRET = os.environ.get("FEDAPAY_WEBHOOK_SECRET", "")
 FEDAPAY_ENVIRONMENT = os.environ.get("FEDAPAY_ENVIRONMENT", "sandbox").lower()  # 'sandbox' ou 'live'
+# Écart maximal accepté entre l'horodatage signé du webhook et l'heure du serveur (0 = pas de contrôle).
+FEDAPAY_WEBHOOK_TOLERANCE_SECONDS = int(os.environ.get("FEDAPAY_WEBHOOK_TOLERANCE_SECONDS", "300"))
 
-
+# --- Paiement simulé ---
+# Actif uniquement si DEBUG est vrai ET si la variable est explicitement activée. Jamais en production.
+AXIS_PAYMENT_SIMULATION = DEBUG and os.environ.get("AXIS_PAYMENT_SIMULATION", "false").lower() == "true"

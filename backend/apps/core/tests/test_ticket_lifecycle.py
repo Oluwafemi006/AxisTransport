@@ -5,8 +5,8 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.core.models import Seat, Ticket, TicketControl
+from apps.core.payments import settle_ticket_payment
 from apps.core.services import (
-    pay_and_issue_ticket,
     release_expired_holds,
     reserve_ticket,
     transition_ticket,
@@ -33,9 +33,15 @@ class TicketLifecycleTests(TestCase):
         seat.refresh_from_db()
         self.assertEqual(seat.status, Seat.Status.HELD)
 
-        ticket, payment = pay_and_issue_ticket(
-            ticket, payment_method=self.context["payment_method"], actor=self.context["client"]
+        # Moyen de paiement manuel : seul un agent habilité peut attester l'encaissement.
+        with self.assertRaises(ValidationError):
+            settle_ticket_payment(
+                ticket, payment_method=self.context["payment_method"], actor=self.context["client"]
+            )
+        settlement = settle_ticket_payment(
+            ticket, payment_method=self.context["payment_method"], actor=self.context["admin"]
         )
+        ticket, payment = settlement.target, settlement.transactions[0]
         self.assertEqual(ticket.status, Ticket.Status.ISSUED)
         self.assertEqual(payment.ticket, ticket)
 

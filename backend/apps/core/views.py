@@ -1,5 +1,8 @@
 import hmac
+import json
 from datetime import datetime
+
+from django.conf import settings
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
 from django.db.models import Count, Q, Sum
@@ -62,11 +65,15 @@ from .serializers import (
     UserSerializer,
     VehicleSerializer,
 )
+from .payments import (
+    settle_booking_payment,
+    settle_from_fedapay_webhook,
+    settle_ticket_payment,
+    verify_fedapay_signature,
+)
 from .services import (
     generate_trip_seats,
     hash_guest_token,
-    pay_and_issue_booking,
-    pay_and_issue_ticket,
     release_expired_holds,
     reserve_booking,
     reserve_ticket,
@@ -342,7 +349,7 @@ class TicketViewSet(viewsets.ModelViewSet):
             raise ValidationError({"payment_method": "Moyen de paiement introuvable."})
         actor = request.user if request.user.is_authenticated else None
         try:
-            ticket, payment = pay_and_issue_ticket(
+            settlement = settle_ticket_payment(
                 ticket,
                 payment_method=payment_method,
                 actor=actor,
@@ -350,7 +357,12 @@ class TicketViewSet(viewsets.ModelViewSet):
             )
         except DjangoValidationError as exc:
             raise service_validation_error(exc)
-        return Response({"ticket": TicketSerializer(ticket).data, "transaction": TransactionSerializer(payment).data})
+        return Response(
+            {
+                "ticket": TicketSerializer(settlement.target).data,
+                "transaction": TransactionSerializer(settlement.transactions[0]).data,
+            }
+        )
 
     @action(detail=True, methods=["post"], permission_classes=[IsOperationsStaff])
     def transition(self, request, pk=None):
@@ -487,7 +499,7 @@ class BookingViewSet(viewsets.ModelViewSet):
             raise ValidationError({"payment_method": "Moyen de paiement introuvable ou inactif."})
         actor = request.user if request.user.is_authenticated else None
         try:
-            booking, _, payments = pay_and_issue_booking(
+            settlement = settle_booking_payment(
                 booking,
                 payment_method=payment_method,
                 actor=actor,
@@ -496,7 +508,9 @@ class BookingViewSet(viewsets.ModelViewSet):
         except DjangoValidationError as exc:
             raise service_validation_error(exc)
         booking = self.queryset.get(pk=booking.pk)
-        transactions = TransactionSerializer(payments, many=True, context={"request": request}).data
+        transactions = TransactionSerializer(
+            settlement.transactions, many=True, context={"request": request}
+        ).data
         return Response({"booking": self._serialized_booking(booking, request), "transactions": transactions})
 
 
@@ -657,129 +671,67 @@ class DashboardView(APIView):
         )
 
 class KKiaPayWebhookView(APIView):
+    """KKiaPay n'est pas implémenté : le webhook refuse tout et n'émet jamais de billet."""
+
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request):
-        transaction_id = request.data.get("transaction_id") or request.data.get("transactionId")
-        if not transaction_id:
-            return Response({"error": "transaction_id manquant"}, status=status.HTTP_400_BAD_REQUEST)
-
-        from .services import verify_kkiapay_transaction
-        try:
-            kkiapay_data = verify_kkiapay_transaction(transaction_id)
-        except DjangoValidationError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        booking_id = request.data.get("booking_id")
-        payment_method_code = request.data.get("payment_method", "KKIAPAY")
-
-        if not booking_id:
-            return Response({"error": "booking_id manquant"}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            booking = Booking.objects.get(pk=booking_id)
-        except Booking.DoesNotExist:
-            return Response({"error": "Réservation introuvable"}, status=status.HTTP_404_NOT_FOUND)
-
-        if booking.status != Booking.Status.HELD:
-            return Response({"message": "Réservation déjà traitée."}, status=status.HTTP_200_OK)
-
-        payment_method = PaymentMethod.objects.filter(code=payment_method_code).first()
-        if not payment_method:
-            payment_method, _ = PaymentMethod.objects.get_or_create(
-                code="KKIAPAY", defaults={"label": "Mobile Money", "active": True}
-            )
-
-        try:
-            booking, issued_tickets, _ = pay_and_issue_booking(
-                booking,
-                payment_method=payment_method,
-                actor=None,
-                external_reference=transaction_id,
-            )
-        except DjangoValidationError as exc:
-            return Response({"error": exc.messages}, status=status.HTTP_400_BAD_REQUEST)
-
-        return Response({
-            "status": "SUCCESS", 
-            "booking": BookingSerializer(booking).data
-        })
+        return Response(
+            {"error": "Le paiement KKiaPay est désactivé."}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
 
 
 class FedaPayWebhookView(APIView):
+    """
+    Webhook FedaPay. La signature est obligatoire ; la transaction est ensuite revérifiée
+    auprès de l'API FedaPay, et la réservation est déduite des données vérifiées, jamais de la requête.
+    """
+
     permission_classes = [AllowAny]
+    authentication_classes = []
 
     def post(self, request):
-        import hmac
-        import hashlib
-        from django.conf import settings
+        if not settings.FEDAPAY_WEBHOOK_SECRET:
+            return Response({"error": "Webhook FedaPay non configuré."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        signature = request.headers.get("X-FEDAPAY-SIGNATURE", "")
+        if not signature:
+            return Response({"error": "Signature absente."}, status=status.HTTP_400_BAD_REQUEST)
+        raw_body = request.body
+        try:
+            verify_fedapay_signature(
+                raw_body,
+                signature,
+                settings.FEDAPAY_WEBHOOK_SECRET,
+                tolerance=settings.FEDAPAY_WEBHOOK_TOLERANCE_SECONDS,
+            )
+        except DjangoValidationError:
+            return Response({"error": "Signature invalide."}, status=status.HTTP_400_BAD_REQUEST)
 
-        webhook_secret = getattr(settings, "FEDAPAY_WEBHOOK_SECRET", "")
-        sig_header = request.headers.get("X-FEDAPAY-SIGNATURE") or request.META.get("HTTP_X_FEDAPAY_SIGNATURE")
-
-        if webhook_secret and sig_header:
-            computed_sig = hmac.new(
-                webhook_secret.encode("utf-8"),
-                request.body,
-                hashlib.sha256
-            ).hexdigest()
-            clean_sig = sig_header.split(",")[-1].replace("v1=", "").strip() if "," in sig_header else sig_header.strip()
-            if not hmac.compare_digest(computed_sig, clean_sig):
-                return Response({"error": "Signature Webhook invalide"}, status=status.HTTP_400_BAD_REQUEST)
-
-        data = request.data
-        entity = data.get("entity") or data.get("v1/transaction") or data
-
-        transaction_id = entity.get("id") or data.get("transaction_id")
+        try:
+            event = json.loads(raw_body)
+        except ValueError:
+            return Response({"error": "Corps illisible."}, status=status.HTTP_400_BAD_REQUEST)
+        entity = event.get("entity") if isinstance(event, dict) else None
+        if not isinstance(entity, dict) or entity.get("status") != "approved":
+            return Response({"message": "Événement ignoré."}, status=status.HTTP_200_OK)
+        transaction_id = entity.get("id")
         if not transaction_id:
-            return Response({"error": "transaction_id manquant"}, status=status.HTTP_400_BAD_REQUEST)
-
-        tx_status = entity.get("status")
-        if tx_status and tx_status != "approved":
-            return Response({"message": f"Événement ignoré pour statut {tx_status}"}, status=status.HTTP_200_OK)
-
-        from .services import verify_fedapay_transaction
-        try:
-            verify_fedapay_transaction(transaction_id)
-        except DjangoValidationError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        custom_metadata = entity.get("custom_metadata") or {}
-        booking_id = custom_metadata.get("booking_id") or data.get("booking_id") or request.query_params.get("booking_id")
-
-        if not booking_id:
-            return Response({"error": "booking_id manquant dans les métadonnées"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Identifiant de transaction manquant."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            booking = Booking.objects.get(pk=booking_id)
-        except Booking.DoesNotExist:
-            return Response({"error": "Réservation introuvable"}, status=status.HTTP_404_NOT_FOUND)
-
-        if booking.status != Booking.Status.HELD:
-            return Response({"message": "Réservation déjà traitée."}, status=status.HTTP_200_OK)
-
-        payment_method = PaymentMethod.objects.filter(code="FEDAPAY").first()
-        if not payment_method:
-            payment_method, _ = PaymentMethod.objects.get_or_create(
-                code="FEDAPAY", defaults={"label": "FedaPay Mobile Money / Carte", "active": True, "fee_percentage": Decimal("1.80")}
-            )
-
-        try:
-            booking, issued_tickets, _ = pay_and_issue_booking(
-                booking,
-                payment_method=payment_method,
-                actor=None,
-                external_reference=str(transaction_id),
-            )
+            settlement = settle_from_fedapay_webhook(transaction_id)
         except DjangoValidationError as exc:
-            return Response({"error": exc.messages if hasattr(exc, "messages") else str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-
-        return Response({
-            "status": "SUCCESS",
-            "message": "Paiement FedaPay validé et billets émis avec succès.",
-            "booking_id": booking.id,
-            "tickets_issued": len(issued_tickets)
-        }, status=status.HTTP_200_OK)
+            return Response({"error": exc.messages}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "status": "SUCCESS",
+                "booking_id": settlement.target.pk,
+                "tickets_issued": len(settlement.tickets),
+                "already_processed": not settlement.created,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class StaffTicketViewSet(viewsets.GenericViewSet):

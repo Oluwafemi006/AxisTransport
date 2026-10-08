@@ -1,6 +1,9 @@
+from unittest import mock
+
+from django.test import override_settings
 from rest_framework.test import APITestCase
 
-from apps.core.models import Booking, Passenger, Seat, Ticket
+from apps.core.models import Booking, Passenger, PaymentMethod, Seat, Ticket
 
 from .factories import build_operational_context
 
@@ -47,11 +50,25 @@ class BookingApiTests(APITestCase):
         retrieved = self.client.get(f"/api/bookings/{booking_id}/")
         self.assertEqual(retrieved.status_code, 200)
 
-        paid = self.client.post(
+        # Sans preuve de paiement vérifiée, rien n'est émis.
+        unpaid = self.client.post(
             f"/api/bookings/{booking_id}/pay/",
             {"payment_method": self.context["payment_method"].pk},
             format="json",
         )
+        self.assertEqual(unpaid.status_code, 400, unpaid.data)
+        self.assertEqual(Ticket.objects.filter(booking_id=booking_id, status=Ticket.Status.HELD).count(), 2)
+
+        fedapay = PaymentMethod.objects.create(code="FEDAPAY", label="FedaPay", active=True)
+        verified = {"id": 4242, "status": "approved", "amount": 2000, "custom_metadata": {"booking_id": booking_id}}
+        with override_settings(FEDAPAY_SECRET_KEY="sk_sandbox_test"), mock.patch(
+            "apps.core.payments._fedapay_fetch_transaction", return_value=verified
+        ):
+            paid = self.client.post(
+                f"/api/bookings/{booking_id}/pay/",
+                {"payment_method": fedapay.pk, "external_reference": "4242"},
+                format="json",
+            )
         self.assertEqual(paid.status_code, 200, paid.data)
         self.assertEqual(paid.data["booking"]["status"], Booking.Status.CONFIRMED)
         self.assertEqual(

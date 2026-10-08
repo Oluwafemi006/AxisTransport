@@ -15,6 +15,7 @@ from .models import (
     Parcel,
     ParcelStatusHistory,
     PaymentMethod,
+    PaymentReceipt,
     Passenger,
     RentalBooking,
     Seat,
@@ -233,9 +234,20 @@ def reserve_booking(
     return booking, guest_token
 
 
+def require_receipt(receipt, *, ticket_id=None, booking_id=None):
+    """Refuse toute émission qui n'est pas adossée à un reçu de paiement enregistré pour cette cible."""
+    if not isinstance(receipt, PaymentReceipt) or receipt.pk is None:
+        raise ValidationError("Aucune preuve de paiement vérifiée : émission refusée.")
+    matches_ticket = ticket_id is not None and receipt.ticket_id == ticket_id
+    matches_booking = booking_id is not None and receipt.booking_id == booking_id
+    if not (matches_ticket or matches_booking):
+        raise ValidationError("La preuve de paiement ne correspond pas à cette réservation.")
+
+
 @transaction.atomic
-def pay_and_issue_booking(booking, *, payment_method, actor=None, external_reference=""):
-    """Issue every ticket in a booking atomically after the payment succeeds."""
+def pay_and_issue_booking(booking, *, payment_method, receipt, actor=None, external_reference=""):
+    """Issue every ticket in a booking atomically. Appelé uniquement par payments.py avec un reçu vérifié."""
+    require_receipt(receipt, booking_id=booking.pk)
     locked = Booking.objects.select_for_update().get(pk=booking.pk)
     if locked.status != Booking.Status.HELD:
         raise ValidationError("Seule une réservation temporaire peut être payée.")
@@ -251,6 +263,7 @@ def pay_and_issue_booking(booking, *, payment_method, actor=None, external_refer
         confirmed_ticket, payment = pay_and_issue_ticket(
             ticket,
             payment_method=payment_method,
+            receipt=receipt,
             actor=actor,
             external_reference=external_reference,
         )
@@ -322,7 +335,8 @@ def transition_ticket(ticket, to_status, *, actor=None, note=""):
 
 
 @transaction.atomic
-def pay_and_issue_ticket(ticket, *, payment_method, actor=None, external_reference=""):
+def pay_and_issue_ticket(ticket, *, payment_method, receipt, actor=None, external_reference=""):
+    require_receipt(receipt, ticket_id=ticket.pk, booking_id=ticket.booking_id)
     if not payment_method.active:
         raise ValidationError("Ce moyen de paiement n'est pas actif.")
     locked = Ticket.objects.select_for_update().get(pk=ticket.pk)
@@ -405,54 +419,3 @@ def rental_is_available(vehicle, starts_at, ends_at, exclude_booking=None):
     if exclude_booking:
         conflicts = conflicts.exclude(pk=exclude_booking.pk)
     return not conflicts.exists()
-
-def verify_kkiapay_transaction(transaction_id):
-    """
-    [MODE TEST] Simule une validation KKiaPay réussie.
-    """
-    return {
-        "status": "SUCCESS",
-        "amount": 1000,
-        "transaction_id": transaction_id or "test_tx_123"
-    }
-
-
-def verify_fedapay_transaction(transaction_id):
-    """
-    Vérifie le statut d'une transaction FedaPay auprès de l'API officielle FedaPay.
-    """
-    import requests
-    from django.conf import settings
-
-    secret_key = getattr(settings, "FEDAPAY_SECRET_KEY", "")
-    environment = getattr(settings, "FEDAPAY_ENVIRONMENT", "sandbox")
-
-    # Mode simulation si aucune clé n'est configurée ou ID de test
-    if not secret_key or str(transaction_id).startswith("test_"):
-        return {
-            "status": "approved",
-            "amount": 0,
-            "id": transaction_id or "test_feda_123",
-            "mode": "test_simulation",
-        }
-
-    base_url = "https://sandbox-api.fedapay.com" if environment == "sandbox" else "https://api.fedapay.com"
-    url = f"{base_url}/v1/transactions/{transaction_id}"
-    headers = {
-        "Authorization": f"Bearer {secret_key}",
-        "Content-Type": "application/json",
-    }
-
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            raise ValidationError(f"Erreur vérification FedaPay ({response.status_code}): {response.text}")
-        data = response.json()
-        tx = data.get("v1/transaction") or data.get("transaction") or data
-        status = tx.get("status")
-        if status != "approved":
-            raise ValidationError(f"Transaction FedaPay non approuvée (statut actuel: {status}).")
-        return tx
-    except requests.RequestException as e:
-        raise ValidationError(f"Impossible de contacter l'API FedaPay: {str(e)}")
-

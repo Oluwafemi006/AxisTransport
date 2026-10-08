@@ -23,6 +23,12 @@ services:
       DATABASE_URL: postgresql://axis:axis@db:5432/axis_transport
       AXIS_ADMIN_USERNAME: ${AXIS_ADMIN_USERNAME:-}
       AXIS_ADMIN_PASSWORD: ${AXIS_ADMIN_PASSWORD:-}
+      ACTIVE_PAYMENT_PROVIDER: ${ACTIVE_PAYMENT_PROVIDER:-fedapay}
+      FEDAPAY_SECRET_KEY: ${FEDAPAY_SECRET_KEY:-}
+      FEDAPAY_WEBHOOK_SECRET: ${FEDAPAY_WEBHOOK_SECRET:-}
+      FEDAPAY_ENVIRONMENT: ${FEDAPAY_ENVIRONMENT:-sandbox}
+      FEDAPAY_WEBHOOK_TOLERANCE_SECONDS: ${FEDAPAY_WEBHOOK_TOLERANCE_SECONDS:-300}
+      AXIS_PAYMENT_SIMULATION: ${AXIS_PAYMENT_SIMULATION:-false}
     command: >-
       sh -c "python manage.py migrate &&
       python manage.py bootstrap_axis &&

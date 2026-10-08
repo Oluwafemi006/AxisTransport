@@ -38,7 +38,8 @@ class Command(BaseCommand):
             code="KKIAPAY",
             defaults={
                 "label": "KKiaPay Mobile Money",
-                "active": (active_provider == "kkiapay"),
+                # KKiaPay n'est pas implémenté : jamais actif tant que la vérification réelle n'existe pas.
+                "active": False,
                 "fee_percentage": Decimal("0.00"),
             },
         )

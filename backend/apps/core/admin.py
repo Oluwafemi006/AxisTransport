@@ -9,6 +9,7 @@ from .models import (
     Parcel,
     ParcelStatusHistory,
     PaymentMethod,
+    PaymentReceipt,
     Passenger,
     RentalBooking,
     Route,
@@ -86,6 +87,7 @@ admin.site.register(
         ParcelStatusHistory,
         RentalBooking,
         PaymentMethod,
+        PaymentReceipt,
         Transaction,
     ]
 )
