@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/downloads.dart';
 import '../../core/formatters.dart';
 import '../../core/models.dart';
 import '../../core/session.dart';
 import '../../core/theme.dart';
+import 'ticket_document.dart';
 
 class TicketScreen extends ConsumerStatefulWidget {
   const TicketScreen({super.key, required this.ticketId, this.initialTicket});
@@ -21,6 +23,33 @@ class TicketScreen extends ConsumerStatefulWidget {
 class _TicketScreenState extends ConsumerState<TicketScreen> {
   Ticket? _ticket;
   bool _loading = true;
+  bool _downloading = false;
+
+  // Enregistre le billet en PDF dans Téléchargements ; à défaut, propose de l'envoyer par partage.
+  Future<void> _downloadTicket(Ticket ticket) async {
+    setState(() => _downloading = true);
+    String message;
+    try {
+      final bytes = await buildTicketPdf(ticket);
+      try {
+        final location = await saveToDownloads(name: ticketFileName(ticket), bytes: bytes);
+        message = 'Billet enregistré : $location';
+      } catch (_) {
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile.fromData(bytes, name: ticketFileName(ticket), mimeType: 'application/pdf')],
+            subject: 'Billet AXIS Transport ${ticket.reference}',
+          ),
+        );
+        message = 'Enregistrement direct indisponible sur cet appareil : billet proposé au partage.';
+      }
+    } catch (error) {
+      message = 'Téléchargement impossible : $error';
+    }
+    if (!mounted) return;
+    setState(() => _downloading = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   void initState() {
@@ -54,7 +83,7 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
         final current = tickets
             .where((item) => item.id == widget.ticketId)
             .firstOrNull;
-        if (mounted) setState(() => _ticket = current);
+        if (mounted && current != null) setState(() => _ticket = current);
       }
     } catch (_) {
       // The locally issued ticket stays readable without a network connection.
@@ -82,7 +111,9 @@ $publicUrl
 
 Merci de voyager avec AXIS Transport.''';
 
-    await Share.share(text, subject: 'Billet AXIS Transport ${ticket.reference}');
+    await SharePlus.instance.share(
+      ShareParams(text: text, subject: 'Billet AXIS Transport ${ticket.reference}'),
+    );
   }
 
   @override
@@ -187,29 +218,34 @@ Merci de voyager avec AXIS Transport.''';
                         ),
                       ),
                       const Divider(height: 34, color: Color(0xFF31577D)),
-                      Text(
-                        'Passager : ${item.passengerName}',
-                        style: const TextStyle(color: Color(0xFFE2ECF7)),
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        'Siège : ${item.seat.number}',
-                        style: const TextStyle(color: Color(0xFFE2ECF7)),
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        'Montant : ${formatMoney(item.amount, item.currency)}',
-                        style: const TextStyle(color: Color(0xFFE2ECF7)),
-                      ),
+                      // Uniquement des données du serveur ; « à confirmer » si une donnée manque.
+                      for (final (label, value) in ticketFields(item).skip(1))
+                        if (label != 'Statut')
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 7),
+                            child: Text(
+                              '$label : $value',
+                              style: const TextStyle(color: Color(0xFFE2ECF7)),
+                            ),
+                          ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 16),
                 FilledButton.icon(
+                  onPressed: canShowQr && !_downloading ? () => _downloadTicket(item) : null,
+                  icon: const Icon(Icons.download),
+                  label: Text(_downloading ? 'Enregistrement…' : 'Télécharger le billet (PDF)'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
                   onPressed: () => _shareTicket(item),
                   icon: const Icon(Icons.share),
                   label: const Text('Partager le billet'),
-                  style: FilledButton.styleFrom(
+                  style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),

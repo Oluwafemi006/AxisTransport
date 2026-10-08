@@ -109,6 +109,8 @@ class PaymentVerificationTests(APITestCase):
         with mock.patch(FETCH, return_value=fedapay_transaction(self.booking, status="pending")):
             response = self.pay(external_reference="1001")
         self.assertEqual(response.status_code, 400, response.data)
+        # Le statut exact du prestataire est transmis au client (en attente / refusé).
+        self.assertEqual(response.data["payment_status"], "pending")
         self.assert_nothing_issued()
 
     def test_transaction_created_for_another_booking_is_refused(self):

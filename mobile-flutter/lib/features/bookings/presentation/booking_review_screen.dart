@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/formatters.dart';
@@ -65,6 +66,11 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
     }
   }
 
+  void _restart() {
+    ref.read(bookingCheckoutProvider.notifier).reset();
+    context.go('/billets/booking/${widget.tripId}/sieges');
+  }
+
   Future<void> _verifyPayment() async {
     final ticket = await ref.read(bookingCheckoutProvider.notifier).pay();
     if (ticket != null && mounted) {
@@ -115,10 +121,10 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
     final methods = stateData?.methods ?? [];
     final pending = stateData?.reservation;
     final checkout = stateData?.checkout;
-
-    final successMessage = (pending != null && !checkoutState.hasError) 
-        ? 'Sièges réservés temporairement. Finalisez le paiement.'
-        : null;
+    final phase = stateData?.phase ?? PaymentPhase.idle;
+    final heldUntil = pending?.reservationExpiresAt == null
+        ? null
+        : DateFormat('HH:mm').format(pending!.reservationExpiresAt!);
 
     // Sélectionner la première méthode par défaut si aucune n'est sélectionnée
     if (_selectedMethod == null && methods.isNotEmpty) {
@@ -270,69 +276,100 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
               child: Text(isBusy ? 'Patientez…' : 'Valider et Bloquer les sièges'),
             )
           else ...[
-            if (successMessage != null) Notice(successMessage),
-            const SizedBox(height: 24),
-            const Text(
-              'Moyen de paiement',
-              style: TextStyle(
-                color: AxisColors.navyDark,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
+            switch (phase) {
+              PaymentPhase.idle => Notice(
+                heldUntil == null
+                    ? 'Sièges réservés temporairement. Finalisez le paiement.'
+                    : 'Sièges bloqués jusqu\'à $heldUntil. Finalisez le paiement avant cette heure.',
               ),
-            ),
-            const SizedBox(height: 12),
-            if (checkoutState.isLoading && methods.isEmpty)
-              const Center(child: CircularProgressIndicator())
-            else if (methods.isEmpty)
-              const Notice('Aucun moyen de paiement actif.', error: true)
-            else ...[
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: methods.map((method) {
-                  final isSelected = _selectedMethod?.id == method.id;
-                  return ChoiceChip(
-                    label: Text(
-                      method.feePercentage > 0
-                          ? '${method.label} (+${method.feePercentage.toStringAsFixed(1)}%)'
-                          : method.label,
-                    ),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      if (selected && checkout == null) {
-                        setState(() {
-                          _selectedMethod = method;
-                        });
-                      }
-                    },
-                  );
-                }).toList(),
+              PaymentPhase.awaiting => Notice(
+                'Paiement en attente. Terminez-le sur la page de paiement, puis revenez ici : '
+                'vos billets sont émis dès que le paiement est confirmé.'
+                '${heldUntil == null ? '' : ' Sièges bloqués jusqu\'à $heldUntil.'}',
               ),
+              PaymentPhase.failed => Notice(
+                'Paiement refusé ou annulé : aucun billet n\'a été émis. '
+                'Vous pouvez relancer le paiement'
+                '${heldUntil == null ? '.' : ' tant que vos sièges sont bloqués (jusqu\'à $heldUntil).'}',
+                error: true,
+              ),
+              PaymentPhase.expired => const Notice(
+                'Le délai de blocage des sièges est dépassé et aucun paiement n\'a été confirmé. '
+                'Aucun billet n\'a été émis.',
+                error: true,
+              ),
+              PaymentPhase.refundDue => Notice(
+                'Remboursement à traiter. Votre paiement est arrivé après l\'expiration de la réservation : '
+                'aucun billet n\'a été émis. Référence à communiquer à Axis : ${pending.reference}.',
+                error: true,
+              ),
+            },
+            if (phase == PaymentPhase.expired || phase == PaymentPhase.refundDue) ...[
               const SizedBox(height: 16),
-              if (checkout != null) ...[
+              FilledButton(
+                onPressed: _restart,
+                child: const Text('Recommencer une réservation'),
+              ),
+            ] else ...[
+              const SizedBox(height: 24),
+              const Text(
+                'Moyen de paiement',
+                style: TextStyle(
+                  color: AxisColors.navyDark,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (methods.isEmpty)
                 const Notice(
-                  'Terminez le paiement sur la page FedaPay, puis revenez ici : '
-                  'vos billets sont émis dès que le paiement est confirmé.',
+                  'Aucun paiement en ligne n\'est disponible pour le moment.',
+                  error: true,
+                )
+              else ...[
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: methods.map((method) {
+                    final isSelected = _selectedMethod?.id == method.id;
+                    return ChoiceChip(
+                      label: Text(
+                        method.feePercentage > 0
+                            ? '${method.label} (+${method.feePercentage.toStringAsFixed(1)}%)'
+                            : method.label,
+                      ),
+                      selected: isSelected,
+                      onSelected: (selected) {
+                        if (selected && checkout == null) {
+                          setState(() {
+                            _selectedMethod = method;
+                          });
+                        }
+                      },
+                    );
+                  }).toList(),
                 ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: isBusy ? null : _verifyPayment,
-                  child: Text(isBusy ? 'Vérification…' : 'J\'ai payé · Vérifier le paiement'),
-                ),
-                if (checkout.paymentUrl != null) ...[
-                  const SizedBox(height: 8),
-                  OutlinedButton(
-                    onPressed: isBusy ? null : () => _openPaymentPage(checkout.paymentUrl!),
-                    child: const Text('Rouvrir la page de paiement'),
+                const SizedBox(height: 16),
+                if (checkout != null) ...[
+                  FilledButton(
+                    onPressed: isBusy ? null : _verifyPayment,
+                    child: Text(isBusy ? 'Vérification…' : 'J\'ai payé · vérifier'),
                   ),
-                ],
-              ] else if (_selectedMethod != null)
-                FilledButton(
-                  onPressed: isBusy ? null : _startPayment,
-                  child: Text(
-                    isBusy ? 'Traitement...' : 'Payer ${formatMoney(totalToPay, currency)}',
+                  if (checkout.paymentUrl != null) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: isBusy ? null : () => _openPaymentPage(checkout.paymentUrl!),
+                      child: const Text('Rouvrir la page de paiement'),
+                    ),
+                  ],
+                ] else if (_selectedMethod != null)
+                  FilledButton(
+                    onPressed: isBusy ? null : _startPayment,
+                    child: Text(
+                      isBusy ? 'Traitement...' : 'Payer ${formatMoney(totalToPay, currency)}',
+                    ),
                   ),
-                ),
+              ],
             ],
           ],
           if (errorMessage != null) ...[

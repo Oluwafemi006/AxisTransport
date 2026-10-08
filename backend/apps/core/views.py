@@ -68,6 +68,7 @@ from .serializers import (
 )
 from .payments import (
     REFUND_DUE_MESSAGE,
+    PaymentNotApproved,
     create_checkout,
     settle_booking_payment,
     settle_from_fedapay_webhook,
@@ -87,6 +88,9 @@ from .services import (
 
 
 def service_validation_error(exc):
+    # Statut du prestataire transmis tel quel, pour que les clients distinguent « en attente » d'un échec.
+    if isinstance(exc, PaymentNotApproved):
+        return ValidationError({"detail": exc.messages[0], "payment_status": exc.provider_status})
     if hasattr(exc, "message_dict"):
         return ValidationError(exc.message_dict)
     if hasattr(exc, "messages"):

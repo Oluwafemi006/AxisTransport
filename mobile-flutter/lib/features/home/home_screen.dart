@@ -116,43 +116,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           const SizedBox(height: 18),
           const TripSearchCard(),
-          const SizedBox(height: 22),
-          const Text(
-            'Services essentiels',
-            style: TextStyle(
-              color: AxisColors.navyDark,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _ServiceShortcut(
-                  label: 'Billets',
-                  icon: Icons.confirmation_number_outlined,
-                  onTap: () => context.go('/billets'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _ServiceShortcut(
-                  label: 'Colis',
-                  icon: Icons.inventory_2_outlined,
-                  onTap: () => context.go('/colis'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _ServiceShortcut(
-                  label: 'Location',
-                  icon: Icons.directions_car_outlined,
-                  onTap: () => context.go('/location'),
-                ),
-              ),
-            ],
-          ),
           if (_error != null) Notice(_error!, error: true),
           const SizedBox(height: 24),
           const Text(
@@ -339,6 +302,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ),
+          const SizedBox(height: 22),
+          const Text(
+            'Autres services',
+            style: TextStyle(
+              color: AxisColors.navyDark,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _ServiceShortcut(
+                  label: 'Colis',
+                  icon: Icons.inventory_2_outlined,
+                  onTap: () => context.go('/colis'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _ServiceShortcut(
+                  label: 'Location',
+                  icon: Icons.directions_car_outlined,
+                  onTap: () => context.go('/location'),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

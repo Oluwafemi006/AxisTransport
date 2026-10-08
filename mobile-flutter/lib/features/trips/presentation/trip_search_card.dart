@@ -26,6 +26,11 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
   late int _passengers;
   bool _loading = true;
   String? _error;
+  // Échec du chargement des villes : message dédié avec « Réessayer ».
+  String? _loadError;
+
+  bool get _canSearch =>
+      _originId != null && _destinationId != null && _originId != _destinationId;
 
   @override
   void initState() {
@@ -40,6 +45,12 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
   }
 
   Future<void> _loadPlaces() async {
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _loadError = null;
+      });
+    }
     try {
       final places = await ref.read(apiClientProvider).locations();
       if (!mounted) return;
@@ -51,12 +62,13 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
         }
         _loading = false;
         _error = null;
+        _loadError = null;
       });
     } catch (e) {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = 'Erreur: ${e.toString()}';
+          _loadError = e.toString();
         });
       }
     }
@@ -214,9 +226,30 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
             ],
           ),
           if (_error != null) Notice(_error!, error: true),
+          if (_loadError != null) ...[
+            Notice(
+              'Impossible de charger les villes de départ et de destination. '
+              'Vérifiez votre connexion Internet, puis réessayez.\n$_loadError',
+              error: true,
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _loadPlaces,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Réessayer'),
+            ),
+          ] else if (!_loading && _places.isEmpty) ...[
+            const Notice('Aucune ville n\'est encore ouverte à la réservation.'),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _loadPlaces,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Réessayer'),
+            ),
+          ],
           const SizedBox(height: 14),
           FilledButton.icon(
-            onPressed: _loading || _places.isEmpty ? null : _search,
+            onPressed: _canSearch ? _search : null,
             icon: const Icon(Icons.search),
             label: const Text('Rechercher un trajet'),
           ),
@@ -224,9 +257,7 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
             const Padding(
               padding: EdgeInsets.only(top: 10),
               child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_places.isEmpty)
-            TextButton(onPressed: _loadPlaces, child: const Text('Réessayer')),
+            ),
         ],
       ),
     );

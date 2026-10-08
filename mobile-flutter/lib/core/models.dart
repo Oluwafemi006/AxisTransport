@@ -405,6 +405,11 @@ class BookingReservation {
 
   bool get isConfirmed => status == 'CONFIRMED';
 
+  bool get isExpired {
+    final expiresAt = reservationExpiresAt;
+    return status == 'EXPIRED' || (expiresAt != null && !expiresAt.isAfter(DateTime.now()));
+  }
+
   PaymentQuote? quoteFor(int paymentMethod) {
     for (final quote in paymentQuotes) {
       if (quote.paymentMethod == paymentMethod) return quote;

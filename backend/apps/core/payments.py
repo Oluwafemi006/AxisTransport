@@ -34,6 +34,14 @@ COUNTER_ROLES = {User.Role.COUNTER, User.Role.ADMIN}
 _REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
+class PaymentNotApproved(ValidationError):
+    """Le prestataire connaît la transaction mais elle n'est pas (encore) payée. Porte son statut exact."""
+
+    def __init__(self, message, provider_status):
+        super().__init__(message)
+        self.provider_status = str(provider_status or "")
+
+
 @dataclass
 class VerifiedPayment:
     provider: str
@@ -107,7 +115,9 @@ def verify_fedapay_transaction(transaction_id):
         raise ValidationError("Référence de transaction FedaPay invalide.")
     data = _fedapay_fetch_transaction(transaction_id)
     if data.get("status") != "approved":
-        raise ValidationError(f"Transaction FedaPay non approuvée (statut : {data.get('status')}).")
+        raise PaymentNotApproved(
+            f"Transaction FedaPay non approuvée (statut : {data.get('status')}).", data.get("status")
+        )
     if str(data.get("id", "")) != transaction_id:
         raise ValidationError("La transaction renvoyée par FedaPay ne correspond pas à la référence fournie.")
     try:

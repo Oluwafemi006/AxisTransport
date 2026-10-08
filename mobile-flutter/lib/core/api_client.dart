@@ -9,8 +9,27 @@ import 'session_store.dart';
 import '../features/trips/domain/trip_search.dart';
 
 class ApiException implements Exception {
-  ApiException(this.message);
+  ApiException(this.message, {this.statusCode, this.data});
   final String message;
+  final int? statusCode;
+  final Object? data;
+
+  Object? _field(String key) {
+    final payload = data;
+    if (payload is! Map) return null;
+    final value = payload[key];
+    return value is List && value.isNotEmpty ? value.first : value;
+  }
+
+  /// Aucune réponse du serveur : réseau coupé, délai dépassé.
+  bool get isNetwork => statusCode == null;
+
+  /// Paiement reçu après expiration de la réservation : aucun billet, remboursement à traiter.
+  bool get refundDue => statusCode == 409 && _field('refund_due') == true;
+
+  /// Statut renvoyé par le prestataire quand le paiement n'est pas approuvé (pending, declined…).
+  String? get paymentStatus => _field('payment_status')?.toString();
+
   @override
   String toString() => message;
 }
@@ -387,7 +406,11 @@ class ApiClient {
       );
       return response.data as T;
     } on DioException catch (error) {
-      throw ApiException(_messageFrom(error));
+      throw ApiException(
+        _messageFrom(error),
+        statusCode: error.response?.statusCode,
+        data: error.response?.data,
+      );
     }
   }
 
