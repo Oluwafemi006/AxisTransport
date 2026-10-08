@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -391,8 +392,22 @@ class ApiClient {
   }
 
   String _messageFrom(DioException error) {
+    final message = _userMessageFrom(error);
+    if (!kDebugMode) return message;
+    // En debug uniquement : la cause technique, pour diagnostiquer sans deviner.
+    final status = error.response?.statusCode;
+    return '$message\n[debug] ${error.type.name}'
+        '${status == null ? '' : ' · HTTP $status'}'
+        ' · ${error.requestOptions.method} ${error.requestOptions.uri}'
+        '${error.error == null ? '' : ' · ${error.error}'}';
+  }
+
+  String _userMessageFrom(DioException error) {
     final payload = error.response?.data;
-    if (payload is String && payload.isNotEmpty) return payload;
+    // Une page HTML d'erreur du serveur n'est pas un message pour l'utilisateur.
+    if (payload is String && payload.isNotEmpty && !payload.trimLeft().startsWith('<')) {
+      return payload;
+    }
     if (payload is Map) {
       final detail = payload['detail'];
       if (detail is String) return detail;
@@ -406,6 +421,10 @@ class ApiClient {
     if (error.type == DioExceptionType.connectionError ||
         error.type == DioExceptionType.connectionTimeout) {
       return "Réseau indisponible. Vérifiez l'API et réessayez.";
+    }
+    if (error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.sendTimeout) {
+      return 'Le serveur met trop de temps à répondre. Réessayez.';
     }
     return 'Une erreur est survenue.';
   }
