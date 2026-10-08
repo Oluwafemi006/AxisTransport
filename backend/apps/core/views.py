@@ -5,6 +5,7 @@ from datetime import datetime
 from django.conf import settings
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -66,6 +67,8 @@ from .serializers import (
     VehicleSerializer,
 )
 from .payments import (
+    REFUND_DUE_MESSAGE,
+    create_checkout,
     settle_booking_payment,
     settle_from_fedapay_webhook,
     settle_ticket_payment,
@@ -89,6 +92,21 @@ def service_validation_error(exc):
     if hasattr(exc, "messages"):
         return ValidationError(exc.messages)
     return ValidationError(str(exc))
+
+
+def refund_due_response():
+    """Paiement reçu après expiration : reçu enregistré, aucun billet émis."""
+    return Response({"detail": REFUND_DUE_MESSAGE, "refund_due": True}, status=status.HTTP_409_CONFLICT)
+
+
+def checkout_response(target, request):
+    payment_method = PaymentMethod.objects.filter(pk=request.data.get("payment_method"), active=True).first()
+    if not payment_method:
+        raise ValidationError({"payment_method": "Moyen de paiement introuvable ou inactif."})
+    try:
+        return Response(create_checkout(target, payment_method=payment_method))
+    except DjangoValidationError as exc:
+        raise service_validation_error(exc)
 
 
 @api_view(["GET"])
@@ -295,8 +313,9 @@ class TicketViewSet(viewsets.ModelViewSet):
         return queryset
 
     def get_permissions(self):
+        # Vente et encaissement : client connecté (ses propres billets), guichet ou admin.
         if self.action in {"create", "pay"}:
-            return [AllowAny()]
+            return [IsClientCounterOrAdmin()]
         if self.action in {"update", "partial_update", "destroy"}:
             return [IsAxisAdmin()]
         return [IsAuthenticated()]
@@ -320,12 +339,8 @@ class TicketViewSet(viewsets.ModelViewSet):
             customer_id = request.data.get("customer")
             customer = User.objects.filter(pk=customer_id, role=User.Role.CLIENT).first() if customer_id else None
             channel = Ticket.Channel.COUNTER
-        elif request.user.is_authenticated and request.user.role == User.Role.CONTROLLER:
-            raise ValidationError("Le rôle contrôleur ne permet pas de vendre un billet.")
         else:
-            # Guest checkout
-            customer = None
-            channel = Ticket.Channel.ONLINE
+            raise PermissionDenied("Ce rôle ne permet pas de vendre un billet.")
         try:
             ticket = reserve_ticket(
                 trip=data["trip"],
@@ -341,8 +356,6 @@ class TicketViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def pay(self, request, pk=None):
-        if request.user.is_authenticated and request.user.role == User.Role.CONTROLLER:
-            raise ValidationError("Le rôle contrôleur ne permet pas d'enregistrer un paiement.")
         ticket = self.get_object()
         payment_method = PaymentMethod.objects.filter(pk=request.data.get("payment_method")).first()
         if not payment_method:
@@ -357,6 +370,8 @@ class TicketViewSet(viewsets.ModelViewSet):
             )
         except DjangoValidationError as exc:
             raise service_validation_error(exc)
+        if settlement.refund_due:
+            return refund_due_response()
         return Response(
             {
                 "ticket": TicketSerializer(settlement.target).data,
@@ -420,8 +435,9 @@ class BookingViewSet(viewsets.ModelViewSet):
     serializer_class = BookingSerializer
 
     def get_permissions(self):
-        if self.action in {"create", "retrieve", "pay"}:
-            return [AllowAny()]
+        # Route interne : la réservation invitée n'existe que sur /api/v1/client/.
+        if self.action in {"create", "pay"}:
+            return [IsClientCounterOrAdmin()]
         if self.action in {"update", "partial_update", "destroy"}:
             return [IsAxisAdmin()]
         return [IsAuthenticated()]
@@ -507,6 +523,8 @@ class BookingViewSet(viewsets.ModelViewSet):
             )
         except DjangoValidationError as exc:
             raise service_validation_error(exc)
+        if settlement.refund_due:
+            return refund_due_response()
         booking = self.queryset.get(pk=booking.pk)
         transactions = TransactionSerializer(
             settlement.transactions, many=True, context={"request": request}
@@ -725,7 +743,7 @@ class FedaPayWebhookView(APIView):
             return Response({"error": exc.messages}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {
-                "status": "SUCCESS",
+                "status": "REFUND_DUE" if settlement.refund_due else "SUCCESS",
                 "booking_id": settlement.target.pk,
                 "tickets_issued": len(settlement.tickets),
                 "already_processed": not settlement.created,
@@ -791,72 +809,60 @@ class StaffTicketViewSet(viewsets.GenericViewSet):
             "message": "Billet validé avec succès."
         })
 
-    @action(detail=False, methods=["post"])
+    @action(detail=False, methods=["post"], permission_classes=[IsCounterOrAdmin])
     def sell_counter(self, request):
         """
-        Délivre un billet directement au guichet (paiement en agence).
-        Sécurisé par select_for_update contre la surréservation.
+        Vente au guichet (COUNTER ou ADMIN) : le tarif vient de FareRule, l'encaissement
+        passe par le même chemin que tout autre paiement et crée reçu + transaction.
         """
-        trip_id = request.data.get("trip_id")
-        seat_id = request.data.get("seat_id")
-        passenger_name = request.data.get("passenger_name", "Passager Guichet")
-        passenger_phone = request.data.get("passenger_phone", "")
+        passenger_name = str(request.data.get("passenger_name") or "").strip()
+        if not request.data.get("trip_id") or not request.data.get("seat_id") or not passenger_name:
+            raise ValidationError("trip_id, seat_id et passenger_name sont requis.")
+        trip = Trip.objects.filter(pk=request.data.get("trip_id")).first()
+        if not trip:
+            raise ValidationError({"trip_id": "Trajet introuvable."})
+        if trip.departure_at < timezone.now():
+            raise ValidationError("Impossible de vendre un billet pour un trajet passé.")
+        seat = Seat.objects.filter(pk=request.data.get("seat_id"), trip=trip).first()
+        if not seat:
+            raise ValidationError({"seat_id": "Siège introuvable pour ce trajet."})
+        payment_method = PaymentMethod.objects.filter(pk=request.data.get("payment_method"), active=True).first()
+        if not payment_method:
+            raise ValidationError({"payment_method": "Moyen de paiement introuvable ou inactif."})
 
-        if not trip_id or not seat_id:
-            return Response({"error": "trip_id et seat_id sont requis."}, status=status.HTTP_400_BAD_REQUEST)
-
-        from django.db import transaction
-        from .models import Trip, Seat, Ticket, Passenger, Booking, TicketStatusHistory
-        from django.utils import timezone
-
-        with transaction.atomic():
-            try:
-                locked_trip = Trip.objects.select_for_update().get(pk=trip_id)
-            except Trip.DoesNotExist:
-                return Response({"error": "Trajet introuvable."}, status=status.HTTP_400_BAD_REQUEST)
-
-            if locked_trip.departure_at < timezone.now():
-                return Response({"error": "Impossible de vendre un billet pour un trajet passé."}, status=status.HTTP_400_BAD_REQUEST)
-
-            try:
-                locked_seat = Seat.objects.select_for_update().get(pk=seat_id, trip=locked_trip)
-            except Seat.DoesNotExist:
-                return Response({"error": "Siège introuvable pour ce trajet."}, status=status.HTTP_400_BAD_REQUEST)
-
-            if locked_seat.status != Seat.Status.AVAILABLE:
-                return Response({"error": "Désolé, ce siège vient juste d'être réservé ou vendu. Capacité atteinte pour cette place."}, status=status.HTTP_400_BAD_REQUEST)
-
-            # Création immédiate du ticket (Paiement Guichet)
-            booking = Booking.objects.create(
-                trip=locked_trip,
-                customer=request.user if request.user.is_authenticated else None,
-                status=Booking.Status.CONFIRMED,
-                amount=locked_trip.route.base_fare, # Simplification tarif
-            )
-            passenger = Passenger.objects.create(
-                booking=booking, full_name=passenger_name, phone=passenger_phone
-            )
-            ticket = Ticket.objects.create(
-                booking=booking,
-                passenger=passenger,
-                trip=locked_trip,
-                seat=locked_seat,
-                passenger_name=passenger_name,
-                passenger_phone=passenger_phone,
-                channel=Ticket.Channel.COUNTER,
-                status=Ticket.Status.ISSUED,
-                amount=booking.amount,
-            )
-            TicketStatusHistory.objects.create(ticket=ticket, to_status=Ticket.Status.ISSUED, changed_by=request.user)
-            locked_seat.status = Seat.Status.PAID
-            locked_seat.save(update_fields=["status", "updated_at"])
-
-        return Response({
-            "status": "SUCCESS",
-            "message": "Billet délivré avec succès au guichet.",
-            "ticket_reference": ticket.reference,
-            "qr_token": str(ticket.qr_token)
-        })
+        try:
+            with transaction.atomic():
+                booking, _ = reserve_booking(
+                    trip=trip,
+                    passengers=[
+                        {
+                            "full_name": passenger_name,
+                            "phone": str(request.data.get("passenger_phone") or ""),
+                            "seat": seat,
+                        }
+                    ],
+                    channel=Ticket.Channel.COUNTER,
+                )
+                settlement = settle_booking_payment(
+                    booking,
+                    payment_method=payment_method,
+                    actor=request.user,
+                    external_reference=request.data.get("external_reference", ""),
+                )
+        except (DjangoValidationError, ImproperlyConfigured) as exc:
+            raise service_validation_error(exc)
+        ticket, payment = settlement.tickets[0], settlement.transactions[0]
+        return Response(
+            {
+                "status": "SUCCESS",
+                "ticket_reference": ticket.reference,
+                "qr_token": str(ticket.qr_token),
+                "amount": ticket.amount,
+                "currency": ticket.currency,
+                "transaction_reference": payment.reference,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class PublicTicketDetailView(APIView):

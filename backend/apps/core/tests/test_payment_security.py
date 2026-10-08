@@ -33,11 +33,12 @@ def make_booking(context, *, customer=None, seats=2, offset=0):
     return booking
 
 
-def fedapay_transaction(booking, *, transaction_id="1001", amount=None, status="approved", metadata=None):
+def fedapay_transaction(booking, *, transaction_id="1001", amount=None, status="approved", metadata=None, currency="XOF"):
     return {
         "id": int(transaction_id),
         "status": status,
         "amount": int(booking.amount if amount is None else amount),
+        "currency": {"iso": currency} if currency else None,
         "custom_metadata": {"booking_id": booking.pk} if metadata is None else metadata,
     }
 

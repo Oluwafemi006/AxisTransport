@@ -24,6 +24,7 @@ from .models import (
     User,
     Vehicle,
 )
+from .payments import payment_quote
 from .services import rental_is_available, resolve_fare
 
 
@@ -352,6 +353,7 @@ class BookingSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     passengers = BookingPassengerSerializer(many=True, read_only=True)
     tickets = TicketSerializer(many=True, read_only=True)
+    payment_quotes = serializers.SerializerMethodField()
 
     class Meta:
         model = Booking
@@ -371,8 +373,17 @@ class BookingSerializer(serializers.ModelSerializer):
             "currency",
             "passengers",
             "tickets",
+            "payment_quotes",
             "created_at",
         ]
+
+    def get_payment_quotes(self, obj):
+        """Montant à payer par moyen de paiement (frais inclus), calculé par le serveur."""
+        if obj.status != Booking.Status.HELD:
+            return []
+        if not hasattr(self, "_active_payment_methods"):
+            self._active_payment_methods = list(PaymentMethod.objects.filter(active=True))
+        return [payment_quote(obj, method) for method in self._active_payment_methods]
 
 
 class ParcelStatusHistorySerializer(serializers.ModelSerializer):
@@ -470,7 +481,6 @@ class TransactionSerializer(serializers.ModelSerializer):
 
 class PublicTicketDetailSerializer(serializers.ModelSerializer):
     passenger_name = serializers.CharField(read_only=True)
-    passenger_phone = serializers.CharField(read_only=True)
     seat_label = serializers.SerializerMethodField()
     origin = serializers.SerializerMethodField()
     destination = serializers.SerializerMethodField()
@@ -487,7 +497,6 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
             "status",
             "status_display",
             "passenger_name",
-            "passenger_phone",
             "seat_label",
             "origin",
             "destination",

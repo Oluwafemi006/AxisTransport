@@ -63,7 +63,14 @@ from .services import (
     reserve_ticket,
     transition_parcel,
 )
-from .views import FedaPayWebhookView, KKiaPayWebhookView, PublicTicketDetailView, service_validation_error
+from .views import (
+    FedaPayWebhookView,
+    KKiaPayWebhookView,
+    PublicTicketDetailView,
+    checkout_response,
+    refund_due_response,
+    service_validation_error,
+)
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -221,6 +228,11 @@ class ClientTicketViewSet(viewsets.GenericViewSet):
         )
 
     @action(detail=True, methods=["post"])
+    def checkout(self, request, pk=None):
+        """Crée la transaction chez le prestataire : montant fixé par le serveur, lien de paiement renvoyé."""
+        return checkout_response(get_object_or_404(self.get_queryset(), pk=pk), request)
+
+    @action(detail=True, methods=["post"])
     def pay(self, request, pk=None):
         """
         Paiement d'un billet du client. Vérifie l'ownership avant paiement.
@@ -243,6 +255,8 @@ class ClientTicketViewSet(viewsets.GenericViewSet):
             )
         except DjangoValidationError as exc:
             raise service_validation_error(exc)
+        if settlement.refund_due:
+            return refund_due_response()
         return Response({
             "ticket": TicketSerializer(settlement.target).data,
             "transaction": TransactionSerializer(settlement.transactions[0]).data,
@@ -349,6 +363,11 @@ class ClientBookingViewSet(viewsets.GenericViewSet):
         return Response(self._serialized_booking(booking))
 
     @action(detail=True, methods=["post"])
+    def checkout(self, request, pk=None):
+        """Crée la transaction chez le prestataire : montant fixé par le serveur, lien de paiement renvoyé."""
+        return checkout_response(self._get_booking(pk), request)
+
+    @action(detail=True, methods=["post"])
     def pay(self, request, pk=None):
         """Paiement d'une réservation. Vérifie l'ownership ou le guest_token."""
         booking = self._get_booking(pk)
@@ -369,6 +388,8 @@ class ClientBookingViewSet(viewsets.GenericViewSet):
             )
         except DjangoValidationError as exc:
             raise service_validation_error(exc)
+        if settlement.refund_due:
+            return refund_due_response()
         booking = self.BASE_QUERYSET.get(pk=booking.pk)
         transactions = TransactionSerializer(
             settlement.transactions, many=True, context={"request": request}

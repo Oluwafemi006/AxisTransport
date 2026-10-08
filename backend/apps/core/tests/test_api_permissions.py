@@ -32,7 +32,8 @@ class RolePermissionTests(APITestCase):
                 "passenger_name": "Voyageur",
             },
         )
-        self.assertEqual(response.status_code, 400)
+        # Refus par permission (rôle non autorisé), et non plus par une erreur de validation.
+        self.assertEqual(response.status_code, 403)
 
     def test_public_registration_always_creates_client(self):
         self.client.force_authenticate(user=None)

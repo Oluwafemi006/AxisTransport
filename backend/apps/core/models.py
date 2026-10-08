@@ -258,6 +258,7 @@ class Booking(TimeStampedModel):
         CONFIRMED = "CONFIRMED", "Confirmée"
         CANCELLED = "CANCELLED", "Annulée"
         EXPIRED = "EXPIRED", "Expirée"
+        REFUND_DUE = "REFUND_DUE", "Payée après expiration – à rembourser"
 
     reference = models.CharField(max_length=40, unique=True, editable=False)
     trip = models.ForeignKey(Trip, on_delete=models.PROTECT, related_name="bookings")
@@ -571,6 +572,11 @@ class PaymentReceipt(TimeStampedModel):
     currency = models.CharField(max_length=3, default="XOF")
     source = models.CharField(max_length=16, choices=Source.choices)
     recorded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    refund_due = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Paiement reçu après expiration de la réservation : aucun billet émis, à rembourser.",
+    )
 
     class Meta:
         ordering = ["-created_at"]

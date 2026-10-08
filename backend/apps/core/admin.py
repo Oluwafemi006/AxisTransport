@@ -74,6 +74,13 @@ class VehicleAdmin(admin.ModelAdmin):
     list_filter = ("category", "state", "base_location")
 
 
+@admin.register(PaymentReceipt)
+class PaymentReceiptAdmin(admin.ModelAdmin):
+    list_display = ("provider", "external_id", "booking", "ticket", "amount", "currency", "source", "refund_due", "created_at")
+    list_filter = ("refund_due", "provider", "source")
+    search_fields = ("external_id", "booking__reference", "ticket__reference")
+
+
 admin.site.register(
     [
         Location,
@@ -87,7 +94,6 @@ admin.site.register(
         ParcelStatusHistory,
         RentalBooking,
         PaymentMethod,
-        PaymentReceipt,
         Transaction,
     ]
 )

@@ -13,15 +13,16 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 import requests
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from .models import Booking, PaymentMethod, PaymentReceipt, Ticket, Transaction, User
-from .services import pay_and_issue_booking, pay_and_issue_ticket
+from .services import pay_and_issue_booking, pay_and_issue_ticket, transition_ticket
 
 FEDAPAY = "FEDAPAY"
 KKIAPAY = "KKIAPAY"
@@ -48,35 +49,54 @@ class Settlement:
     tickets: list
     transactions: list
     created: bool
+    # Paiement reçu après expiration : reçu enregistré, aucun billet émis, remboursement à faire.
+    refund_due: bool = False
+
+
+REFUND_DUE_MESSAGE = (
+    "Paiement reçu après l'expiration de la réservation : aucun billet n'a été émis. "
+    "Le paiement est enregistré et sera remboursé par Axis."
+)
 
 
 # ─── Vérification auprès des prestataires ────────────────────────────────────
 
-def _fedapay_fetch_transaction(transaction_id):
-    """Interroge l'API FedaPay. Isolé pour pouvoir être remplacé dans les tests."""
+def _fedapay_request(method, path, *, payload=None):
     base_url = (
         "https://api.fedapay.com"
         if settings.FEDAPAY_ENVIRONMENT == "live"
         else "https://sandbox-api.fedapay.com"
     )
     try:
-        response = requests.get(
-            f"{base_url}/v1/transactions/{transaction_id}",
-            headers={"Authorization": f"Bearer {settings.FEDAPAY_SECRET_KEY}"},
-            timeout=10,
+        response = requests.request(
+            method,
+            f"{base_url}/v1/{path}",
+            json=payload,
+            headers={"Authorization": f"Bearer {settings.FEDAPAY_SECRET_KEY}", "Accept": "application/json"},
+            timeout=15,
         )
     except requests.RequestException as exc:
-        raise ValidationError("Impossible de contacter FedaPay pour vérifier le paiement.") from exc
+        raise ValidationError("Impossible de contacter FedaPay.") from exc
     if response.status_code != 200:
-        raise ValidationError(f"Vérification FedaPay refusée (HTTP {response.status_code}).")
+        raise ValidationError(f"Requête FedaPay refusée (HTTP {response.status_code}).")
     try:
         data = response.json()
     except ValueError as exc:
         raise ValidationError("Réponse FedaPay illisible.") from exc
-    transaction_data = data.get("v1/transaction") or data.get("transaction") or data
+    transaction_data = data.get("v1/transaction") if isinstance(data, dict) else None
     if not isinstance(transaction_data, dict):
         raise ValidationError("Réponse FedaPay inattendue.")
     return transaction_data
+
+
+def _fedapay_fetch_transaction(transaction_id):
+    """Relit une transaction auprès de FedaPay, devise incluse. Isolé pour pouvoir être remplacé dans les tests."""
+    return _fedapay_request("GET", f"transactions/{transaction_id}?include=currency")
+
+
+def _fedapay_create_transaction(payload):
+    """Crée une transaction FedaPay. Isolé pour pouvoir être remplacé dans les tests."""
+    return _fedapay_request("POST", "transactions", payload=payload)
 
 
 def verify_fedapay_transaction(transaction_id):
@@ -94,11 +114,16 @@ def verify_fedapay_transaction(transaction_id):
         amount = Decimal(str(data.get("amount")))
     except (InvalidOperation, TypeError) as exc:
         raise ValidationError("Montant FedaPay illisible.") from exc
+    currency = data.get("currency")
+    currency_iso = str(currency.get("iso", "")) if isinstance(currency, dict) else ""
+    if currency_iso != "XOF":
+        raise ValidationError("La transaction FedaPay n'est pas libellée en XOF.")
     metadata = data.get("custom_metadata")
     return VerifiedPayment(
         provider=FEDAPAY,
         external_id=transaction_id,
         amount=amount,
+        currency=currency_iso,
         metadata=metadata if isinstance(metadata, dict) else {},
     )
 
@@ -139,7 +164,7 @@ def _counter_payment(payment_method, *, actor, target):
     return VerifiedPayment(
         provider=payment_method.code.upper(),
         external_id=f"GUICHET-{uuid.uuid4().hex[:16].upper()}",
-        amount=target.amount,
+        amount=amount_due(target, payment_method),
         currency=target.currency,
         metadata=_binding_keys(target),
     )
@@ -161,14 +186,112 @@ def _is_bound_to(proof, target):
     )
 
 
-def amount_due(target):
-    """Montant exact attendu pour la réservation ou le billet."""
-    return target.amount
+def payment_quote(target, payment_method):
+    """
+    Montant à payer, calculé uniquement ici : prix + frais du moyen de paiement
+    (fee_percentage, à la charge du client), total arrondi au franc.
+    """
+    base = target.amount
+    total = (base * (Decimal(100) + payment_method.fee_percentage) / Decimal(100)).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+    return {
+        "payment_method": payment_method.pk,
+        "code": payment_method.code,
+        "label": payment_method.label,
+        "amount": base,
+        "fee_percentage": payment_method.fee_percentage,
+        "fee_amount": total - base,
+        "total": total,
+        "currency": target.currency,
+    }
+
+
+def amount_due(target, payment_method):
+    """Montant exact attendu pour la réservation ou le billet, frais inclus."""
+    return payment_quote(target, payment_method)["total"]
+
+
+def _is_expired(locked):
+    expired_statuses = (
+        {Booking.Status.EXPIRED, Booking.Status.CANCELLED, Booking.Status.REFUND_DUE}
+        if isinstance(locked, Booking)
+        else {Ticket.Status.EXPIRED, Ticket.Status.CANCELLED}
+    )
+    if locked.status in expired_statuses:
+        return True
+    return bool(
+        locked.status == "HELD"
+        and locked.reservation_expires_at
+        and locked.reservation_expires_at <= timezone.now()
+    )
+
+
+def _mark_refund_due(locked):
+    """Libère les sièges encore bloqués et signale la réservation comme payée après expiration."""
+    tickets = locked.tickets.all() if isinstance(locked, Booking) else [locked]
+    for ticket in tickets:
+        if ticket.status == Ticket.Status.HELD:
+            transition_ticket(ticket, Ticket.Status.EXPIRED, note="Paiement reçu après expiration : à rembourser")
+    if isinstance(locked, Booking):
+        locked.status = Booking.Status.REFUND_DUE
+        locked.save(update_fields=["status", "updated_at"])
+    else:
+        locked.refresh_from_db()
+
+
+# ─── Création de la transaction chez le prestataire ──────────────────────────
+
+def create_checkout(target, *, payment_method):
+    """
+    Prépare le paiement en ligne d'une réservation ou d'un billet : le montant est fixé ici,
+    et la transaction créée chez le prestataire porte l'identifiant de la réservation.
+    """
+    if not payment_method.active:
+        raise ValidationError("Ce moyen de paiement n'est pas actif.")
+    provider = payment_method.code.upper()
+    if provider not in ONLINE_PROVIDERS:
+        raise ValidationError("Ce moyen de paiement ne peut être encaissé qu'au guichet.")
+    if not isinstance(target, Booking) and target.booking_id:
+        raise ValidationError("Ce billet fait partie d'une réservation : le paiement porte sur la réservation.")
+    if target.status != "HELD" or _is_expired(target):
+        raise ValidationError("Cette réservation n'est plus en attente de paiement.")
+    quote = payment_quote(target, payment_method)
+
+    if provider == SIMULATION:
+        if not (settings.DEBUG and settings.AXIS_PAYMENT_SIMULATION):
+            raise ValidationError("Le paiement simulé est désactivé.")
+        return {"transaction_id": f"SIM-{uuid.uuid4().hex[:16].upper()}", "payment_url": None, "simulated": True, **quote}
+    if provider == KKIAPAY:
+        verify_kkiapay_transaction(None)
+    if not settings.FEDAPAY_SECRET_KEY:
+        raise ValidationError("Paiement FedaPay indisponible : la clé secrète n'est pas configurée.")
+    if target.currency != "XOF":
+        raise ValidationError("FedaPay n'est configuré que pour les paiements en XOF.")
+    data = _fedapay_create_transaction(
+        {
+            "description": f"Axis Transport {target.reference}",
+            "amount": int(quote["total"]),
+            "currency": {"iso": "XOF"},
+            "callback_url": settings.FEDAPAY_CALLBACK_URL,
+            "custom_metadata": _binding_keys(target),
+        }
+    )
+    if not data.get("id") or not data.get("payment_url"):
+        raise ValidationError("FedaPay n'a pas renvoyé de lien de paiement.")
+    return {
+        "transaction_id": str(data["id"]),
+        "payment_url": data["payment_url"],
+        "simulated": False,
+        **quote,
+    }
 
 
 # ─── Émission ────────────────────────────────────────────────────────────────
 
-def _existing_settlement(locked):
+def _existing_settlement(locked, receipt):
+    if receipt.refund_due:
+        return Settlement(target=locked, tickets=[], transactions=[], created=False, refund_due=True)
     if isinstance(locked, Booking):
         tickets = list(locked.tickets.order_by("created_at"))
     else:
@@ -193,7 +316,9 @@ def _settle(target, *, payment_method, external_reference, actor, source, proof=
             reference = str(external_reference or "").strip()
             if not reference:
                 raise ValidationError("Une référence de paiement vérifiable est requise.")
-            proof = _verify_online_payment(provider, reference, target=target, amount=amount_due(target))
+            proof = _verify_online_payment(
+                provider, reference, target=target, amount=amount_due(target, payment_method)
+            )
         else:
             proof = _counter_payment(payment_method, actor=actor, target=target)
             source = PaymentReceipt.Source.COUNTER
@@ -209,18 +334,18 @@ def _settle(target, *, payment_method, external_reference, actor, source, proof=
         existing = PaymentReceipt.objects.filter(provider=proof.provider, external_id=proof.external_id).first()
         if existing:
             if (existing.booking_id if is_booking else existing.ticket_id) == locked.pk:
-                return _existing_settlement(locked)
+                return _existing_settlement(locked, existing)
             raise ValidationError("Cette transaction a déjà été utilisée pour une autre réservation.")
 
         # 3. Contrôles : rattachement, devise, montant exact.
         if not _is_bound_to(proof, locked):
             raise ValidationError("Cette transaction n'a pas été créée pour cette réservation.")
-        if proof.currency and proof.currency != locked.currency:
+        if proof.currency != locked.currency:
             raise ValidationError("La devise du paiement ne correspond pas à la réservation.")
-        if proof.amount != amount_due(locked):
-            raise ValidationError(
-                f"Montant payé ({proof.amount}) différent du montant dû ({amount_due(locked)})."
-            )
+        due = amount_due(locked, payment_method)
+        if proof.amount != due:
+            raise ValidationError(f"Montant payé ({proof.amount}) différent du montant dû ({due}).")
+        refund_due = _is_expired(locked)
 
         # 4. Enregistrement du reçu : les contraintes uniques en base tranchent les accès concurrents.
         try:
@@ -232,6 +357,7 @@ def _settle(target, *, payment_method, external_reference, actor, source, proof=
                     currency=locked.currency,
                     source=source,
                     recorded_by=actor if actor and actor.is_authenticated else None,
+                    refund_due=refund_due,
                     **target_filter,
                 )
         except IntegrityError as exc:
@@ -239,7 +365,12 @@ def _settle(target, *, payment_method, external_reference, actor, source, proof=
                 "Cette transaction a déjà été utilisée ou cette réservation est déjà réglée."
             ) from exc
 
-        # 5. Émission.
+        # 5. Paiement arrivé après expiration : le reçu est conservé, aucun billet n'est émis.
+        if refund_due:
+            _mark_refund_due(locked)
+            return Settlement(target=locked, tickets=[], transactions=[], created=True, refund_due=True)
+
+        # 6. Émission.
         issuer = actor if actor and actor.is_authenticated else None
         if is_booking:
             locked, tickets, payments = pay_and_issue_booking(

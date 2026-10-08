@@ -31,6 +31,9 @@ class PublicTicketAPITest(APITestCase):
         self.assertEqual(data["destination"], "Ville arrivée")
         self.assertEqual(data["status"], Ticket.Status.ISSUED)
         self.assertIn("AXIS Transport", data["company_name"])
+        # Le téléphone du passager ne doit jamais sortir sur une page publique.
+        self.assertNotIn("passenger_phone", data)
+        self.assertNotIn("+22901020304", response.content.decode())
 
     def test_get_public_ticket_not_found(self):
         response = self.client.get("/api/v1/client/tickets/public/INVALID-REF/")

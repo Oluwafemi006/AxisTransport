@@ -126,6 +126,8 @@ PUBLIC_WEB_URL = os.environ.get("PUBLIC_WEB_URL", "https://axis.bj")
 FEDAPAY_SECRET_KEY = os.environ.get("FEDAPAY_SECRET_KEY", "")
 FEDAPAY_WEBHOOK_SECRET = os.environ.get("FEDAPAY_WEBHOOK_SECRET", "")
 FEDAPAY_ENVIRONMENT = os.environ.get("FEDAPAY_ENVIRONMENT", "sandbox").lower()  # 'sandbox' ou 'live'
+# Adresse vers laquelle FedaPay renvoie le client après le paiement.
+FEDAPAY_CALLBACK_URL = os.environ.get("FEDAPAY_CALLBACK_URL", f"{PUBLIC_WEB_URL}/")
 # Écart maximal accepté entre l'horodatage signé du webhook et l'heure du serveur (0 = pas de contrôle).
 FEDAPAY_WEBHOOK_TOLERANCE_SECONDS = int(os.environ.get("FEDAPAY_WEBHOOK_TOLERANCE_SECONDS", "300"))
 

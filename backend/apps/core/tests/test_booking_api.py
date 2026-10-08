@@ -24,7 +24,7 @@ class BookingApiTests(APITestCase):
         trip = self.context["trip"]
         seats = list(trip.seats.order_by("number")[:2])
         response = self.client.post(
-            "/api/bookings/",
+            "/api/v1/client/bookings/",
             {
                 "trip": trip.pk,
                 "contact_phone": "90000000",
@@ -43,16 +43,16 @@ class BookingApiTests(APITestCase):
         self.assertEqual(len(response.data["passengers"]), 2)
         self.assertEqual(Ticket.objects.filter(booking_id=booking_id, status=Ticket.Status.HELD).count(), 2)
 
-        forbidden = self.client.get(f"/api/bookings/{booking_id}/")
+        forbidden = self.client.get(f"/api/v1/client/bookings/{booking_id}/")
         self.assertEqual(forbidden.status_code, 403)
 
         self.client.credentials(HTTP_X_BOOKING_TOKEN=guest_token)
-        retrieved = self.client.get(f"/api/bookings/{booking_id}/")
+        retrieved = self.client.get(f"/api/v1/client/bookings/{booking_id}/")
         self.assertEqual(retrieved.status_code, 200)
 
         # Sans preuve de paiement vérifiée, rien n'est émis.
         unpaid = self.client.post(
-            f"/api/bookings/{booking_id}/pay/",
+            f"/api/v1/client/bookings/{booking_id}/pay/",
             {"payment_method": self.context["payment_method"].pk},
             format="json",
         )
@@ -60,12 +60,18 @@ class BookingApiTests(APITestCase):
         self.assertEqual(Ticket.objects.filter(booking_id=booking_id, status=Ticket.Status.HELD).count(), 2)
 
         fedapay = PaymentMethod.objects.create(code="FEDAPAY", label="FedaPay", active=True)
-        verified = {"id": 4242, "status": "approved", "amount": 2000, "custom_metadata": {"booking_id": booking_id}}
+        verified = {
+            "id": 4242,
+            "status": "approved",
+            "amount": 2000,
+            "currency": {"iso": "XOF"},
+            "custom_metadata": {"booking_id": booking_id},
+        }
         with override_settings(FEDAPAY_SECRET_KEY="sk_sandbox_test"), mock.patch(
             "apps.core.payments._fedapay_fetch_transaction", return_value=verified
         ):
             paid = self.client.post(
-                f"/api/bookings/{booking_id}/pay/",
+                f"/api/v1/client/bookings/{booking_id}/pay/",
                 {"payment_method": fedapay.pk, "external_reference": "4242"},
                 format="json",
             )
@@ -84,7 +90,7 @@ class BookingApiTests(APITestCase):
         trip = self.context["trip"]
         seat = trip.seats.first()
         response = self.client.post(
-            "/api/bookings/",
+            "/api/v1/client/bookings/",
             {
                 "trip": trip.pk,
                 "passengers": [
@@ -108,7 +114,7 @@ class BookingApiTests(APITestCase):
         seat.save(update_fields=["allowed_passenger_types", "updated_at"])
 
         response = self.client.post(
-            "/api/bookings/",
+            "/api/v1/client/bookings/",
             {
                 "trip": trip.pk,
                 "passengers": [
