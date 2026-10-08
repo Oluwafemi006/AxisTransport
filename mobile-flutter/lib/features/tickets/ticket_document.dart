@@ -123,3 +123,16 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) {
   );
   return document.save();
 }
+
+/// Message de partage : la référence et le trajet. Le lien n'apparaît que si le serveur
+/// fournit l'adresse publique du site ; l'application n'en fabrique jamais.
+String ticketShareText(Ticket ticket) {
+  final route = ticketFields(ticket).firstWhere((item) => item.$1 == 'Trajet').$2;
+  final lines = [
+    'AXIS Transport',
+    'Billet : ${ticket.reference}',
+    'Trajet : $route',
+    if (ticket.publicUrl.isNotEmpty) ...['', 'Consultez votre billet :', ticket.publicUrl],
+  ];
+  return lines.join('\n');
+}

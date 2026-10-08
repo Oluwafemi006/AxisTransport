@@ -316,7 +316,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             children: [
               Expanded(
                 child: _ServiceShortcut(
-                  label: 'Colis',
+                  label: 'Suivi de colis',
                   icon: Icons.inventory_2_outlined,
                   onTap: () => context.go('/colis'),
                 ),

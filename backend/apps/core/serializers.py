@@ -28,6 +28,12 @@ from .payments import ONLINE_PROVIDERS, payment_quote
 from .services import rental_is_available, resolve_fare
 
 
+def public_ticket_url(ticket):
+    """Lien public du billet, ou chaîne vide tant que l'adresse du site n'est pas configurée."""
+    base = (settings.PUBLIC_WEB_URL or "").rstrip("/")
+    return f"{base}/t/{ticket.reference}" if base else ""
+
+
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
     role_display = serializers.CharField(source="get_role_display", read_only=True)
@@ -256,12 +262,14 @@ class TicketSerializer(serializers.ModelSerializer):
     channel_display = serializers.CharField(source="get_channel_display", read_only=True)
     status_history = TicketStatusHistorySerializer(many=True, read_only=True)
     controls = TicketControlSerializer(many=True, read_only=True)
+    public_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Ticket
         fields = [
             "id",
             "reference",
+            "public_url",
             "trip",
             "trip_detail",
             "seat",
@@ -282,6 +290,10 @@ class TicketSerializer(serializers.ModelSerializer):
             "controls",
             "created_at",
         ]
+
+
+    def get_public_url(self, obj):
+        return public_ticket_url(obj)
 
 
 class ControllerTicketSerializer(serializers.ModelSerializer):
@@ -536,6 +548,5 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
         return "AXIS Transport"
 
     def get_public_url(self, obj):
-        domain = getattr(settings, "PUBLIC_WEB_URL", "https://axis.bj")
-        return f"{domain}/t/{obj.reference}"
+        return public_ticket_url(obj)
 

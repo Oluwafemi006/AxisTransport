@@ -278,15 +278,15 @@ def create_checkout(target, *, payment_method):
         raise ValidationError("Paiement FedaPay indisponible : la clé secrète n'est pas configurée.")
     if target.currency != "XOF":
         raise ValidationError("FedaPay n'est configuré que pour les paiements en XOF.")
-    data = _fedapay_create_transaction(
-        {
-            "description": f"Axis Transport {target.reference}",
-            "amount": int(quote["total"]),
-            "currency": {"iso": "XOF"},
-            "callback_url": settings.FEDAPAY_CALLBACK_URL,
-            "custom_metadata": _binding_keys(target),
-        }
-    )
+    payload = {
+        "description": f"Axis Transport {target.reference}",
+        "amount": int(quote["total"]),
+        "currency": {"iso": "XOF"},
+        "custom_metadata": _binding_keys(target),
+    }
+    if settings.FEDAPAY_CALLBACK_URL:
+        payload["callback_url"] = settings.FEDAPAY_CALLBACK_URL
+    data = _fedapay_create_transaction(payload)
     if not data.get("id") or not data.get("payment_url"):
         raise ValidationError("FedaPay n'a pas renvoyé de lien de paiement.")
     return {

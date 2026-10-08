@@ -77,6 +77,13 @@ class FeesAndCheckoutTests(APITestCase):
         self.assertEqual(response.data["payment_url"], created["payment_url"])
         self.assertEqual(Decimal(str(response.data["total"])), Decimal("2036"))
 
+    @override_settings(FEDAPAY_CALLBACK_URL="")
+    def test_checkout_sends_no_return_address_when_none_is_configured(self):
+        created = {"id": 777, "payment_url": "https://sandbox-process.fedapay.com/abc"}
+        with mock.patch(CREATE, return_value=created) as create:
+            self.client.post(f"{self.base}/checkout/", {"payment_method": self.fedapay.pk}, format="json")
+        self.assertNotIn("callback_url", create.call_args.args[0])
+
     def test_checkout_ignores_amount_sent_by_client(self):
         created = {"id": 777, "payment_url": "https://sandbox-process.fedapay.com/abc"}
         with mock.patch(CREATE, return_value=created) as create:

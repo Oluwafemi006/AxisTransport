@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/session.dart';
 import '../../core/theme.dart';
 import '../../shared/widgets.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.required = false});
+
+  /// Vrai quand l'écran est la porte d'entrée de l'application (aucun retour possible).
+  final bool required;
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -49,7 +51,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       } else {
         await session.login(_username.text.trim(), _password.text);
       }
-      if (mounted) context.pop();
+      // Écran d'entrée : l'application bascule d'elle-même dès que la session existe.
+      if (mounted && !widget.required) Navigator.of(context).maybePop();
     } catch (error) {
       if (mounted) setState(() => _message = error.toString());
     } finally {
@@ -75,9 +78,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Retrouvez vos billets, colis et locations dans votre compte Axis Transport.',
-            style: TextStyle(color: AxisColors.muted, height: 1.45),
+          Text(
+            widget.required
+                ? 'Connectez-vous ou créez un compte pour rechercher un trajet, réserver et payer.'
+                : 'Retrouvez vos billets, colis et locations dans votre compte Axis Transport.',
+            style: const TextStyle(color: AxisColors.muted, height: 1.45),
           ),
           if (_creating) ...[
             const SizedBox(height: 14),

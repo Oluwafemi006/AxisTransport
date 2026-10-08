@@ -20,7 +20,15 @@ class _MemoryStore extends SessionStore {
 
   @override
   Future<void> cacheTickets(List<Ticket> tickets) async {}
+
+  @override
+  Future<void> cacheUser(User user) async {}
+
+  @override
+  Future<User?> readCachedUser() async => null;
 }
+
+const _client = User(id: 1, username: 'eddy', firstName: 'Eddy', lastName: '', phone: '', role: 'CLIENT');
 
 class _OfflineStore extends _MemoryStore {
   _OfflineStore(this.ticket);
@@ -33,6 +41,10 @@ class _OfflineStore extends _MemoryStore {
   @override
   Future<Ticket?> findCachedTicket(int ticketId) async =>
       ticketId == ticket.id ? ticket : null;
+
+  // Client déjà connecté auparavant : sa session se rouvre sans réseau.
+  @override
+  Future<User?> readCachedUser() async => _client;
 }
 
 class _OfflineApi extends ApiClient {
@@ -148,10 +160,45 @@ class _BookingApi extends ApiClient {
   Future<List<PaymentMethod>> paymentMethods() async => [];
 
   @override
-  Future<User> me() async => throw ApiException('Non connecté');
+  Future<User> me() async => _client;
+}
+
+class _AnonymousBookingApi extends _BookingApi {
+  @override
+  Future<User> me() async => throw ApiException('Non connecté', statusCode: 401);
+}
+
+class _SignedOutApi extends ApiClient {
+  _SignedOutApi() : super(store: _MemoryStore());
+
+  @override
+  Future<User> me() async => throw ApiException('Non connecté', statusCode: 401);
 }
 
 void main() {
+  testWidgets('sans compte connecté, seule la connexion ou l’inscription est accessible', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [apiClientProvider.overrideWithValue(_SignedOutApi())],
+        child: const AxisTransportApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Se connecter'), findsOneWidget);
+    expect(find.text('Créer un compte client'), findsOneWidget);
+    expect(find.text('Où souhaitez-vous aller ?'), findsNothing);
+    expect(find.text('Rechercher un trajet'), findsNothing);
+    expect(find.text('Billets'), findsNothing);
+
+    await tester.tap(find.text('Créer un compte client'));
+    await tester.pumpAndSettle();
+    expect(find.text('Créer et continuer'), findsOneWidget);
+    expect(find.text('Téléphone'), findsOneWidget);
+  });
+
   testWidgets('affiche le parcours client Axis sans espace équipe', (
     tester,
   ) async {
@@ -166,7 +213,7 @@ void main() {
     expect(find.text('Où souhaitez-vous aller ?'), findsOneWidget);
     expect(find.text('Accueil'), findsOneWidget);
     expect(find.text('Billets'), findsOneWidget);
-    expect(find.text('Colis'), findsOneWidget);
+    expect(find.text('Suivi colis'), findsOneWidget);
     expect(find.text('Location'), findsOneWidget);
     expect(find.text('Profil'), findsOneWidget);
     expect(find.text('Espace équipe'), findsNothing);
@@ -226,7 +273,8 @@ void main() {
   testWidgets('le siège est proposé après saisie du passager', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [apiClientProvider.overrideWithValue(_BookingApi())],
+        // Écran isolé, sans nom prérempli par un compte.
+        overrides: [apiClientProvider.overrideWithValue(_AnonymousBookingApi())],
         child: const MaterialApp(home: BookingScreen(tripId: 1)),
       ),
     );

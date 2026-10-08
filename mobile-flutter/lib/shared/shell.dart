@@ -36,7 +36,7 @@ class AppShell extends StatelessWidget {
           NavigationDestination(
             icon: Icon(Icons.inventory_2_outlined),
             selectedIcon: Icon(Icons.inventory_2),
-            label: 'Colis',
+            label: 'Suivi colis',
           ),
           NavigationDestination(
             icon: Icon(Icons.directions_car_outlined),

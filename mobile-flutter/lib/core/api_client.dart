@@ -190,31 +190,13 @@ class ApiClient {
     return _list('/client/parcels/', (json) => Parcel.fromJson(json), auth: true);
   }
 
-  Future<Parcel> createParcel({
-    required String senderName,
-    required String senderPhone,
-    required String recipientName,
-    required String recipientPhone,
-    required int origin,
-    required int destination,
-    required String description,
-    String? weightKg,
-  }) async {
+  /// Suivi d'un colis par son code. Le client ne crée jamais de colis : l'agence l'enregistre.
+  Future<ParcelTracking> trackParcel(String code) async {
     final payload = await _request<Map<String, dynamic>>(
-      '/client/parcels/',
-      data: {
-        'sender_name': senderName,
-        'sender_phone': senderPhone,
-        'recipient_name': recipientName,
-        'recipient_phone': recipientPhone,
-        'origin': origin,
-        'destination': destination,
-        'description': description,
-        'weight_kg': weightKg?.isEmpty == true ? null : weightKg,
-      },
-      auth: true,
+      '/client/parcels/track/',
+      queryParameters: {'code': code},
     );
-    return Parcel.fromJson(payload);
+    return ParcelTracking.fromJson(payload);
   }
 
   Future<List<RentalBooking>> rentals() {

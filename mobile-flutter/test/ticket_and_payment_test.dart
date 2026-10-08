@@ -63,6 +63,22 @@ void main() {
       expect(ascii.decode(bytes.sublist(0, 5)), '%PDF-');
     });
 
+    test('le partage ne contient que la référence et le trajet tant que le site n’a pas d’adresse', () {
+      final text = ticketShareText(_ticket());
+      expect(text, contains('AX-20261008-ABCD1234'));
+      expect(text, contains('Cotonou → Parakou'));
+      expect(text, isNot(contains('http')));
+      expect(text, isNot(contains('axis.bj')));
+    });
+
+    test('le partage reprend le lien fourni par le serveur, sans le modifier', () {
+      final ticket = Ticket.fromJson({
+        ..._ticket().toJson(),
+        'public_url': 'https://exemple.test/t/AX-20261008-ABCD1234',
+      });
+      expect(ticketShareText(ticket), contains('https://exemple.test/t/AX-20261008-ABCD1234'));
+    });
+
     test('les caractères hors Latin-1 sont remplacés pour le PDF', () {
       expect(pdfSafe('Cotonou → Parakou'), 'Cotonou > Parakou');
       expect(pdfSafe('1 000 XOF'), '1 000 XOF');

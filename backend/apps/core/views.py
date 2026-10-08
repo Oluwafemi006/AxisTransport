@@ -134,6 +134,65 @@ class PublicContactView(APIView):
         )
 
 
+# Étapes montrées au client. Les étapes internes de l'agence (dépôt, acceptation, affectation)
+# restent regroupées sous « Enregistré ».
+PARCEL_TRACKING_STEPS = [
+    ("REGISTERED", "Enregistré", {"REGISTERED", "DEPOSITED", "ACCEPTED", "ASSIGNED"}),
+    ("LOADED", "Chargé", {"LOADED"}),
+    ("IN_TRANSIT", "En transit", {"IN_TRANSIT"}),
+    ("ARRIVED", "Arrivé", {"ARRIVED"}),
+    ("READY_FOR_PICKUP", "Disponible au retrait", {"READY_FOR_PICKUP"}),
+    ("PICKED_UP", "Retiré", {"PICKED_UP"}),
+]
+
+
+class ParcelTrackingView(APIView):
+    """
+    Suivi d'un colis par son code. Ne renvoie que le parcours et les étapes :
+    aucun nom, téléphone ni description.
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        code = str(request.query_params.get("code") or "").strip()
+        if not code:
+            raise ValidationError({"code": "Saisissez le code de suivi du colis."})
+        parcel = (
+            Parcel.objects.select_related("origin", "destination")
+            .prefetch_related("status_history")
+            .filter(tracking_number__iexact=code)
+            .first()
+        )
+        if not parcel:
+            return Response({"detail": "Aucun colis ne correspond à ce code."}, status=status.HTTP_404_NOT_FOUND)
+        current = next(
+            index for index, (_, _, statuses) in enumerate(PARCEL_TRACKING_STEPS) if parcel.status in statuses
+        )
+        history = list(parcel.status_history.all())
+        steps = []
+        for index, (key, label, statuses) in enumerate(PARCEL_TRACKING_STEPS):
+            reached = [entry.changed_at for entry in history if entry.to_status in statuses]
+            steps.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "done": index <= current,
+                    "current": index == current,
+                    "reached_at": min(reached) if reached and index <= current else None,
+                }
+            )
+        return Response(
+            {
+                "tracking_number": parcel.tracking_number,
+                "origin": parcel.origin.name,
+                "destination": parcel.destination.name,
+                "current_step": PARCEL_TRACKING_STEPS[current][1],
+                "steps": steps,
+            }
+        )
+
+
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -559,7 +618,8 @@ class ParcelViewSet(viewsets.ModelViewSet):
     permission_classes = [IsClientCounterOrAdmin]
 
     def get_permissions(self):
-        if self.action in {"update", "partial_update", "destroy", "transition"}:
+        # Le client ne crée jamais de colis : l'agence (guichet ou admin) l'enregistre.
+        if self.action in {"create", "update", "partial_update", "destroy", "transition"}:
             return [IsCounterOrAdmin()]
         return [IsClientCounterOrAdmin()]
 

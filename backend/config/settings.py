@@ -119,15 +119,19 @@ SIMPLE_JWT = {
 # --- Payment Provider Configuration ---
 ACTIVE_PAYMENT_PROVIDER = os.environ.get("ACTIVE_PAYMENT_PROVIDER", "fedapay").lower()
 
-# Public Web URL for sharing tickets
-PUBLIC_WEB_URL = os.environ.get("PUBLIC_WEB_URL", "https://axis.bj")
+# Adresse publique du site, utilisée pour les liens de billets. Aucune valeur par défaut :
+# tant qu'elle n'est pas renseignée, aucun lien n'est fabriqué.
+PUBLIC_WEB_URL = os.environ.get("PUBLIC_WEB_URL", "").strip().rstrip("/")
 
 # --- FedaPay Configuration ---
 FEDAPAY_SECRET_KEY = os.environ.get("FEDAPAY_SECRET_KEY", "")
 FEDAPAY_WEBHOOK_SECRET = os.environ.get("FEDAPAY_WEBHOOK_SECRET", "")
 FEDAPAY_ENVIRONMENT = os.environ.get("FEDAPAY_ENVIRONMENT", "sandbox").lower()  # 'sandbox' ou 'live'
 # Adresse vers laquelle FedaPay renvoie le client après le paiement.
-FEDAPAY_CALLBACK_URL = os.environ.get("FEDAPAY_CALLBACK_URL", f"{PUBLIC_WEB_URL}/")
+# Vide si ni cette variable ni PUBLIC_WEB_URL ne sont renseignées : aucune adresse de retour n'est alors envoyée.
+FEDAPAY_CALLBACK_URL = os.environ.get(
+    "FEDAPAY_CALLBACK_URL", f"{PUBLIC_WEB_URL}/paiement/retour" if PUBLIC_WEB_URL else ""
+).strip()
 # Écart maximal accepté entre l'horodatage signé du webhook et l'heure du serveur (0 = pas de contrôle).
 FEDAPAY_WEBHOOK_TOLERANCE_SECONDS = int(os.environ.get("FEDAPAY_WEBHOOK_TOLERANCE_SECONDS", "300"))
 

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../features/offline/data/confirmed_ticket_store.dart';
@@ -16,6 +18,7 @@ class SessionStore {
   static const _activeOwner = 'axis_active_ticket_owner';
   static const _legacyTickets = 'axis_cached_tickets';
   static const _guestOwner = 'guest';
+  static const _user = 'axis_session_user';
 
   Future<String> get _owner async =>
       await _storage.read(key: _activeOwner) ?? _guestOwner;
@@ -36,6 +39,22 @@ class SessionStore {
     await _storage.delete(key: _refresh);
     await _storage.delete(key: _activeOwner);
     await _storage.delete(key: _legacyTickets);
+    await _storage.delete(key: _user);
+  }
+
+  /// Profil du client connecté, gardé pour rouvrir la session sans réseau
+  /// (billets consultables hors connexion). Effacé à la déconnexion.
+  Future<void> cacheUser(User user) =>
+      _storage.write(key: _user, value: jsonEncode(user.toJson()));
+
+  Future<User?> readCachedUser() async {
+    final raw = await _storage.read(key: _user);
+    if (raw == null) return null;
+    try {
+      return User.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<Ticket>> readCachedTickets() async => _tickets.read(await _owner);

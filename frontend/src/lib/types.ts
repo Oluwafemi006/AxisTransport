@@ -147,6 +147,14 @@ export interface PaymentMethod {
   online?: boolean;
 }
 
+export interface ParcelTracking {
+  tracking_number: string;
+  origin: string;
+  destination: string;
+  current_step: string;
+  steps: { key: string; label: string; done: boolean; current: boolean; reached_at: string | null }[];
+}
+
 export interface Contact {
   contact_phone: string;
   contact_whatsapp: string;

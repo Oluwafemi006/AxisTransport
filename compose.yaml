@@ -29,7 +29,10 @@ services:
       FEDAPAY_ENVIRONMENT: ${FEDAPAY_ENVIRONMENT:-sandbox}
       FEDAPAY_WEBHOOK_TOLERANCE_SECONDS: ${FEDAPAY_WEBHOOK_TOLERANCE_SECONDS:-300}
       AXIS_PAYMENT_SIMULATION: ${AXIS_PAYMENT_SIMULATION:-false}
-      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
+      # Adresse publique du site : vide tant que le nom de domaine n'existe pas (aucun lien de billet partagé).
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
+      # Page de retour après paiement, en local.
+      FEDAPAY_CALLBACK_URL: ${FEDAPAY_CALLBACK_URL:-http://localhost:3000/paiement/retour}
     command: >-
       sh -c "python manage.py migrate &&
       python manage.py bootstrap_axis &&

@@ -37,7 +37,13 @@ class SessionNotifier extends Notifier<SessionState> {
         return;
       }
       await _api.store.setActiveClient(user.id);
+      await _api.store.cacheUser(user);
       state = SessionState(user: user, ready: true);
+    } on ApiException catch (error) {
+      // Sans réseau, le client déjà connecté garde l'accès à ses billets enregistrés.
+      // Un refus du serveur (session expirée) renvoie en revanche à la connexion.
+      final cached = error.isNetwork ? await _api.store.readCachedUser() : null;
+      state = SessionState(user: cached?.isClient == true ? cached : null, ready: true);
     } catch (_) {
       state = const SessionState(ready: true);
     }
@@ -46,6 +52,9 @@ class SessionNotifier extends Notifier<SessionState> {
   Future<void> login(String username, String password) async {
     await _api.login(username, password);
     await restore();
+    if (state.user == null) {
+      throw ApiException('Cette application est réservée aux comptes clients.');
+    }
   }
 
   Future<void> register({

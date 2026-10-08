@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import type { Checkout, Contact, Location, Parcel, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
+import type { Checkout, Contact, Location, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 
 type ClientTab = "accueil" | "billets" | "colis" | "location" | "profil";
@@ -275,7 +275,7 @@ export function ClientPortal() {
                     <div className="card" onClick={() => setTab("colis")}>
                       <div className="pic" style={ { backgroundImage: "url('/images/service-parcel.jpg')" } }></div>
                       <div>
-                        <h3>Expédition de colis</h3>
+                        <h3>Suivi de colis</h3>
                         <p>Déposez à l'agence et suivez votre colis en ligne.</p>
                       </div>
                     </div>
@@ -303,9 +303,9 @@ export function ClientPortal() {
           
           {tab === "colis" && (
             <main className="wrap section-margin" style={{ paddingBottom: '60px' }}>
-              <h2>Expédition de colis</h2>
-              <p className="sub">Déclarez vos envois et suivez l'acheminement en temps réel.</p>
-              <Parcels user={user} locations={locations} parcels={parcels} onAuthenticated={loadPrivate} onChanged={loadPrivate} />
+              <h2>Suivi de colis</h2>
+              <p className="sub">Suivez l'acheminement de votre colis avec son code de suivi.</p>
+              <Parcels />
             </main>
           )}
 
@@ -381,7 +381,10 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
   const [phone, setPhone] = useState("");
   const [pending, setPending] = useState<Ticket | null>(null);
   const [checkout, setCheckout] = useState<Checkout | null>(null);
+  // Réservation en cours. Sans compte, le serveur renvoie un jeton qui autorise le paiement.
+  const [booking, setBooking] = useState<{ id: number; token: string | null } | null>(null);
   const [message, setMessage] = useState("");
+  const bookingHeaders = (): Record<string, string> => (booking?.token ? { "X-Booking-Token": booking.token } : {});
   const selectedTrip = trips.find((trip) => String(trip.id) === tripId);
 
   useEffect(() => {
@@ -400,8 +403,9 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     event.preventDefault();
     setMessage("");
     try {
-      const ticket = await apiFetch<Ticket>("/client/tickets/", { method: "POST", body: JSON.stringify({ trip: Number(tripId), seat: Number(seatId), passenger_name: passengerName, passenger_phone: phone }) }, !!user);
-      setPending(ticket);
+      const created = await apiFetch<{ id: number; tickets: Ticket[]; guest_access_token?: string }>("/client/bookings/", { method: "POST", body: JSON.stringify({ trip: Number(tripId), contact_phone: phone, passengers: [{ full_name: passengerName, phone, seat: Number(seatId) }] }) }, !!user);
+      setBooking({ id: created.id, token: created.guest_access_token ?? null });
+      setPending(created.tickets[0]);
       setCheckout(null);
       setMessage("Siège réservé temporairement. Finalisez le paiement avant l’expiration.");
       await onChanged();
@@ -410,10 +414,10 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
 
   // Le serveur crée la transaction et fixe le montant ; le site ne fait qu'ouvrir la page de paiement.
   async function startPayment(method: PaymentMethod) {
-    if (!pending) return;
+    if (!pending || !booking) return;
     setMessage("");
     try {
-      const created = await apiFetch<Checkout>(`/client/tickets/${pending.id}/checkout/`, { method: "POST", body: JSON.stringify({ payment_method: method.id }) });
+      const created = await apiFetch<Checkout>(`/client/bookings/${booking.id}/checkout/`, { method: "POST", headers: bookingHeaders(), body: JSON.stringify({ payment_method: method.id }) }, !!user);
       setCheckout(created);
       if (created.payment_url) {
         window.open(created.payment_url, "_blank", "noopener");
@@ -425,11 +429,11 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
   }
 
   async function confirmPayment(current: Checkout | null = checkout) {
-    if (!pending || !current) return;
+    if (!pending || !current || !booking) return;
     setMessage("");
     try {
-      const response = await apiFetch<{ ticket: Ticket }>(`/client/tickets/${pending.id}/pay/`, { method: "POST", body: JSON.stringify({ payment_method: current.payment_method, external_reference: current.transaction_id }) });
-      setPending(response.ticket);
+      const response = await apiFetch<{ booking: { tickets: Ticket[] } }>(`/client/bookings/${booking.id}/pay/`, { method: "POST", headers: bookingHeaders(), body: JSON.stringify({ payment_method: current.payment_method, external_reference: current.transaction_id }) }, !!user);
+      setPending(response.booking.tickets[0]);
       setCheckout(null);
       setMessage("Paiement confirmé, ticket émis.");
       await onChanged();
@@ -511,8 +515,9 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
              <p style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '10px' }}>🎉 Voyage confirmé !</p>
              <p style={{ marginBottom: '16px' }}>Votre billet {pending.reference} a été émis avec succès.</p>
              <a href={`/t/${pending.reference}`} target="_blank" rel="noreferrer" className="btn p" style={{ display: 'inline-flex', background: 'var(--ok)', borderColor: 'var(--ok)' }}>
-               Consulter & Télécharger mon billet
+               Voir et télécharger mon billet
              </a>
+             {!user && <p style={{ marginTop: '12px', fontSize: '13px' }}>Sans compte, ce billet n’est pas conservé sur le site : téléchargez-le maintenant.</p>}
            </div>
         )}
       </div>
@@ -558,54 +563,48 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
   );
 }
 
-function Parcels({ user, locations, parcels, onAuthenticated, onChanged }: { user: User | null; locations: Location[]; parcels: Parcel[]; onAuthenticated: () => Promise<void>; onChanged: () => Promise<void> }) {
-  const [form, setForm] = useState({ sender_name: "", sender_phone: "", recipient_name: "", recipient_phone: "", origin: "", destination: "", description: "", weight_kg: "" });
+// Le client ne crée jamais de colis : l'agence l'enregistre et remet un code de suivi.
+function Parcels() {
+  const [code, setCode] = useState("");
+  const [result, setResult] = useState<ParcelTracking | null>(null);
   const [message, setMessage] = useState("");
-  async function submit(event: FormEvent) { 
-    event.preventDefault(); setMessage(""); 
-    try { 
-      await apiFetch<Parcel>("/client/parcels/", { method: "POST", body: JSON.stringify({ ...form, origin: Number(form.origin), destination: Number(form.destination), weight_kg: form.weight_kg || null }) }); 
-      setMessage("Colis enregistré. Le numéro de suivi est disponible dans votre historique."); 
-      await onChanged(); 
-    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Enregistrement impossible."); } 
+  const [busy, setBusy] = useState(false);
+
+  async function track(event: FormEvent) {
+    event.preventDefault();
+    setMessage(""); setResult(null); setBusy(true);
+    try {
+      setResult(await apiFetch<ParcelTracking>(`/client/parcels/track/?code=${encodeURIComponent(code.trim())}`, {}, false));
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Suivi indisponible."); }
+    finally { setBusy(false); }
   }
-  
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }} className="responsive-grid">
-      <div className="card">
-        <h3>Déclarer un colis</h3>
-        <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
-        {!user ? <LoginCard title="Connectez-vous pour expédier" allowRegistration onSuccess={() => void onAuthenticated()} /> : (
-          <form onSubmit={submit} className="f" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div style={{ gridColumn: '1 / -1' }}><label>Description</label><input value={form.description} onChange={(v) => setForm({...form, description: v.target.value})} required /></div>
-            <div><label>Expéditeur</label><input value={form.sender_name} onChange={(v) => setForm({...form, sender_name: v.target.value})} required /></div>
-            <div><label>Tél expéditeur</label><input value={form.sender_phone} onChange={(v) => setForm({...form, sender_phone: v.target.value})} required /></div>
-            <div><label>Destinataire</label><input value={form.recipient_name} onChange={(v) => setForm({...form, recipient_name: v.target.value})} required /></div>
-            <div><label>Tél destinataire</label><input value={form.recipient_phone} onChange={(v) => setForm({...form, recipient_phone: v.target.value})} required /></div>
-            <div><label>Départ</label><select value={form.origin} onChange={(v) => setForm({...form, origin: v.target.value})} required><option value="">Choisir</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
-            <div><label>Arrivée</label><select value={form.destination} onChange={(v) => setForm({...form, destination: v.target.value})} required><option value="">Choisir</option>{locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></div>
-            <div style={{ gridColumn: '1 / -1' }}><button className="btn p" style={{ width: '100%', marginTop: '10px' }}>Enregistrer</button></div>
-          </form>
-        )}
-        {message && <div style={{ background: 'var(--tint)', color: 'var(--navy)', padding: '16px', borderRadius: '10px', marginTop: '20px' }}>{message}</div>}
-      </div>
-      <div className="card">
-        <h3>Historique de suivi</h3>
-        <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
-        {parcels.length === 0 ? <p style={{ color: 'var(--mute)' }}>Aucun historique d'expédition.</p> : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {parcels.map(parcel => (
-              <div key={parcel.id} style={{ border: '1px solid var(--line)', borderRadius: '10px', padding: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--mute)' }}>{parcel.tracking_number}</span>
-                  <span className="pill">{parcel.status_display}</span>
-                </div>
-                <div style={{ fontWeight: 'bold', color: 'var(--navy)' }}>{parcel.origin_detail.name} → {parcel.destination_detail.name}</div>
-              </div>
+    <div className="card" style={{ maxWidth: '640px' }}>
+      <h3>Suivre un colis</h3>
+      <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
+      <p style={{ color: 'var(--mute)', marginBottom: '16px' }}>Votre colis est enregistré en agence. Saisissez le code de suivi qui vous a été remis.</p>
+      <form onSubmit={track} className="f">
+        <label>Code de suivi</label>
+        <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="AX-COL-…" required />
+        <button className="btn p" style={{ width: '100%', marginTop: '16px' }} disabled={busy}>{busy ? "Recherche…" : "Suivre mon colis"}</button>
+      </form>
+      {message && <div style={{ background: 'var(--tint)', color: 'var(--navy)', padding: '16px', borderRadius: '10px', marginTop: '20px' }}>{message}</div>}
+      {result && (
+        <div style={{ marginTop: '24px' }}>
+          <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--mute)' }}>{result.tracking_number}</div>
+          <div style={{ fontWeight: 'bold', color: 'var(--navy)', margin: '4px 0 16px' }}>{result.origin} → {result.destination}</div>
+          <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {result.steps.map((step) => (
+              <li key={step.key} style={{ display: 'flex', alignItems: 'center', gap: '12px', opacity: step.done ? 1 : 0.45 }}>
+                <span style={{ width: '22px', height: '22px', borderRadius: '50%', display: 'inline-grid', placeItems: 'center', fontSize: '12px', color: '#fff', background: step.done ? 'var(--ok)' : 'var(--line)' }}>{step.done ? "✓" : ""}</span>
+                <span style={{ fontWeight: step.current ? 'bold' : 'normal' }}>{step.label}</span>
+                {step.reached_at && <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--mute)' }}>{formatDate(step.reached_at)}</span>}
+              </li>
             ))}
-          </div>
-        )}
-      </div>
+          </ol>
+        </div>
+      )}
     </div>
   );
 }

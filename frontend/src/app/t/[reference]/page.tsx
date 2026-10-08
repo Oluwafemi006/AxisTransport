@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCodeCanvas, QRCodeSVG } from "qrcode.react";
 
 interface PublicTicketData {
   reference: string;
@@ -104,6 +104,46 @@ export default function PublicTicketPage() {
 
   const isConfirmed = ticket.status === "CONFIRMED" || ticket.status === "ISSUED";
 
+  // Compose le billet en image à partir des données du serveur ; une donnée absente affiche « à confirmer ».
+  const downloadTicket = () => {
+    const qr = document.getElementById("ticket-qr-canvas") as HTMLCanvasElement | null;
+    const canvas = document.createElement("canvas");
+    canvas.width = 800;
+    canvas.height = 1120;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "bold 44px sans-serif";
+    ctx.fillText(ticket.company_name || "AXIS Transport", 50, 80);
+    ctx.font = "24px sans-serif";
+    ctx.fillText("Billet électronique", 50, 118);
+    if (qr) ctx.drawImage(qr, 200, 160, 400, 400);
+    const rows: [string, string][] = [
+      ["Référence", ticket.reference],
+      ["Trajet", ticket.origin && ticket.destination ? `${ticket.origin} → ${ticket.destination}` : ""],
+      ["Départ", ticket.departure_at ? formatDate(ticket.departure_at) : ""],
+      ["Siège", ticket.seat_label],
+      ["Passager", ticket.passenger_name],
+      ["Montant", ticket.formatted_amount],
+      ["Statut", ticket.status_display],
+    ];
+    rows.forEach(([label, value], index) => {
+      const y = 640 + index * 58;
+      ctx.font = "bold 24px sans-serif";
+      ctx.fillText(label, 50, y);
+      ctx.font = "24px sans-serif";
+      ctx.fillText(value && value !== "N/A" ? value : "à confirmer", 250, y);
+    });
+    ctx.font = "20px sans-serif";
+    ctx.fillText("Présentez ce QR code à l'embarquement.", 50, 1080);
+    const link = document.createElement("a");
+    link.download = `billet-axis-${ticket.reference}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 py-8 px-4 font-sans antialiased text-slate-900">
       <div className="max-w-lg mx-auto bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200">
@@ -148,6 +188,20 @@ export default function PublicTicketPage() {
           <p className="text-xs text-slate-500 mt-3 font-medium">
             Présentez ce QR Code au contrôleur lors de l'embarquement.
           </p>
+          {ticket.qr_token && (
+            <>
+              <div className="hidden">
+                <QRCodeCanvas id="ticket-qr-canvas" value={ticket.qr_token} size={400} level="H" includeMargin={true} />
+              </div>
+              <button
+                type="button"
+                onClick={downloadTicket}
+                className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+              >
+                Télécharger le billet (image)
+              </button>
+            </>
+          )}
         </div>
 
         {/* Trip & Route Details */}

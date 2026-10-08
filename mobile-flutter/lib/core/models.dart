@@ -23,6 +23,15 @@ class User {
 
   bool get isClient => role == 'CLIENT';
 
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'username': username,
+    'first_name': firstName,
+    'last_name': lastName,
+    'phone': phone,
+    'role': role,
+  };
+
   String get displayName {
     final full = [
       firstName,
@@ -325,6 +334,7 @@ class Ticket {
     required this.amount,
     required this.currency,
     this.reservationExpiresAt,
+    this.publicUrl = '',
   });
 
   final int id;
@@ -340,6 +350,9 @@ class Ticket {
   final String currency;
   final DateTime? reservationExpiresAt;
 
+  /// Adresse publique du billet, fournie par le serveur (vide si absente).
+  final String publicUrl;
+
   bool get isConfirmed =>
       status == 'ISSUED' || status == 'CHECKED' || status == 'COMPLETED';
 
@@ -347,6 +360,7 @@ class Ticket {
     return Ticket(
       id: json['id'] as int,
       reference: json['reference'] as String? ?? '',
+      publicUrl: json['public_url'] as String? ?? '',
       trip: Trip.fromJson(json['trip_detail'] as Map<String, dynamic>),
       seat: Seat.fromJson(json['seat_detail'] as Map<String, dynamic>),
       passengerName: json['passenger_name'] as String? ?? '',
@@ -365,6 +379,7 @@ class Ticket {
   Map<String, dynamic> toJson() => {
     'id': id,
     'reference': reference,
+    'public_url': publicUrl,
     'trip_detail': trip.toJson(),
     'seat_detail': seat.toJson(),
     'passenger_name': passengerName,
@@ -590,6 +605,58 @@ class RentalBooking {
       withDriver: json['with_driver'] as bool? ?? false,
       status: json['status'] as String? ?? '',
       statusDisplay: json['status_display'] as String? ?? '',
+    );
+  }
+}
+
+/// Étape du suivi d'un colis telle que le serveur la présente au client.
+class ParcelStep {
+  const ParcelStep({
+    required this.label,
+    required this.done,
+    required this.current,
+    this.reachedAt,
+  });
+
+  final String label;
+  final bool done;
+  final bool current;
+  final DateTime? reachedAt;
+
+  factory ParcelStep.fromJson(Map<String, dynamic> json) {
+    return ParcelStep(
+      label: json['label'] as String? ?? '',
+      done: json['done'] as bool? ?? false,
+      current: json['current'] as bool? ?? false,
+      reachedAt: json['reached_at'] == null
+          ? null
+          : DateTime.parse(json['reached_at'] as String).toLocal(),
+    );
+  }
+}
+
+class ParcelTracking {
+  const ParcelTracking({
+    required this.trackingNumber,
+    required this.origin,
+    required this.destination,
+    required this.steps,
+  });
+
+  final String trackingNumber;
+  final String origin;
+  final String destination;
+  final List<ParcelStep> steps;
+
+  factory ParcelTracking.fromJson(Map<String, dynamic> json) {
+    return ParcelTracking(
+      trackingNumber: json['tracking_number'] as String? ?? '',
+      origin: json['origin'] as String? ?? '',
+      destination: json['destination'] as String? ?? '',
+      steps: (json['steps'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => ParcelStep.fromJson(Map<String, dynamic>.from(item)))
+          .toList(),
     );
   }
 }

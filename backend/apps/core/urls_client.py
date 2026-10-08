@@ -66,6 +66,7 @@ from .services import (
 from .views import (
     FedaPayWebhookView,
     KKiaPayWebhookView,
+    ParcelTrackingView,
     PublicContactView,
     PublicTicketDetailView,
     checkout_response,
@@ -403,7 +404,8 @@ class ClientParcelViewSet(viewsets.GenericViewSet):
     Colis du client connecté.
 
     SÉCURITÉ :
-    - Seul un CLIENT authentifié peut créer ou consulter ses colis.
+    - Le client ne crée jamais de colis : c'est l'agence qui l'enregistre.
+    - Seul un CLIENT authentifié peut consulter les colis rattachés à son compte.
     - Un COUNTER ou ADMIN obtient un 403 sur cette surface.
     - GET /parcels/{id}/ vérifie que le colis appartient au client (ownership).
     - Les actions internes (transition, assignation de trajet) ne sont pas exposées ici.
@@ -428,25 +430,6 @@ class ClientParcelViewSet(viewsets.GenericViewSet):
         """
         parcel = get_object_or_404(self.get_queryset(), pk=pk)
         return Response(self.get_serializer(parcel).data)
-
-    def create(self, request):
-        """
-        Crée un colis pour le client connecté.
-        Le canal est forcé à ONLINE. La création guichet sera sur /staff/.
-        """
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        parcel = serializer.save(
-            customer=request.user,
-            channel=Ticket.Channel.ONLINE,
-        )
-        from .models import ParcelStatusHistory
-        ParcelStatusHistory.objects.create(
-            parcel=parcel,
-            to_status=Parcel.Status.REGISTERED,
-            changed_by=request.user,
-        )
-        return Response(self.get_serializer(parcel).data, status=status.HTTP_201_CREATED)
 
 
 class ClientRentalViewSet(viewsets.GenericViewSet):
@@ -494,6 +477,7 @@ client_router.register("rentals", ClientRentalViewSet, basename="client-rental")
 client_urlpatterns = [
     path("tickets/public/<str:reference>/", PublicTicketDetailView.as_view(), name="public-ticket-detail"),
     path("contact/", PublicContactView.as_view(), name="public-contact"),
+    path("parcels/track/", ParcelTrackingView.as_view(), name="parcel-tracking"),
     path("webhooks/kkiapay/", KKiaPayWebhookView.as_view(), name="kkiapay-webhook"),
     path("webhooks/fedapay/", FedaPayWebhookView.as_view(), name="fedapay-webhook"),
     path("", include(client_router.urls)),

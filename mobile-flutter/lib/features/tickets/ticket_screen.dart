@@ -93,26 +93,11 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
   }
 
   Future<void> _shareTicket(Ticket ticket) async {
-    const domain = 'https://axis.bj';
-    final publicUrl = '$domain/t/${ticket.reference}';
-    final amountText = formatMoney(ticket.amount, ticket.currency);
-
-    final text = '''
-AXIS Transport 🚌
-
-Votre billet est confirmé.
-
-🎫 Billet : ${ticket.reference}
-💺 Siège : ${ticket.seat.number}
-💰 Montant : $amountText
-
-Consultez votre billet :
-$publicUrl
-
-Merci de voyager avec AXIS Transport.''';
-
     await SharePlus.instance.share(
-      ShareParams(text: text, subject: 'Billet AXIS Transport ${ticket.reference}'),
+      ShareParams(
+        text: ticketShareText(ticket),
+        subject: 'Billet AXIS Transport ${ticket.reference}',
+      ),
     );
   }
 
