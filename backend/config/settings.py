@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import tempfile
 
 import dj_database_url
 
@@ -75,6 +76,15 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+# Cache partagé entre les processus gunicorn d'une même machine : les limites de requêtes
+# sont ainsi comptées une seule fois, et non par processus.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": os.environ.get("AXIS_CACHE_DIR", os.path.join(tempfile.gettempdir(), "axis-cache")),
+    }
+}
 
 LANGUAGE_CODE = "fr-fr"
 TIME_ZONE = "Africa/Porto-Novo"

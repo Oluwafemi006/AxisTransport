@@ -45,6 +45,7 @@ Points d'attention :
 | `ACTIVE_PAYMENT_PROVIDER` | Prestataire activé au premier démarrage. | `fedapay` |
 | `AXIS_ADMIN_USERNAME`, `AXIS_ADMIN_PASSWORD`, `AXIS_ADMIN_EMAIL` | Compte administrateur créé au premier `bootstrap_axis`. | Mot de passe fort, unique |
 | `AXIS_PARCEL_TRACKING_RATE` | Limite du suivi de colis par adresse IP. | `20/min` |
+| `AXIS_CACHE_DIR` | Dossier du cache (compteurs de limite de requêtes). | Dossier accessible en écriture ; par défaut le dossier temporaire du système |
 | `AXIS_NUM_PROXIES` | Nombre de proxys devant l'API, pour lire la vraie adresse IP du client. | `1` derrière un seul proxy |
 | `AXIS_PAYMENT_SIMULATION` | Paiement simulé. Sans effet quand `DJANGO_DEBUG` est faux. | absente |
 | `USE_SQLITE` | Base SQLite pour les tests. | absente |
@@ -62,7 +63,7 @@ Ces points ne sont pas implémentés. Ils sont à traiter avant d'ouvrir le back
 | Réglages HTTPS (`SECURE_PROXY_SSL_HEADER`, redirection HTTPS, HSTS, cookies `Secure`) | Aucun n'est défini. |
 | Fichiers statiques | Rien ne les sert sous gunicorn (pas de WhiteNoise ni de `collectstatic` au démarrage) : l'administration Django s'affiche sans style. |
 | Fichiers envoyés (`/media/`) | Servis uniquement en debug. Les pièces d'identité de location demandent un stockage privé. |
-| Cache partagé | La limite du suivi de colis est comptée par processus gunicorn. Avec 3 processus, la limite réelle peut atteindre 3 fois la valeur. Un cache partagé (Redis ou base) corrige ce point. |
+| Cache partagé entre machines | Le cache est un dossier local (`AXIS_CACHE_DIR`), commun aux processus d'une même machine. Si l'API tourne sur plusieurs machines, chaque machine compte la limite du suivi de colis séparément : il faudra alors un cache commun (Redis). |
 | Limite de requêtes sur la connexion, l'inscription et la réservation | Absente : seul le suivi de colis est limité. |
 | Expiration des sièges | La commande `expire_ticket_holds` doit être planifiée chaque minute. |
 | Configuration de lancement | `compose.yaml` est une configuration de développement (`DEBUG=true`, `ALLOWED_HOSTS` contenant `*`, mot de passe PostgreSQL `axis`). Ne pas l'utiliser telle quelle. |
