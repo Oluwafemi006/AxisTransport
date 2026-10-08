@@ -14,6 +14,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
 from .models import (
@@ -146,6 +147,15 @@ PARCEL_TRACKING_STEPS = [
 ]
 
 
+class ParcelTrackingThrottle(SimpleRateThrottle):
+    """Limite par adresse IP, connecté ou non : freine l'essai de codes en série."""
+
+    scope = "parcel_tracking"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
+
+
 class ParcelTrackingView(APIView):
     """
     Suivi d'un colis par son code. Ne renvoie que le parcours et les étapes :
@@ -153,6 +163,7 @@ class ParcelTrackingView(APIView):
     """
 
     permission_classes = [AllowAny]
+    throttle_classes = [ParcelTrackingThrottle]
 
     def get(self, request):
         code = str(request.query_params.get("code") or "").strip()

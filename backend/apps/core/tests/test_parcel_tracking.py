@@ -1,3 +1,4 @@
+from django.core.cache import cache
 from rest_framework.test import APITestCase
 
 from apps.core.models import Parcel, ParcelStatusHistory, User
@@ -10,6 +11,7 @@ TRACK = "/api/v1/client/parcels/track/"
 
 class ParcelRulesTests(APITestCase):
     def setUp(self):
+        cache.clear()  # compteur de la limite de requêtes
         self.context = build_operational_context()
         self.counter = User.objects.create_user(username="guichet", password="secret", role=User.Role.COUNTER)
         self.payload = {
@@ -84,3 +86,21 @@ class ParcelRulesTests(APITestCase):
     def test_unknown_or_missing_code(self):
         self.assertEqual(self.client.get(TRACK, {"code": "AX-COL-INCONNU"}).status_code, 404)
         self.assertEqual(self.client.get(TRACK).status_code, 400)
+
+    def test_tracking_codes_are_random_not_sequential(self):
+        first, second = self._parcel().tracking_number, self._parcel().tracking_number
+        suffixes = [int(code.removeprefix("AX-COL-"), 16) for code in (first, second)]
+        self.assertEqual(len(first), len("AX-COL-") + 10)
+        self.assertNotEqual(abs(suffixes[0] - suffixes[1]), 1)
+
+    def test_tracking_is_rate_limited_per_address(self):
+        parcel = self._parcel()
+        statuses = [self.client.get(TRACK, {"code": "AX-COL-ESSAI%04d" % index}).status_code for index in range(20)]
+        self.assertEqual(set(statuses), {404})
+        # 21e recherche de la même adresse dans la minute : refusée, même avec un code valide.
+        blocked = self.client.get(TRACK, {"code": parcel.tracking_number})
+        self.assertEqual(blocked.status_code, 429)
+        self.assertNotIn("steps", blocked.json())
+        # Une autre adresse n'est pas pénalisée.
+        other = self.client.get(TRACK, {"code": parcel.tracking_number}, REMOTE_ADDR="203.0.113.9")
+        self.assertEqual(other.status_code, 200)

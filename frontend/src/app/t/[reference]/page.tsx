@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { QRCodeCanvas, QRCodeSVG } from "qrcode.react";
+import { API_URL } from "@/lib/api";
 
 interface PublicTicketData {
   reference: string;
@@ -32,12 +33,7 @@ export default function PublicTicketPage() {
   useEffect(() => {
     if (!reference) return;
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-    // Normalize URL if it ends with /api vs /api/v1
-    const base = apiUrl.replace(/\/$/, "");
-    const endpoint = base.endsWith("/v1")
-      ? `${base}/client/tickets/public/${encodeURIComponent(reference)}/`
-      : `${base}/v1/client/tickets/public/${encodeURIComponent(reference)}/`;
+    const endpoint = `${API_URL}/client/tickets/public/${encodeURIComponent(reference)}/`;
 
     fetch(endpoint)
       .then((res) => {

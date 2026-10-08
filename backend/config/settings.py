@@ -101,6 +101,10 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    # Suivi de colis public : nombre de recherches autorisées par adresse IP.
+    "DEFAULT_THROTTLE_RATES": {"parcel_tracking": os.environ.get("AXIS_PARCEL_TRACKING_RATE", "20/min")},
+    # Nombre de proxys de confiance devant l'API (pour lire la vraie adresse IP du client).
+    "NUM_PROXIES": int(os.environ["AXIS_NUM_PROXIES"]) if os.environ.get("AXIS_NUM_PROXIES") else None,
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
     "DEFAULT_RENDERER_CLASSES": (
