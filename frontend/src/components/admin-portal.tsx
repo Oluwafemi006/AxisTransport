@@ -4,9 +4,9 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone } from "./ui";
 import { LoginCard } from "./login-card";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import type { FareRule, FeatureFlag, Location, Parcel, PaymentMethod, Route, Seat, SystemSetting, Ticket, Trip, User, Vehicle } from "@/lib/types";
+import type { FareRule, FeatureFlag, Location, Parcel, PaymentIncident, PaymentMethod, Route, Seat, SystemSetting, Ticket, Trip, User, Vehicle } from "@/lib/types";
 
-type AdminTab = "dashboard" | "planning" | "guichet" | "colis" | "flotte" | "tarifs" | "equipe";
+type AdminTab = "dashboard" | "planning" | "guichet" | "colis" | "flotte" | "tarifs" | "paiements" | "equipe";
 type Dashboard = {
   tickets: { sold: number; online: number; counter: number; checked: number; cancelled_or_refunded: number };
   revenue: { total: number; by_payment_method: Array<{ payment_method__label: string; total: number }> };
@@ -21,7 +21,7 @@ const nextParcelStatus: Record<string, string> = {
 
 const tabs: Array<[AdminTab, string]> = [
   ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["colis", "Colis"],
-  ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["equipe", "Équipe & rôles"],
+  ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
 ];
 
 function failure(reason: unknown, fallback: string): NoticeState {
@@ -42,6 +42,7 @@ export function AdminPortal() {
   const [parcels, setParcels] = useState<Parcel[]>([]);
   const [payments, setPayments] = useState<PaymentMethod[]>([]);
   const [settings, setSettings] = useState<SystemSetting[]>([]);
+  const [incidents, setIncidents] = useState<PaymentIncident[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -52,13 +53,14 @@ export function AdminPortal() {
     try {
       const currentUser = await apiFetch<User>("/auth/me/");
       if (currentUser.role !== "ADMIN") { setMe(currentUser); setAccessDenied(true); return; }
-      const [dash, allLocations, allRoutes, allTrips, allVehicles, allFares, allFlags, team, allParcels, methods, allSettings] = await Promise.all([
+      const [dash, allLocations, allRoutes, allTrips, allVehicles, allFares, allFlags, team, allParcels, methods, allSettings, allIncidents] = await Promise.all([
         apiFetch<Dashboard>("/dashboard/"), apiList<Location>("/locations/?all=true"), apiList<Route>("/routes/?all=true"),
         apiList<Trip>("/trips/?all=true"), apiList<Vehicle>("/vehicles/"), apiList<FareRule>("/fare-rules/?all=true"),
         apiList<FeatureFlag>("/feature-flags/"), apiList<User>("/users/"), apiList<Parcel>("/parcels/"), apiList<PaymentMethod>("/payment-methods/?all=true"), apiList<SystemSetting>("/settings/"),
+        apiList<PaymentIncident>("/payment-incidents/"),
       ]);
       setMe(currentUser); setDashboard(dash); setLocations(allLocations); setRoutes(allRoutes); setTrips(allTrips); setVehicles(allVehicles);
-      setFares(allFares); setFlags(allFlags); setUsers(team); setParcels(allParcels); setPayments(methods); setSettings(allSettings);
+      setFares(allFares); setFlags(allFlags); setUsers(team); setParcels(allParcels); setPayments(methods); setSettings(allSettings); setIncidents(allIncidents);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Chargement impossible."); if ((reason as { status?: number }).status === 401) { clearTokens(); setMe(null); } }
     finally { setLoading(false); }
   }, []);
@@ -91,6 +93,7 @@ export function AdminPortal() {
           {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
           {tab === "flotte" && <FleetPanel locations={locations} vehicles={vehicles} onChanged={load} />}
           {tab === "tarifs" && <PricingPanel routes={routes} fares={fares} flags={flags} payments={payments} settings={settings} onChanged={load} />}
+          {tab === "paiements" && <IncidentPanel incidents={incidents} onChanged={load} />}
           {tab === "equipe" && <TeamPanel users={users} onChanged={load} />}
         </>
       )}
@@ -624,6 +627,53 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
         </div>
       </section>
     </div>
+  );
+}
+
+// Paiements signalés par le prestataire que le serveur a refusé de transformer en billet : lecture seule, sauf « traité ».
+function IncidentPanel({ incidents, onChanged }: { incidents: PaymentIncident[]; onChanged: () => Promise<void> }) {
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  async function setHandled(incident: PaymentIncident, handled: boolean) {
+    try {
+      await apiFetch(`/payment-incidents/${incident.id}/`, { method: "PATCH", body: JSON.stringify({ handled }) });
+      setNotice(null);
+      await onChanged();
+    } catch (reason) { setNotice(failure(reason, "Mise à jour impossible.")); }
+  }
+
+  return (
+    <section className="card">
+      <SectionHeading eyebrow="À traiter à la main" title="Incidents de paiement" action={<StatusBadge tone={incidents.some((item) => !item.handled) ? "red" : "green"}>{incidents.filter((item) => !item.handled).length} non traité(s)</StatusBadge>} />
+      {incidents.length === 0 ? <EmptyState title="Aucun incident" text="Les paiements refusés par le serveur apparaîtront ici." /> : (
+        <div className="table-scroll">
+          <table className="staff-table min-w-[860px]">
+            <thead><tr><th>Date</th><th>Motif</th><th>Transaction</th><th>Montant</th><th>Réservation</th><th>Traité</th></tr></thead>
+            <tbody>
+              {incidents.map((incident) => (
+                <tr key={incident.id}>
+                  <td className="whitespace-nowrap">{formatDate(incident.created_at)}</td>
+                  <td>{incident.reason}</td>
+                  <td className="strong">{incident.external_id || "—"}</td>
+                  <td className="whitespace-nowrap">
+                    {incident.amount === null ? "—" : money(incident.amount, incident.currency || "XOF")}
+                    {incident.amount !== null && !incident.amount_verified && <span className="ml-2"><StatusBadge tone="amber">non vérifié</StatusBadge></span>}
+                  </td>
+                  <td>{incident.booking_reference || "—"}</td>
+                  <td>
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={incident.handled} onChange={(e) => void setHandled(incident, e.target.checked)} />
+                      <span>{incident.handled ? "Traité" : "À traiter"}</span>
+                    </label>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <Notice notice={notice} />
+    </section>
   );
 }
 

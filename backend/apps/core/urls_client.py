@@ -13,12 +13,14 @@ SURFACES À VENIR (non implémentées ici) :
   /api/v1/staff/   → CONTROLLER, COUNTER
   /api/v1/admin/   → ADMIN, OPERATIONS_MANAGER, etc.
 """
+from types import SimpleNamespace
 import hmac
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
 from django.urls import include, path
 from rest_framework import status, viewsets
+from django.conf import settings
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -55,12 +57,13 @@ from .serializers import (
     TransactionSerializer,
     TripSerializer,
 )
-from .payments import settle_booking_payment, settle_ticket_payment
+from .payments import ONLINE_PROVIDERS, SIMULATION, payment_quote, settle_booking_payment, settle_ticket_payment
 from .services import (
     hash_guest_token,
     is_plausible_phone,
     release_expired_holds,
     reserve_booking,
+    resolve_fare,
     reserve_ticket,
     transition_parcel,
 )
@@ -128,6 +131,32 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
                 raise ValidationError({"date": "Format attendu : AAAA-MM-JJ."}) from exc
             queryset = queryset.filter(departure_at__date=selected_date)
         return queryset
+
+    @action(detail=True, methods=["get"], url_path="payment-quotes")
+    def payment_quotes(self, request, pk=None):
+        """
+        Montant à payer AVANT toute réservation, par moyen de paiement en ligne actif :
+        tarif du trajet × nombre de passagers, plus les frais. Calculé ici, jamais dans le navigateur.
+        """
+        trip = self.get_object()
+        try:
+            passengers = int(request.query_params.get("passengers", 1))
+        except ValueError as exc:
+            raise ValidationError({"passengers": "Nombre de passagers invalide."}) from exc
+        if not 1 <= passengers <= 8:
+            raise ValidationError({"passengers": "Nombre de passagers invalide."})
+        try:
+            fare = resolve_fare(trip)
+        except ImproperlyConfigured as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        target = SimpleNamespace(amount=fare.amount * passengers, currency=fare.currency)
+        methods = [
+            method
+            for method in PaymentMethod.objects.filter(active=True).order_by("id")
+            if method.code.upper() in ONLINE_PROVIDERS
+            and (method.code.upper() != SIMULATION or (settings.DEBUG and settings.AXIS_PAYMENT_SIMULATION))
+        ]
+        return Response([payment_quote(target, method) for method in methods])
 
 
 class ClientSeatViewSet(viewsets.ReadOnlyModelViewSet):

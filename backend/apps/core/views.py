@@ -10,7 +10,7 @@ from django.db import DatabaseError, transaction
 from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import status, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -46,6 +46,7 @@ from .permissions import (
     IsOperationsStaff,
 )
 from .serializers import (
+    PaymentIncidentSerializer,
     BookingCreateSerializer,
     BookingSerializer,
     FareRuleSerializer,
@@ -387,6 +388,15 @@ class SystemSettingViewSet(viewsets.ModelViewSet):
     queryset = SystemSetting.objects.all()
     serializer_class = SystemSettingSerializer
     permission_classes = [IsAxisAdmin]
+
+
+class PaymentIncidentViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    """Incidents de paiement : liste et case « traité », réservés à l'administrateur. Ni création ni suppression."""
+
+    queryset = PaymentIncident.objects.select_related("booking").all()
+    serializer_class = PaymentIncidentSerializer
+    permission_classes = [IsAxisAdmin]
+    http_method_names = ["get", "patch", "head", "options"]
 
 
 class UserViewSet(viewsets.ModelViewSet):

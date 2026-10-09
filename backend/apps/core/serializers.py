@@ -23,6 +23,7 @@ from .models import (
     Trip,
     User,
     Vehicle,
+    PaymentIncident,
 )
 from .payments import ONLINE_PROVIDERS, payment_quote
 from .services import boarding_lead_minutes, boarding_time, rental_is_available, resolve_fare
@@ -570,3 +571,18 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
     def get_public_url(self, obj):
         return public_ticket_url(obj)
 
+
+class PaymentIncidentSerializer(serializers.ModelSerializer):
+    """Incident de paiement, en lecture seule sauf la case « traité » et sa note."""
+
+    source_display = serializers.CharField(source="get_source_display", read_only=True)
+    booking_reference = serializers.CharField(source="booking.reference", read_only=True, default="")
+
+    class Meta:
+        model = PaymentIncident
+        fields = [
+            "id", "created_at", "source", "source_display", "provider", "event", "external_id",
+            "amount", "currency", "amount_verified", "booking", "booking_reference", "reason",
+            "handled", "handled_note",
+        ]
+        read_only_fields = [field for field in fields if field not in ("handled", "handled_note")]

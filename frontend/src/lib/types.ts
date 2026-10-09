@@ -182,6 +182,20 @@ export interface FeatureFlag {
   configuration: Record<string, unknown>;
 }
 
+export interface PaymentIncident {
+  id: number;
+  created_at: string;
+  source_display: string;
+  event: string;
+  external_id: string;
+  amount: string | null;
+  currency: string;
+  amount_verified: boolean;
+  booking_reference: string;
+  reason: string;
+  handled: boolean;
+}
+
 export interface SystemSetting {
   id: number;
   key: string;

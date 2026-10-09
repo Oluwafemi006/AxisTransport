@@ -10,6 +10,7 @@ from .views import (
     MeView,
     RegisterView,
     ParcelViewSet,
+    PaymentIncidentViewSet,
     PaymentMethodViewSet,
     RentalBookingViewSet,
     RouteViewSet,
@@ -39,6 +40,7 @@ router.register("bookings", BookingViewSet)
 router.register("parcels", ParcelViewSet)
 router.register("rentals", RentalBookingViewSet)
 router.register("payment-methods", PaymentMethodViewSet)
+router.register("payment-incidents", PaymentIncidentViewSet)
 router.register("transactions", TransactionViewSet)
 
 urlpatterns = [

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { clearGuestBooking, loadGuestBooking, type GuestBooking } from "@/lib/guest-booking";
+import { bookingAccessHeaders, clearGuestBooking, loadGuestBooking, type GuestBooking } from "@/lib/guest-booking";
 import type { Ticket } from "@/lib/types";
 
 type Recovery = "none" | "checking" | "issued" | "waiting" | "failed";
@@ -19,13 +19,15 @@ export default function PaymentReturnPage() {
   const recover = useCallback(async (stored: GuestBooking, transactionId: string | null) => {
     setRecovery("checking");
     setDetail("");
-    const headers = { "X-Booking-Token": stored.token };
+    // Un invité accède à sa réservation par son jeton, un client connecté par son compte.
+    const headers = bookingAccessHeaders(stored);
+    const authenticated = !stored.token;
     try {
-      const current = await apiFetch<{ tickets: Ticket[] }>(`/client/bookings/${stored.id}/`, { headers }, false);
+      const current = await apiFetch<{ tickets: Ticket[] }>(`/client/bookings/${stored.id}/`, { headers }, authenticated);
       let found = current.tickets[0];
       const reference = stored.transactionId ?? transactionId;
       if (found?.status === "HELD" && stored.paymentMethod && reference) {
-        const paid = await apiFetch<{ booking: { tickets: Ticket[] } }>(`/client/bookings/${stored.id}/pay/`, { method: "POST", headers, body: JSON.stringify({ payment_method: stored.paymentMethod, external_reference: reference }) }, false);
+        const paid = await apiFetch<{ booking: { tickets: Ticket[] } }>(`/client/bookings/${stored.id}/pay/`, { method: "POST", headers, body: JSON.stringify({ payment_method: stored.paymentMethod, external_reference: reference }) }, authenticated);
         found = paid.booking.tickets[0];
       }
       if (found?.status === "ISSUED") { setTicket(found); setRecovery("issued"); return; }
@@ -72,6 +74,7 @@ export default function PaymentReturnPage() {
               {recovery === "waiting" ? "Le paiement n’est pas encore confirmé. Aucun billet n’est émis tant que le paiement n’est pas confirmé." : detail || "La vérification n’a pas abouti."}
             </p>
             <button onClick={retry} className="primary-button mt-5 w-full">Vérifier à nouveau</button>
+            <a href="/" className="secondary-button mt-3 w-full">Revenir à ma réservation</a>
           </div>
         )}
 

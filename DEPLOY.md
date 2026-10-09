@@ -143,6 +143,8 @@ Pour appeler ce backend depuis le site Vercel (hors du but de cet essai) : ajout
 - **Webhook** : FedaPay désactive un webhook après 10 essais sans réponse 2xx. Le serveur répond donc 200 à un message authentique qu'il refuse pour une raison définitive, et enregistre un **incident de paiement** ; il répond 400 à une signature absente ou invalide, et 503 à une erreur passagère (FedaPay ou base injoignable) pour que FedaPay réessaie.
 - **Rattrapage** : chaque transaction créée est enregistrée. `reconcile_payments` réinterroge FedaPay pour celles qui ne sont pas confirmées et émet le billet par le même chemin que le webhook (jamais deux billets pour un paiement ; un paiement après expiration reste « à rembourser »).
 - **À surveiller par l'administrateur**, dans `/django-admin/` : « Payment incidents » (argent possiblement encaissé sans billet, à traiter à la main) et « Payment receipts » filtrés sur `refund_due`.
+- **Limite du rattrapage** : une transaction n'est réinterrogée que pendant `AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES` (24 h). Un paiement fait plus tard n'est vu que si FedaPay envoie le webhook ; s'il ne peut pas être transformé en billet, il apparaît comme incident de paiement.
+- **Incidents dans le portail** : onglet « Incidents de paiement » de `/admin` (administrateur seulement), en lecture seule avec une case « traité ».
 - La documentation FedaPay ne publie aucune limite de débit pour son API. Le rattrapage se borne lui-même : au plus `AXIS_PAYMENT_RECONCILE_BATCH` appels par passage, relectures espacées (chaque passage pendant 30 min, puis toutes les 10 min jusqu'à 2 h, puis chaque heure), arrêt du passage dès une réponse 429 ou 5xx.
 
 ## 3. À ne jamais faire en production

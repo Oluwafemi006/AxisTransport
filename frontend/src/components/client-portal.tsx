@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import type { Checkout, Contact, Location, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
@@ -374,6 +374,9 @@ export function ClientPortal() {
 // Using standard tailwind / inline styles to match the template UI within cards.
 // ==============================================
 
+type Quote = Omit<Checkout, "transaction_id" | "payment_url" | "simulated">;
+type BookingPayload = { id: number; status: string; tickets: Ticket[]; payment_quotes: Quote[]; guest_access_token?: string };
+
 function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChanged }: { user: User | null; trips: Trip[]; tickets: Ticket[]; paymentMethods: PaymentMethod[]; onAuthenticated: () => Promise<void>; onChanged: () => Promise<void> }) {
   const [tripId, setTripId] = useState("");
   const [seats, setSeats] = useState<Seat[]>([]);
@@ -384,9 +387,21 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
   const [checkout, setCheckout] = useState<Checkout | null>(null);
   // Réservation en cours. Sans compte, le serveur renvoie un jeton qui autorise le paiement.
   const [booking, setBooking] = useState<{ id: number; token: string | null } | null>(null);
+  // Montants calculés par le serveur : avant la réservation (par trajet), puis pour la réservation en cours.
+  const [tripQuotes, setTripQuotes] = useState<Quote[]>([]);
+  const [bookingQuotes, setBookingQuotes] = useState<Quote[]>([]);
+  const [paymentFailed, setPaymentFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Verrou immédiat contre le double clic : l'état « busy » n'est visible qu'au rendu suivant.
+  const locked = useRef(false);
+  const [now, setNow] = useState(() => Date.now());
   const [message, setMessage] = useState("");
-  const bookingHeaders = (): Record<string, string> => (booking?.token ? { "X-Booking-Token": booking.token } : {});
   const selectedTrip = trips.find((trip) => String(trip.id) === tripId);
+  const onlineMethods = paymentMethods.filter((method) => method.online);
+  // Un seul moyen de paiement en ligne : une seule action « Payer [total] ». Plusieurs : le choix reste à l'écran.
+  const singleQuote = tripQuotes.length === 1 ? tripQuotes[0] : null;
+  const held = pending?.status === "HELD";
+  const access = (current: { token: string | null }): Record<string, string> => (current.token ? { "X-Booking-Token": current.token } : {});
 
   useEffect(() => {
     if (user) {
@@ -395,26 +410,35 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     }
   }, [user]);
 
-  // Invité : au chargement, reprend la réservation conservée dans le navigateur (onglet fermé ou page rechargée).
+  // Au chargement, reprend la réservation conservée dans le navigateur (retour de la page de paiement,
+  // onglet fermé, page rechargée). Un invité y accède par son jeton, un client connecté par son compte.
   useEffect(() => {
-    if (user) return;
     const stored = loadGuestBooking();
-    if (!stored) return;
+    if (!stored || (!stored.token && !user)) return;
     let cancelled = false;
-    apiFetch<{ status: string; tickets: Ticket[]; payment_quotes: Array<Omit<Checkout, "transaction_id" | "payment_url" | "simulated">> }>(`/client/bookings/${stored.id}/`, { headers: { "X-Booking-Token": stored.token } }, false)
+    apiFetch<BookingPayload>(`/client/bookings/${stored.id}/`, { headers: access(stored) }, !stored.token)
       .then((found) => {
         if (cancelled || !found.tickets.length) return;
         const ticket = found.tickets[0];
         if (ticket.status !== "HELD" && ticket.status !== "ISSUED") { clearGuestBooking(); return; }
         setBooking({ id: stored.id, token: stored.token });
         setPending(ticket);
+        setBookingQuotes(found.payment_quotes);
         const quote = found.payment_quotes.find((item) => item.payment_method === stored.paymentMethod);
-        if (ticket.status === "HELD" && quote && stored.transactionId) setCheckout({ ...quote, transaction_id: stored.transactionId, payment_url: null, simulated: false });
+        if (ticket.status === "HELD" && quote && stored.transactionId) setCheckout({ ...quote, transaction_id: stored.transactionId, payment_url: stored.paymentUrl ?? null, simulated: false });
         setMessage(ticket.status === "ISSUED" ? "Votre billet est prêt." : "Réservation retrouvée. Finalisez le paiement avant l’expiration.");
       })
       .catch((reason) => { if ((reason as { status?: number }).status === 403 || (reason as { status?: number }).status === 404) clearGuestBooking(); });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Revenu par le bouton « retour » du navigateur depuis la page de paiement : la page peut être restaurée telle quelle.
+  useEffect(() => {
+    const restore = (event: PageTransitionEvent) => { if (event.persisted) { locked.current = false; setBusy(false); setMessage(""); } };
+    window.addEventListener("pageshow", restore);
+    return () => window.removeEventListener("pageshow", restore);
+  }, []);
 
   // Plan de sièges relu auprès du serveur : après une réservation ou un paiement, un siège pris n'est plus proposé.
   const loadSeats = useCallback(async () => {
@@ -424,50 +448,125 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
 
   useEffect(() => { void loadSeats(); }, [loadSeats]);
 
-  async function reserve(event: FormEvent) {
-    event.preventDefault();
-    setMessage("");
-    try {
-      const created = await apiFetch<{ id: number; tickets: Ticket[]; guest_access_token?: string }>("/client/bookings/", { method: "POST", body: JSON.stringify({ trip: Number(tripId), contact_phone: phone, passengers: [{ full_name: passengerName, phone, seat: Number(seatId) }] }) }, !!user);
-      setBooking({ id: created.id, token: created.guest_access_token ?? null });
-      if (created.guest_access_token) saveGuestBooking(created.id, created.guest_access_token); else clearGuestBooking();
-      setPending(created.tickets[0]);
-      setCheckout(null);
-      setMessage("Siège réservé temporairement. Finalisez le paiement avant l’expiration.");
-      setSeatId("");
-      await Promise.all([onChanged(), loadSeats()]);
-    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Réservation impossible."); }
+  // Total à payer pour le trajet choisi, demandé au serveur avant toute réservation.
+  useEffect(() => {
+    setTripQuotes([]);
+    if (!tripId) return;
+    let cancelled = false;
+    apiFetch<Quote[]>(`/client/trips/${tripId}/payment-quotes/`, {}, false).then((quotes) => { if (!cancelled) setTripQuotes(quotes); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [tripId]);
+
+  // Compte à rebours de la tenue du siège.
+  const expiresAt = held && pending?.reservation_expires_at ? new Date(pending.reservation_expires_at).getTime() : null;
+  useEffect(() => {
+    if (!expiresAt) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt]);
+  const remainingSeconds = expiresAt ? Math.max(0, Math.floor((expiresAt - now) / 1000)) : null;
+  const expired = remainingSeconds === 0;
+  useEffect(() => { if (expired) void loadSeats(); }, [expired, loadSeats]);
+
+  function forget() {
+    clearGuestBooking();
+    setBooking(null); setPending(null); setCheckout(null); setBookingQuotes([]); setPaymentFailed(false); setMessage("");
+    void loadSeats();
   }
 
-  // Le serveur crée la transaction et fixe le montant ; le site ne fait qu'ouvrir la page de paiement.
-  async function startPayment(method: PaymentMethod) {
-    if (!pending || !booking) return;
-    setMessage("");
+  async function createBooking() {
+    const created = await apiFetch<BookingPayload>("/client/bookings/", { method: "POST", body: JSON.stringify({ trip: Number(tripId), contact_phone: phone, passengers: [{ full_name: passengerName, phone, seat: Number(seatId) }] }) }, !!user);
+    const current = { id: created.id, token: created.guest_access_token ?? null };
+    saveGuestBooking(current.id, current.token);
+    setBooking(current);
+    setPending(created.tickets[0]);
+    setBookingQuotes(created.payment_quotes);
+    setCheckout(null);
+    setSeatId("");
+    void Promise.all([onChanged(), loadSeats()]);
+    return current;
+  }
+
+  // Le serveur crée la transaction et fixe le montant ; le site redirige ensuite vers la page de paiement.
+  async function openPayment(current: { id: number; token: string | null }, methodId: number) {
+    setPaymentFailed(false);
     try {
-      const created = await apiFetch<Checkout>(`/client/bookings/${booking.id}/checkout/`, { method: "POST", headers: bookingHeaders(), body: JSON.stringify({ payment_method: method.id }) }, !!user);
+      const created = await apiFetch<Checkout>(`/client/bookings/${current.id}/checkout/`, { method: "POST", headers: access(current), body: JSON.stringify({ payment_method: methodId }) }, !current.token);
       setCheckout(created);
-      if (booking.token) rememberGuestPayment(created.payment_method, created.transaction_id);
+      rememberGuestPayment(created.payment_method, created.transaction_id, created.payment_url);
       if (created.payment_url) {
-        window.open(created.payment_url, "_blank", "noopener");
-        setMessage("La page de paiement s’est ouverte dans un nouvel onglet. Revenez ici une fois le paiement terminé.");
-      } else {
-        await confirmPayment(created);
+        setMessage("Redirection vers la page de paiement…");
+        window.location.assign(created.payment_url);
+        return true;
       }
-    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Paiement impossible."); }
+      await confirmPayment(created, current);
+    } catch (reason) {
+      // La réservation existe toujours : le client réessaie le paiement sur la même réservation.
+      setPaymentFailed(true);
+      setMessage(reason instanceof Error ? `Le paiement n’a pas pu démarrer : ${reason.message}` : "Le paiement n’a pas pu démarrer.");
+    }
+    return false;
   }
 
-  async function confirmPayment(current: Checkout | null = checkout) {
-    if (!pending || !current || !booking) return;
-    setMessage("");
+  // Action unique : réserver le siège puis ouvrir le paiement, dans un seul enchaînement.
+  async function payNow(event: FormEvent) {
+    event.preventDefault();
+    if (locked.current || held || !singleQuote) return;
+    locked.current = true;
+    setBusy(true); setMessage("");
+    let redirecting = false;
     try {
-      const response = await apiFetch<{ booking: { tickets: Ticket[] } }>(`/client/bookings/${booking.id}/pay/`, { method: "POST", headers: bookingHeaders(), body: JSON.stringify({ payment_method: current.payment_method, external_reference: current.transaction_id }) }, !!user);
+      const current = await createBooking();
+      redirecting = await openPayment(current, singleQuote.payment_method);
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Réservation impossible.");
+    } finally {
+      if (!redirecting) { locked.current = false; setBusy(false); }
+    }
+  }
+
+  // Plusieurs moyens de paiement en ligne (ou aucun) : la réservation d'abord, le choix du moyen ensuite.
+  async function reserveOnly(event: FormEvent) {
+    event.preventDefault();
+    if (locked.current || held) return;
+    locked.current = true;
+    setBusy(true); setMessage("");
+    try {
+      await createBooking();
+      setMessage("Siège réservé temporairement. Finalisez le paiement avant l’expiration.");
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Réservation impossible."); }
+    finally { locked.current = false; setBusy(false); }
+  }
+
+  // Payer, réessayer ou reprendre le paiement de la réservation en cours : jamais de seconde réservation.
+  async function payHeld(methodId: number) {
+    if (locked.current || !booking) return;
+    locked.current = true;
+    setBusy(true); setMessage("");
+    const redirecting = await openPayment(booking, methodId);
+    if (!redirecting) { locked.current = false; setBusy(false); }
+  }
+
+  async function confirmPayment(current: Checkout | null = checkout, target: { id: number; token: string | null } | null = booking) {
+    if (!current || !target) return;
+    // La vérification interroge le prestataire : elle peut prendre plusieurs secondes.
+    setBusy(true);
+    setMessage("Vérification du paiement…");
+    try {
+      const response = await apiFetch<{ booking: { tickets: Ticket[] } }>(`/client/bookings/${target.id}/pay/`, { method: "POST", headers: access(target), body: JSON.stringify({ payment_method: current.payment_method, external_reference: current.transaction_id }) }, !target.token);
       setPending(response.booking.tickets[0]);
       setCheckout(null);
       setMessage("Paiement confirmé, ticket émis.");
       setSeatId("");
       await Promise.all([onChanged(), loadSeats()]);
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Paiement non confirmé."); }
+    finally { locked.current = false; setBusy(false); }
   }
+
+  // Le serveur chiffre tous les moyens actifs ; seuls ceux payables en ligne sont proposés ici.
+  const payableQuotes = bookingQuotes.filter((item) => onlineMethods.some((method) => method.id === item.payment_method));
+  const heldQuote = payableQuotes.find((item) => item.payment_method === checkout?.payment_method) ?? (payableQuotes.length === 1 ? payableQuotes[0] : null);
+  const countdown = remainingSeconds === null ? "—" : `${Math.floor(remainingSeconds / 60)} min ${String(remainingSeconds % 60).padStart(2, "0")} s`;
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }} className="responsive-grid">
@@ -475,7 +574,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
         <h3>Réserver un billet</h3>
         <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
         {trips.length === 0 ? <p>Aucun trajet disponible.</p> : (
-          <form onSubmit={reserve} className="f">
+          <form onSubmit={singleQuote ? payNow : reserveOnly} className="f">
             <label style={{ marginTop: '10px' }}>Voyage</label>
             <select value={tripId} onChange={(e) => { setTripId(e.target.value); setSeatId(""); }} required>
               <option value="">Choisir un départ</option>
@@ -513,35 +612,61 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
             
             <label style={{ marginTop: '20px' }}>Téléphone{!user && " (obligatoire sans compte)"}</label>
             <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required={!user} pattern={user ? undefined : "\\+?[0-9\\(][0-9 \\(\\)\\.\\-]{5,}"} title="Numéro de téléphone" />
-            
-            <button className="btn p" style={{ marginTop: '30px', width: '100%' }} disabled={!seatId || !selectedTrip?.current_fare}>
-              Réserver {selectedTrip?.current_fare ? ` · ${money(selectedTrip.current_fare.amount, selectedTrip.current_fare.currency)}` : ""}
-            </button>
+
+            {singleQuote && !held && (
+              <p style={{ marginTop: '20px', fontSize: '14px', color: 'var(--mute)' }}>
+                Prix du billet : {money(singleQuote.amount, singleQuote.currency)} · Frais de paiement : {money(singleQuote.fee_amount, singleQuote.currency)}
+              </p>
+            )}
+            {!held && (singleQuote ? (
+              <button className="btn p" style={{ marginTop: '12px', width: '100%' }} disabled={busy || !seatId}>
+                {busy ? "Patientez…" : `Payer ${money(singleQuote.total, singleQuote.currency)}`}
+              </button>
+            ) : (
+              <button className="btn p" style={{ marginTop: '30px', width: '100%' }} disabled={busy || !seatId || !selectedTrip?.current_fare}>
+                {busy ? "Patientez…" : <>Réserver {selectedTrip?.current_fare ? ` · ${money(selectedTrip.current_fare.amount, selectedTrip.current_fare.currency)}` : ""}</>}
+              </button>
+            ))}
           </form>
         )}
         
-        {message && <div style={{ background: 'var(--tint)', color: 'var(--navy)', padding: '16px', borderRadius: '10px', marginTop: '20px' }}>{message}</div>}
+        {message && <div role="status" style={{ background: 'var(--tint)', color: 'var(--navy)', padding: '16px', borderRadius: '10px', marginTop: '20px' }}>{message}</div>}
         
-        {pending?.status === "HELD" && (
+        {held && pending && booking && (
           <div style={{ background: 'var(--warnbg)', color: 'var(--warn)', padding: '20px', borderRadius: '12px', marginTop: '20px', border: '1px solid #f2dfb6' }}>
-            <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>Finaliser la réservation {pending.reference}</p>
-            <p style={{ fontSize: '14px', marginBottom: '16px' }}>Expiration : {pending.reservation_expires_at ? formatDate(pending.reservation_expires_at) : "—"}</p>
-            {checkout && (
-              <div style={{ marginBottom: '16px' }}>
-                <p style={{ fontSize: '14px' }}>Prix : {money(checkout.amount, checkout.currency)} · Frais de paiement : {money(checkout.fee_amount, checkout.currency)}</p>
-                <p style={{ fontWeight: 'bold', margin: '6px 0 12px' }}>Total à payer : {money(checkout.total, checkout.currency)}</p>
+            <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>Réservation en cours · {pending.reference}</p>
+            <p style={{ fontSize: '14px' }}>Siège {pending.seat_detail.number} · {pending.trip_detail.route_detail.label}</p>
+            {expired ? (
+              <>
+                <p style={{ fontSize: '14px', margin: '8px 0 16px' }}>Le délai de réservation est écoulé : le siège n’est plus tenu.</p>
+                <button type="button" className="btn" onClick={forget}>Nouvelle réservation</button>
+                {checkout && <button type="button" className="btn" style={{ marginLeft: '10px' }} disabled={busy} onClick={() => void confirmPayment()}>J’ai payé · vérifier</button>}
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: '14px', margin: '8px 0 16px' }}>Temps restant : <b>{countdown}</b></p>
+                {heldQuote && (
+                  <p style={{ fontSize: '14px', marginBottom: '12px' }}>
+                    Prix du billet : {money(heldQuote.amount, heldQuote.currency)} · Frais de paiement : {money(heldQuote.fee_amount, heldQuote.currency)} · <b>Total : {money(heldQuote.total, heldQuote.currency)}</b>
+                  </p>
+                )}
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  {checkout.payment_url && <a className="btn" href={checkout.payment_url} target="_blank" rel="noreferrer">Rouvrir la page de paiement</a>}
-                  <button type="button" className="btn p" onClick={() => void confirmPayment()}>J’ai payé · vérifier</button>
+                  {checkout?.payment_url && !paymentFailed && (
+                    <a className="btn p" href={checkout.payment_url}>Reprendre le paiement</a>
+                  )}
+                  {(!checkout?.payment_url || paymentFailed) && payableQuotes.length === 1 && (
+                    <button type="button" className="btn p" disabled={busy} onClick={() => void payHeld(payableQuotes[0].payment_method)}>
+                      {busy ? "Patientez…" : paymentFailed ? "Réessayer le paiement" : `Payer ${money(payableQuotes[0].total, payableQuotes[0].currency)}`}
+                    </button>
+                  )}
+                  {payableQuotes.length > 1 && onlineMethods.map((method) => (
+                    <button key={method.id} type="button" className="btn" disabled={busy} onClick={() => void payHeld(method.id)}>Payer avec {method.label}</button>
+                  ))}
+                  {checkout && <button type="button" className="btn" disabled={busy} onClick={() => void confirmPayment()}>J’ai payé · vérifier</button>}
                 </div>
-              </div>
+                {payableQuotes.length === 0 && <p style={{ fontSize: '14px' }}>Aucun paiement en ligne n’est disponible. Réglez votre billet au guichet.</p>}
+              </>
             )}
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              {paymentMethods.filter((method) => method.online).map((method) => (
-                <button key={method.id} type="button" className="btn" onClick={() => void startPayment(method)}>Payer avec {method.label}</button>
-              ))}
-            </div>
-            {paymentMethods.filter((method) => method.online).length === 0 && <p style={{ fontSize: '14px' }}>Aucun paiement en ligne n’est disponible. Réglez votre billet au guichet.</p>}
           </div>
         )}
         
