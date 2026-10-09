@@ -1,9 +1,8 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { Brand } from "./brand";
 import { LoginCard } from "./login-card";
-import { AccessDenied, EmptyState, StatusBadge } from "./ui";
+import { AccessDenied, EmptyState, Loading, Notice, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge } from "./ui";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken } from "@/lib/api";
 import type { Seat, Ticket, Trip, User } from "@/lib/types";
 
@@ -27,7 +26,8 @@ export function ControllerPortal() {
       const me = await apiFetch<User>("/auth/me/");
       if (!["CONTROLLER", "ADMIN"].includes(me.role)) { setUser(me); setAccessDenied(true); return; }
       const allTrips = await apiList<Trip>("/trips/?all=true");
-      setUser(me); setTrips(allTrips.filter((trip) => !["COMPLETED", "CANCELLED"].includes(trip.status)));
+      // Les départs d'un itinéraire désactivé ne sont pas proposés.
+      setUser(me); setTrips(allTrips.filter((trip) => trip.route_detail.active && !["COMPLETED", "CANCELLED"].includes(trip.status)));
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Connexion impossible."); if ((reason as { status?: number }).status === 401) { clearTokens(); setUser(null); } }
     finally { setLoading(false); }
   }, []);
@@ -51,9 +51,48 @@ export function ControllerPortal() {
   }
 
   if (accessDenied) return <AccessDenied area="l’équipe de contrôle" />;
-  if (!getAccessToken() || (!loading && !user)) return <main className="min-h-screen bg-axis-950 px-4 py-10"><div className="mx-auto max-w-md"><Brand light /><div className="mt-10"><LoginCard title="Interface contrôleur" onSuccess={() => void load()} /></div>{message && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{message}</p>}</div></main>;
+  if (!getAccessToken() || (!loading && !user)) {
+    return (
+      <StaffLogin error={message}>
+        <LoginCard title="Interface contrôleur" onSuccess={() => void load()} />
+      </StaffLogin>
+    );
+  }
 
-  return <main className="min-h-screen bg-axis-950 pb-10 text-white"><header className="border-b border-white/10 px-4 py-4"><div className="mx-auto flex max-w-5xl items-center justify-between"><Brand light /><div className="text-right"><p className="text-sm font-bold">{user?.first_name || user?.username}</p><button onClick={() => { clearTokens(); location.reload(); }} className="text-xs text-axis-300">Déconnexion</button></div></div></header><div className="mx-auto max-w-5xl px-4 py-6"><p className="text-xs font-bold uppercase tracking-[.18em] text-axis-300">Contrôle embarquement / à bord</p><h1 className="mt-2 text-3xl font-bold">Vérifier un billet</h1><label className="mt-6 block text-xs font-semibold text-axis-200">Voyage contrôlé</label><select className="mt-2 w-full rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-white outline-none" value={tripId} onChange={(e) => setTripId(e.target.value)}><option className="text-axis-950" value="">Choisir le voyage</option>{trips.map((trip) => <option className="text-axis-950" key={trip.id} value={trip.id}>{trip.route_detail.label} · {formatDate(trip.departure_at)}</option>)}</select><div className="mt-6 grid gap-5 md:grid-cols-2"><Scanner disabled={!tripId} onValue={(value) => void validate(extractToken(value), "QR")} /><ManualValidation disabled={!tripId} onSubmit={(value) => void validate(value, "MANUAL")} /></div>{message && <div className={`mt-5 rounded-2xl p-4 text-sm font-semibold ${result ? "bg-emerald-500/20 text-emerald-100" : "bg-red-500/20 text-red-100"}`}>{message}</div>}{result && <article className="mt-5 rounded-2xl bg-white p-5 text-axis-950"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold text-axis-600">{result.ticket.reference}</p><h2 className="mt-1 text-xl font-bold">{result.ticket.passenger_name}</h2><p className="mt-1 text-sm text-slate-500">Siège {result.ticket.seat_detail.number} · {result.ticket.trip_detail.route_detail.label}</p></div><StatusBadge tone="green">Contrôlé</StatusBadge></div></article>}<SeatOverview seats={seats} tickets={tickets} enabled={Boolean(tripId)} /></div></main>;
+  return (
+    <StaffShell user={user}>
+      <StaffTitle eyebrow="Contrôle embarquement / à bord" title="Vérifier un billet" />
+      {!user ? <Loading /> : (
+        <>
+          <section className="card">
+            <label className="field-label" htmlFor="controlledTrip">Voyage contrôlé</label>
+            <select id="controlledTrip" className="field" value={tripId} onChange={(e) => setTripId(e.target.value)}>
+              <option value="">Choisir le voyage</option>
+              {trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.route_detail.label} · {formatDate(trip.departure_at)}</option>)}
+            </select>
+          </section>
+          <div className="mt-5 grid gap-5 md:grid-cols-2">
+            <Scanner disabled={!tripId} onValue={(value) => void validate(extractToken(value), "QR")} />
+            <ManualValidation disabled={!tripId} onSubmit={(value) => void validate(value, "MANUAL")} />
+          </div>
+          {message && <Notice notice={{ text: message, tone: result ? "ok" : "error" }} className="mt-5" />}
+          {result && (
+            <article className="card mt-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="eyebrow">{result.ticket.reference}</p>
+                  <h2 className="mt-1">{result.ticket.passenger_name}</h2>
+                  <p className="text-sm text-slate-500">Siège {result.ticket.seat_detail.number} · {result.ticket.trip_detail.route_detail.label}</p>
+                </div>
+                <StatusBadge tone="green">Contrôlé</StatusBadge>
+              </div>
+            </article>
+          )}
+          <SeatOverview seats={seats} tickets={tickets} enabled={Boolean(tripId)} />
+        </>
+      )}
+    </StaffShell>
+  );
 }
 
 function Scanner({ disabled, onValue }: { disabled: boolean; onValue: (value: string) => void }) {
@@ -73,19 +112,66 @@ function Scanner({ disabled, onValue }: { disabled: boolean; onValue: (value: st
   }
   function stop() { if (frame.current) cancelAnimationFrame(frame.current); stream.current?.getTracks().forEach((track) => track.stop()); stream.current = null; setActive(false); }
   useEffect(() => stop, []);
-  return <section className="rounded-3xl border border-white/10 bg-white/5 p-5"><p className="text-xs font-bold uppercase tracking-[.14em] text-axis-300">Scan QR</p><div className="mt-4 aspect-[4/3] overflow-hidden rounded-2xl bg-black/30"><video ref={video} className="h-full w-full object-cover" muted playsInline />{!active && <div className="grid h-full place-items-center px-6 text-center text-sm text-axis-200">Cadrez le QR code du ticket dans la caméra.</div>}</div><button disabled={disabled} onClick={active ? stop : () => void start()} className="mt-4 w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-axis-950">{active ? "Arrêter la caméra" : "Démarrer le scan"}</button>{error && <p className="mt-3 text-xs text-amber-200">{error}</p>}</section>;
+  return (
+    <section className="card">
+      <SectionHeading title="Scan QR" />
+      <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-axis-950">
+        <video ref={video} className="h-full w-full object-cover" muted playsInline />
+        {!active && <div className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-axis-200">Cadrez le QR code du ticket dans la caméra.</div>}
+      </div>
+      <button disabled={disabled} onClick={active ? stop : () => void start()} className="primary-button mt-4 w-full">{active ? "Arrêter la caméra" : "Démarrer le scan"}</button>
+      {error && <Notice notice={{ text: error, tone: "error" }} className="mt-3" />}
+    </section>
+  );
 }
 
 function ManualValidation({ disabled, onSubmit }: { disabled: boolean; onSubmit: (value: string) => void }) {
   const [value, setValue] = useState("");
   function submit(event: FormEvent) { event.preventDefault(); if (value.trim()) onSubmit(value.trim()); }
-  return <form onSubmit={submit} className="rounded-3xl border border-white/10 bg-white/5 p-5"><p className="text-xs font-bold uppercase tracking-[.14em] text-axis-300">Validation manuelle</p><h2 className="mt-3 text-xl font-bold">Référence ou jeton</h2><p className="mt-2 text-sm leading-6 text-axis-200">À utiliser en cas de caméra indisponible. Le serveur applique les mêmes contrôles anti-fraude.</p><label className="mt-6 block text-xs font-semibold text-axis-200">Référence du ticket</label><input className="mt-2 w-full rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-white outline-none placeholder:text-axis-400" placeholder="AX-… ou UUID" value={value} onChange={(e) => setValue(e.target.value)} required /><button disabled={disabled} className="mt-4 w-full rounded-xl bg-axis-500 px-4 py-3 text-sm font-bold text-white">Valider manuellement</button></form>;
+  return (
+    <form onSubmit={submit} className="card">
+      <SectionHeading eyebrow="Validation manuelle" title="Référence ou jeton" />
+      <p className="text-sm leading-6 text-slate-500">À utiliser en cas de caméra indisponible. Le serveur applique les mêmes contrôles anti-fraude.</p>
+      <label className="field-label mt-5" htmlFor="manualReference">Référence du ticket</label>
+      <input id="manualReference" className="field" placeholder="AX-… ou UUID" value={value} onChange={(e) => setValue(e.target.value)} required />
+      <button disabled={disabled} className="primary-button mt-4 w-full">Valider manuellement</button>
+    </form>
+  );
 }
 
 function SeatOverview({ seats, tickets, enabled }: { seats: Seat[]; tickets: Ticket[]; enabled: boolean }) {
   if (!enabled) return null;
   const ticketBySeat = new Map(tickets.map((ticket) => [ticket.seat, ticket]));
-  return <section className="mt-6 rounded-3xl bg-white p-5 text-axis-950"><div className="flex items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.14em] text-axis-600">Vue consolidée</p><h2 className="mt-1 text-xl font-bold">Sièges du voyage</h2></div><p className="text-xs text-slate-500">{tickets.filter((t) => ["CHECKED", "COMPLETED"].includes(t.status)).length} contrôlé(s)</p></div>{seats.length === 0 ? <div className="mt-5"><EmptyState title="Plan non configuré" text="La capacité et la disposition doivent être renseignées par l’administrateur." /></div> : <div className="mt-5 grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">{seats.map((seat) => { const ticket = ticketBySeat.get(seat.id); const checked = ticket && ["CHECKED", "COMPLETED"].includes(ticket.status); return <div key={seat.id} className={`grid aspect-square place-items-center rounded-xl text-sm font-bold ${checked ? "bg-emerald-600 text-white" : seat.status === "PAID" ? "bg-axis-700 text-white" : seat.status === "HELD" ? "bg-amber-100 text-amber-800" : "bg-axis-50 text-slate-400"}`} title={ticket?.passenger_name}>{seat.number}</div>; })}</div>}<div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500"><Legend color="bg-axis-50" text="Libre" /><Legend color="bg-amber-100" text="Réservé" /><Legend color="bg-axis-700" text="Vendu" /><Legend color="bg-emerald-600" text="Contrôlé" /></div></section>;
+  return (
+    <section className="card mt-5">
+      <SectionHeading
+        eyebrow="Vue consolidée"
+        title="Sièges du voyage"
+        action={<StatusBadge tone="green">{tickets.filter((t) => ["CHECKED", "COMPLETED"].includes(t.status)).length} contrôlé(s)</StatusBadge>}
+      />
+      {seats.length === 0 ? (
+        <EmptyState title="Plan non configuré" text="La capacité et la disposition doivent être renseignées par l’administrateur." />
+      ) : (
+        <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-12">
+          {seats.map((seat) => {
+            const ticket = ticketBySeat.get(seat.id);
+            const checked = ticket && ["CHECKED", "COMPLETED"].includes(ticket.status);
+            return (
+              <div key={seat.id} className={`grid aspect-square place-items-center rounded-[10px] text-sm font-bold ${checked ? "bg-[var(--ok)] text-white" : seat.status === "PAID" ? "bg-[var(--navy)] text-white" : seat.status === "HELD" ? "bg-[var(--warnbg)] text-[var(--warn)]" : "border border-[var(--line)] bg-[var(--bg)] text-slate-400"}`} title={ticket?.passenger_name}>
+                {seat.number}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
+        <Legend color="border border-[var(--line)] bg-[var(--bg)]" text="Libre" />
+        <Legend color="bg-[var(--warnbg)]" text="Réservé" />
+        <Legend color="bg-[var(--navy)]" text="Vendu" />
+        <Legend color="bg-[var(--ok)]" text="Contrôlé" />
+      </div>
+    </section>
+  );
 }
 
 function Legend({ color, text }: { color: string; text: string }) { return <span className="flex items-center gap-1.5"><i className={`h-3 w-3 rounded ${color}`} />{text}</span>; }

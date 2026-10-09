@@ -1,11 +1,10 @@
 import Link from "next/link";
 
+// Logo du site client (pastille « A » + nom), réutilisé tel quel dans les portails équipe.
 export function Brand({ light = false }: { light?: boolean }) {
   return (
-    <Link href="/" className={`font-bold tracking-tight ${light ? "text-white" : "text-axis-900"}`}>
-      <span className="text-xl">Axis</span>
-      <span className={light ? "text-axis-300" : "text-axis-600"}>Transport</span>
+    <Link href="/" className="logo" style={light ? { color: "#fff" } : undefined}>
+      <i style={light ? { background: "#fff", color: "var(--navy)" } : undefined}>A</i>AXIS Transport
     </Link>
   );
 }
-
