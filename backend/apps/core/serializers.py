@@ -25,7 +25,7 @@ from .models import (
     Vehicle,
 )
 from .payments import ONLINE_PROVIDERS, payment_quote
-from .services import rental_is_available, resolve_fare
+from .services import boarding_lead_minutes, boarding_time, rental_is_available, resolve_fare
 
 
 def public_ticket_url(ticket):
@@ -167,12 +167,21 @@ class SeatSerializer(serializers.ModelSerializer):
         ]
 
 
+def serialized_boarding_at(serializer, trip):
+    """Heure d'embarquement d'un trajet ; le réglage n'est lu qu'une fois par réponse."""
+    cache = serializer.context if isinstance(serializer.context, dict) else {}
+    if "_boarding_lead_minutes" not in cache:
+        cache["_boarding_lead_minutes"] = boarding_lead_minutes()
+    return boarding_time(trip, cache["_boarding_lead_minutes"])
+
+
 class TripSerializer(serializers.ModelSerializer):
     route_detail = RouteSerializer(source="route", read_only=True)
     vehicle_detail = PublicVehicleSerializer(source="vehicle", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     available_seats = serializers.SerializerMethodField()
     current_fare = serializers.SerializerMethodField()
+    boarding_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Trip
@@ -183,6 +192,7 @@ class TripSerializer(serializers.ModelSerializer):
             "vehicle",
             "vehicle_detail",
             "departure_at",
+            "boarding_at",
             "arrival_at",
             "status",
             "status_display",
@@ -196,6 +206,10 @@ class TripSerializer(serializers.ModelSerializer):
 
     def get_available_seats(self, obj):
         return obj.seats.filter(status=Seat.Status.AVAILABLE).count()
+
+    def get_boarding_at(self, obj):
+        boarding = serialized_boarding_at(self, obj)
+        return serializers.DateTimeField().to_representation(boarding) if boarding else None
 
     def get_current_fare(self, obj):
         try:
@@ -503,6 +517,7 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
     origin = serializers.SerializerMethodField()
     destination = serializers.SerializerMethodField()
     departure_at = serializers.SerializerMethodField()
+    boarding_at = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     formatted_amount = serializers.SerializerMethodField()
     company_name = serializers.SerializerMethodField()
@@ -519,6 +534,7 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
             "origin",
             "destination",
             "departure_at",
+            "boarding_at",
             "amount",
             "currency",
             "formatted_amount",
@@ -540,6 +556,10 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
 
     def get_departure_at(self, obj):
         return obj.trip.departure_at.isoformat() if obj.trip and obj.trip.departure_at else None
+
+    def get_boarding_at(self, obj):
+        boarding = serialized_boarding_at(self, obj.trip) if obj.trip else None
+        return boarding.isoformat() if boarding else None
 
     def get_formatted_amount(self, obj):
         return f"{obj.amount:,.0f} {obj.currency or 'FCFA'}".replace(",", " ")

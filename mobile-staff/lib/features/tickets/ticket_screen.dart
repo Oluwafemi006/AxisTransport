@@ -65,8 +65,12 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
 
   Future<void> _shareTicket(Ticket ticket) async {
     // Aucun lien : l'adresse publique du site n'est pas codée dans l'application.
-    final text = 'AXIS Transport\nBillet : ${ticket.reference}\nTrajet : ${ticket.trip.route.label}';
-    await Share.share(text, subject: 'Billet AXIS Transport ${ticket.reference}');
+    final text =
+        'AXIS Transport\nBillet : ${ticket.reference}\nTrajet : ${ticket.trip.route.label}';
+    await Share.share(
+      text,
+      subject: 'Billet AXIS Transport ${ticket.reference}',
+    );
   }
 
   @override
@@ -138,7 +142,15 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        formatFullDateTime(item.trip.departureAt),
+                        'Embarquement : ${item.trip.boardingAt == null ? 'à confirmer' : formatFullDateTime(item.trip.boardingAt!)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Départ : ${formatFullDateTime(item.trip.departureAt)}',
                         style: const TextStyle(color: Color(0xFFCBE0F6)),
                       ),
                       const SizedBox(height: 24),

@@ -14,6 +14,7 @@ interface PublicTicketData {
   origin: string;
   destination: string;
   departure_at: string | null;
+  boarding_at: string | null;
   amount: number;
   currency: string;
   formatted_amount: string;
@@ -130,6 +131,7 @@ export default function PublicTicketPage() {
     const rows: [string, string][] = [
       ["Référence", ticket.reference],
       ["Trajet", ticket.origin && ticket.destination ? `${ticket.origin} → ${ticket.destination}` : ""],
+      ["Embarquement", ticket.boarding_at ? formatDate(ticket.boarding_at) : ""],
       ["Départ", ticket.departure_at ? formatDate(ticket.departure_at) : ""],
       ["Siège", ticket.seat_label],
       ["Passager", ticket.passenger_name],
@@ -137,7 +139,7 @@ export default function PublicTicketPage() {
       ["Statut", ticket.status_display],
     ];
     rows.forEach(([label, value], index) => {
-      const y = 640 + index * 58;
+      const y = 628 + index * 54;
       ctx.font = "bold 24px sans-serif";
       ctx.fillText(label, 50, y);
       ctx.font = "24px sans-serif";
@@ -225,6 +227,10 @@ export default function PublicTicketPage() {
               <div className="text-lg font-bold text-slate-900">{ticket.destination || "Arrivée"}</div>
             </div>
             <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-600 flex items-center justify-between">
+              <span>🕒 Embarquement</span>
+              <span className="font-semibold text-slate-800">{ticket.boarding_at ? formatDate(ticket.boarding_at) : "à confirmer"}</span>
+            </div>
+            <div className="mt-2 text-xs text-slate-600 flex items-center justify-between">
               <span>📅 Départ</span>
               <span className="font-semibold text-slate-800">{formatDate(ticket.departure_at)}</span>
             </div>

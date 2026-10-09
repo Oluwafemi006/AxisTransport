@@ -65,6 +65,26 @@ void main() {
       expect(fields.firstWhere((item) => item.$1 == 'Arrivée prévue').$2, contains('14:30'));
     });
 
+    test('l’heure d’embarquement vient du serveur et survit au stockage hors ligne', () {
+      // Sans valeur du serveur, rien n'est calculé ni inventé dans l'application.
+      expect(ticketFields(_ticket()).firstWhere((item) => item.$1 == 'Embarquement').$2, missingValue);
+
+      final json = _ticket().toJson();
+      (json['trip_detail'] as Map<String, dynamic>)['boarding_at'] = '2026-10-08T22:40:00Z';
+      final ticket = Ticket.fromJson(json);
+      expect(ticket.trip.boardingAt, DateTime.utc(2026, 10, 8, 22, 40).toLocal());
+
+      // Relu depuis le stockage local, le billet garde la même heure d'embarquement.
+      final restored = Ticket.fromJson(jsonDecode(jsonEncode(ticket.toJson())) as Map<String, dynamic>);
+      expect(restored.trip.boardingAt, ticket.trip.boardingAt);
+      final labels = ticketFields(restored).map((item) => item.$1).toList();
+      expect(labels.indexOf('Embarquement'), lessThan(labels.indexOf('Départ')));
+      expect(
+        ticketFields(restored).firstWhere((item) => item.$1 == 'Embarquement').$2,
+        isNot(missingValue),
+      );
+    });
+
     test('le PDF est généré avec un nom de fichier dérivé de la référence', () async {
       final bytes = await buildTicketPdf(_ticket());
       expect(ascii.decode(bytes.sublist(0, 5)), '%PDF-');

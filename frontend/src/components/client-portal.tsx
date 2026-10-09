@@ -532,7 +532,8 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                   <div>
                     <h4 style={{ color: 'var(--navy)', marginBottom: '4px' }}>{ticket.trip_detail.route_detail.label}</h4>
-                    <p style={{ fontSize: '13px', color: 'var(--mute)' }}>{formatDate(ticket.trip_detail.departure_at)}</p>
+                    <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Départ : {formatDate(ticket.trip_detail.departure_at)}</p>
+                    {ticket.trip_detail.boarding_at && <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Embarquement : {formatDate(ticket.trip_detail.boarding_at)}</p>}
                   </div>
                   <span className={ticket.status === "ISSUED" ? "pill" : "pill ex"} style={{ alignSelf: 'flex-start' }}>{ticket.status_display}</span>
                 </div>

@@ -69,6 +69,27 @@ def configured_hold_duration():
     return timedelta(minutes=minutes)
 
 
+DEFAULT_BOARDING_LEAD_MINUTES = 30
+
+
+def boarding_lead_minutes():
+    """Avance de l'embarquement sur le départ (réglage admin 'boarding_lead_minutes', 30 par défaut)."""
+    try:
+        minutes = int(SystemSetting.objects.get(key="boarding_lead_minutes").value)
+    except (SystemSetting.DoesNotExist, TypeError, ValueError):
+        return DEFAULT_BOARDING_LEAD_MINUTES
+    return minutes if minutes >= 0 else DEFAULT_BOARDING_LEAD_MINUTES
+
+
+def boarding_time(trip, lead_minutes=None):
+    """Heure d'embarquement à l'origine du trajet : départ moins l'avance réglée. Calculée, jamais stockée."""
+    if not trip or not trip.departure_at:
+        return None
+    if lead_minutes is None:
+        lead_minutes = boarding_lead_minutes()
+    return trip.departure_at - timedelta(minutes=lead_minutes)
+
+
 def generate_trip_seats(trip):
     labels = trip.vehicle.seat_labels
     if not labels:

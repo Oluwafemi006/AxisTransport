@@ -32,12 +32,21 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
     try {
       final bytes = await buildTicketPdf(ticket);
       try {
-        final location = await saveToDownloads(name: ticketFileName(ticket), bytes: bytes);
+        final location = await saveToDownloads(
+          name: ticketFileName(ticket),
+          bytes: bytes,
+        );
         message = 'Billet enregistré : $location';
       } catch (_) {
         await SharePlus.instance.share(
           ShareParams(
-            files: [XFile.fromData(bytes, name: ticketFileName(ticket), mimeType: 'application/pdf')],
+            files: [
+              XFile.fromData(
+                bytes,
+                name: ticketFileName(ticket),
+                mimeType: 'application/pdf',
+              ),
+            ],
             subject: 'Billet AXIS Transport ${ticket.reference}',
           ),
         );
@@ -48,7 +57,8 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
     }
     if (!mounted) return;
     setState(() => _downloading = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -170,7 +180,15 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        formatFullDateTime(item.trip.departureAt),
+                        'Embarquement : ${item.trip.boardingAt == null ? 'à confirmer' : formatFullDateTime(item.trip.boardingAt!)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Départ : ${formatFullDateTime(item.trip.departureAt)}',
                         style: const TextStyle(color: Color(0xFFCBE0F6)),
                       ),
                       const SizedBox(height: 24),
@@ -218,9 +236,15 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                 ),
                 const SizedBox(height: 16),
                 FilledButton.icon(
-                  onPressed: canShowQr && !_downloading ? () => _downloadTicket(item) : null,
+                  onPressed: canShowQr && !_downloading
+                      ? () => _downloadTicket(item)
+                      : null,
                   icon: const Icon(Icons.download),
-                  label: Text(_downloading ? 'Enregistrement…' : 'Télécharger le billet (PDF)'),
+                  label: Text(
+                    _downloading
+                        ? 'Enregistrement…'
+                        : 'Télécharger le billet (PDF)',
+                  ),
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),

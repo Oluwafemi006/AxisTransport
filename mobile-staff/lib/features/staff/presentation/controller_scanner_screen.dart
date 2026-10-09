@@ -2,7 +2,34 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../core/formatters.dart';
 import '../../../core/session.dart';
+
+/// Date et heure fournies par le serveur ; « à confirmer » si absentes.
+String _serverTime(Object? value) {
+  final parsed = value is String ? DateTime.tryParse(value) : null;
+  return parsed == null ? 'à confirmer' : formatFullDateTime(parsed.toLocal());
+}
+
+/// Lignes affichées après un scan réussi, tirées telles quelles de la réponse du serveur.
+List<String> scanTicketLines(Map<String, dynamic> ticket) {
+  final trip = ticket['trip_detail'] is Map
+      ? ticket['trip_detail'] as Map
+      : const {};
+  final seat = ticket['seat_detail'] is Map
+      ? ticket['seat_detail'] as Map
+      : const {};
+  final route = trip['route_detail'] is Map
+      ? trip['route_detail'] as Map
+      : const {};
+  return [
+    'Passager : ${ticket['passenger_name'] ?? 'à confirmer'}',
+    'Siège : ${seat['number'] ?? 'à confirmer'}',
+    'Trajet : ${route['label'] ?? 'à confirmer'}',
+    'Embarquement : ${_serverTime(trip['boarding_at'])}',
+    'Départ : ${_serverTime(trip['departure_at'])}',
+  ];
+}
 
 class ControllerScannerScreen extends ConsumerStatefulWidget {
   const ControllerScannerScreen({super.key});
@@ -82,9 +109,9 @@ class _ControllerScannerScreenState
                   success ? 'Succès' : 'Échec',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        color: success ? Colors.green : Colors.red,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    color: success ? Colors.green : Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -96,14 +123,15 @@ class _ControllerScannerScreenState
                   const SizedBox(height: 16),
                   const Divider(),
                   const SizedBox(height: 16),
-                  Text(
-                    'Passager : ${ticketData['passenger_name'] ?? 'Inconnu'}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Text('Siège : ${ticketData['seat']?['label'] ?? 'N/A'}'),
-                  Text(
-                    'Trajet : ${ticketData['trip']?['route']?['origin']?['name']} ➔ ${ticketData['trip']?['route']?['destination']?['name']}',
-                  ),
+                  for (final (index, line) in scanTicketLines(
+                    ticketData,
+                  ).indexed)
+                    Text(
+                      line,
+                      style: index == 0
+                          ? const TextStyle(fontWeight: FontWeight.bold)
+                          : null,
+                    ),
                 ],
                 const SizedBox(height: 24),
                 ElevatedButton(
@@ -114,7 +142,7 @@ class _ControllerScannerScreenState
                     });
                   },
                   child: const Text('Scanner le suivant'),
-                )
+                ),
               ],
             ),
           ),
@@ -188,9 +216,7 @@ class _ControllerScannerScreenState
           if (_isProcessing)
             Container(
               color: Colors.black54,
-              child: const Center(
-                child: CircularProgressIndicator(),
-              ),
+              child: const Center(child: CircularProgressIndicator()),
             ),
           Positioned(
             bottom: 40,

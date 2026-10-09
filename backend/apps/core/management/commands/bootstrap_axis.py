@@ -28,6 +28,12 @@ class Command(BaseCommand):
         ):
             SystemSetting.objects.get_or_create(key=key, defaults={"value": "", "description": description})
 
+        # Avance de l'embarquement sur l'heure de départ, modifiable par l'administrateur.
+        SystemSetting.objects.get_or_create(
+            key="boarding_lead_minutes",
+            defaults={"value": 30, "description": "Minutes entre l'embarquement et le départ"},
+        )
+
         from apps.core.models import PaymentMethod
         from decimal import Decimal
         from django.conf import settings

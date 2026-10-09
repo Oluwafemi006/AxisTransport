@@ -59,6 +59,8 @@ export interface Trip {
   vehicle: number;
   vehicle_detail: Vehicle;
   departure_at: string;
+  // Heure d'embarquement à l'origine, calculée par le serveur (départ − boarding_lead_minutes).
+  boarding_at: string | null;
   arrival_at: string | null;
   status: string;
   status_display: string;

@@ -84,6 +84,56 @@ python manage.py bootstrap_axis
 gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3
 ```
 
+## 2 bis. Backend local joignable en HTTPS par un tunnel (procédure préparée, jamais exécutée)
+
+Sert uniquement à un essai court : le site Vercel appelle le backend resté sur le PC. À ne lancer qu'avec l'accord explicite du responsable du projet.
+`TUNNEL` désigne ci-dessous l'adresse HTTPS fournie par l'outil de tunnel (exemple : `https://xxxx.exemple.test`).
+
+### Avant d'ouvrir le tunnel
+
+Trois points de l'état actuel rendent l'essai dangereux ou impossible ; ils ne sont pas corrigés :
+
+| Point | Conséquence |
+|---|---|
+| `compose.yaml` lance le backend avec `DJANGO_DEBUG=true` | Les pages d'erreur détaillées et le paiement simulé (si activé) deviennent accessibles depuis Internet. |
+| Comptes de démonstration (`demo_admin`, `demo_guichet`…) au mot de passe connu | N'importe qui connaissant l'adresse peut entrer dans l'administration. Les supprimer ou changer leur mot de passe avant. |
+| `DJANGO_CORS_ALLOWED_ORIGINS` est écrit en dur dans `compose.yaml` et l'en-tête `X-Booking-Token` n'est pas autorisé | Le site Vercel ne peut pas appeler l'API ; l'achat sans compte échoue au paiement. |
+
+`CSRF_TRUSTED_ORIGINS` n'existe pas dans `settings.py` : l'API (jetons JWT) fonctionne sans, mais `/django-admin/` refusera ses formulaires à travers le tunnel.
+
+### Variables à poser
+
+Côté backend (fichier `.env` local, jamais commité) :
+
+| Nom | Valeur |
+|---|---|
+| `DJANGO_DEBUG` | `false` |
+| `DJANGO_SECRET_KEY` | Chaîne aléatoire longue |
+| `DJANGO_ALLOWED_HOSTS` | Nom d'hôte du tunnel, sans `https://` (pas de `*`) |
+| `DJANGO_CORS_ALLOWED_ORIGINS` | `https://axis-transport.vercel.app` |
+| `CSRF_TRUSTED_ORIGINS` | `TUNNEL` — à ajouter d'abord dans `settings.py` |
+| `PUBLIC_WEB_URL` | `https://axis-transport.vercel.app` |
+| `FEDAPAY_CALLBACK_URL` | `https://axis-transport.vercel.app/paiement/retour` |
+| `FEDAPAY_SECRET_KEY`, `FEDAPAY_WEBHOOK_SECRET`, `FEDAPAY_ENVIRONMENT` | Clés `sandbox`, `sandbox` |
+
+Côté Vercel : `NEXT_PUBLIC_API_URL` = `TUNNEL/api/v1`, puis redéployer (la variable est lue au build).
+
+Chez FedaPay (compte sandbox) : déclarer le webhook `TUNNEL/api/v1/client/webhooks/fedapay/` et recopier son secret dans `FEDAPAY_WEBHOOK_SECRET`.
+
+### Ordre des opérations
+
+1. Poser les variables backend, redémarrer le backend, vérifier `GET http://localhost:8000/api/v1/health/`.
+2. Ouvrir le tunnel vers le port 8000 ; vérifier `GET TUNNEL/api/v1/health/`.
+3. Déclarer le webhook chez FedaPay, poser `NEXT_PUBLIC_API_URL` sur Vercel, redéployer.
+4. Faire l'essai, puis fermer le tunnel et retirer le webhook.
+
+### Risques
+
+- **Adresse changeante** : avec un tunnel gratuit, l'adresse change à chaque lancement. Il faut alors refaire `DJANGO_ALLOWED_HOSTS`, le webhook FedaPay, `NEXT_PUBLIC_API_URL` et un redéploiement Vercel.
+- **PC allumé** : PC éteint, en veille ou sans réseau = site sans données et paiements non confirmés. Un paiement fait pendant une coupure n'est rattrapé que si le client revient vérifier ou si FedaPay renvoie le webhook.
+- **Base de données locale exposée à travers l'API** : toutes les données du PC (comptes, billets de démonstration) deviennent visibles par l'API publique.
+- **Expiration des sièges** : la commande `expire_ticket_holds` n'est pas planifiée ; à lancer à la main pendant l'essai.
+
 ## 3. À ne jamais faire en production
 
 - **Ne jamais lancer `seed_demo`.** Elle crée des comptes au mot de passe connu, un tarif et des voyages fictifs. Elle refuse de tourner quand `DJANGO_DEBUG` est faux : ne pas activer le debug pour la contourner.

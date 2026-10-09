@@ -29,6 +29,12 @@ List<(String, String)> ticketFields(Ticket ticket) {
           ? '$origin → $destination'
           : _orMissing(route.label),
     ),
+    (
+      'Embarquement',
+      ticket.trip.boardingAt == null
+          ? missingValue
+          : formatFullDateTime(ticket.trip.boardingAt!),
+    ),
     ('Départ', formatFullDateTime(ticket.trip.departureAt)),
     (
       'Arrivée prévue',

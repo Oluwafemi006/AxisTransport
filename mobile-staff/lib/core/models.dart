@@ -129,6 +129,7 @@ class Trip {
     required this.availableSeats,
     this.currentFare,
     this.arrivalAt,
+    this.boardingAt,
     this.vehicleName,
   });
 
@@ -141,6 +142,9 @@ class Trip {
   final int availableSeats;
   final Fare? currentFare;
   final DateTime? arrivalAt;
+
+  /// Heure d'embarquement à l'origine, calculée par le serveur (départ moins l'avance réglée).
+  final DateTime? boardingAt;
   final String? vehicleName;
 
   bool get isDemo => note.startsWith('[DÉMO]');
@@ -157,6 +161,9 @@ class Trip {
       arrivalAt: json['arrival_at'] == null
           ? null
           : DateTime.parse(json['arrival_at'] as String).toLocal(),
+      boardingAt: json['boarding_at'] == null
+          ? null
+          : DateTime.parse(json['boarding_at'] as String).toLocal(),
       vehicleName: json['vehicle_detail'] is Map<String, dynamic>
           ? (json['vehicle_detail'] as Map<String, dynamic>)['name'] as String?
           : null,
@@ -175,6 +182,7 @@ class Trip {
     'note': note,
     'available_seats': availableSeats,
     'arrival_at': arrivalAt?.toUtc().toIso8601String(),
+    'boarding_at': boardingAt?.toUtc().toIso8601String(),
     'vehicle_detail': vehicleName == null ? null : {'name': vehicleName},
     'current_fare': currentFare == null
         ? null

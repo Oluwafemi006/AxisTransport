@@ -284,7 +284,11 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
           <div>
             <p className="text-lg font-extrabold text-axis-900">{ticket.reference}</p>
             <p className="mt-1 text-sm text-slate-500">{ticket.passenger_name} · siège {ticket.seat_detail.number}</p>
-            <p className="text-sm text-slate-500">{ticket.trip_detail.route_detail.label} · {formatDate(ticket.trip_detail.departure_at)}</p>
+            <p className="text-sm text-slate-500">{ticket.trip_detail.route_detail.label}</p>
+            <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <div><dt className="field-label">Embarquement</dt><dd>{ticket.trip_detail.boarding_at ? formatDate(ticket.trip_detail.boarding_at) : "à confirmer"}</dd></div>
+              <div><dt className="field-label">Départ</dt><dd>{formatDate(ticket.trip_detail.departure_at)}</dd></div>
+            </dl>
             <p className="field-label mt-4">Prix du billet</p>
             <p className="price">{money(ticket.amount, ticket.currency)}</p>
             {held && (
@@ -480,6 +484,7 @@ function VehicleEditor({ vehicle, locations, onChanged }: { vehicle: Vehicle; lo
 function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: { routes: Route[]; fares: FareRule[]; flags: FeatureFlag[]; payments: PaymentMethod[]; settings: SystemSetting[]; onChanged: () => Promise<void> }) {
   const [fare, setFare] = useState({ route: "", name: "", rule_type: "STANDARD", amount: "", advance_days: "" });
   const [setting, setSetting] = useState("");
+  const [boardingLead, setBoardingLead] = useState("");
   const [method, setMethod] = useState("");
   const [notice, setNotice] = useState<NoticeState>(null);
   const [policies, setPolicies] = useState<Record<string, string>>({});
@@ -488,6 +493,8 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
     setPolicies(Object.fromEntries(settings.map((item) => [item.key, typeof item.value === "string" ? item.value : JSON.stringify(item.value)])));
     const hold = settings.find((item) => item.key === "ticket_hold_minutes");
     if (hold) setSetting(String(hold.value));
+    const lead = settings.find((item) => item.key === "boarding_lead_minutes");
+    if (lead) setBoardingLead(String(lead.value));
   }, [settings]);
 
   async function addFare(event: FormEvent) {
@@ -516,6 +523,8 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
   }
 
   async function saveHold() { await saveSetting("ticket_hold_minutes", Number(setting), "Délai administrable de réservation temporaire"); }
+
+  async function saveBoardingLead() { await saveSetting("boarding_lead_minutes", Number(boardingLead), "Minutes entre l'embarquement et le départ"); }
 
   async function addMethod() {
     try {
@@ -581,6 +590,13 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
             <div className="flex gap-2">
               <input className="field" type="number" min="1" placeholder="Durée en minutes" value={setting} onChange={(e) => setSetting(e.target.value)} />
               <button onClick={() => void saveHold()} className="primary-button">Enregistrer</button>
+            </div>
+          </div>
+          <div className="card">
+            <SectionHeading eyebrow="Embarquement" title="Avance sur l’heure de départ" />
+            <div className="flex gap-2">
+              <input className="field" type="number" min="0" placeholder="Durée en minutes" value={boardingLead} onChange={(e) => setBoardingLead(e.target.value)} />
+              <button onClick={() => void saveBoardingLead()} className="primary-button">Enregistrer</button>
             </div>
           </div>
           <div className="card">
