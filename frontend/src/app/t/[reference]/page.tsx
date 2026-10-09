@@ -101,7 +101,14 @@ export default function PublicTicketPage() {
   const isConfirmed = ticket.status === "CONFIRMED" || ticket.status === "ISSUED";
 
   // Compose le billet en image à partir des données du serveur ; une donnée absente affiche « à confirmer ».
-  const downloadTicket = () => {
+  const downloadTicket = async () => {
+    // Logo du site ; s'il ne se charge pas, le nom est écrit en texte.
+    const logo = await new Promise<HTMLImageElement | null>((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => resolve(null);
+      image.src = "/images/axis-logo.png";
+    });
     const qr = document.getElementById("ticket-qr-canvas") as HTMLCanvasElement | null;
     const canvas = document.createElement("canvas");
     canvas.width = 800;
@@ -111,10 +118,14 @@ export default function PublicTicketPage() {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "#0f172a";
-    ctx.font = "bold 44px sans-serif";
-    ctx.fillText(ticket.company_name || "AXIS Transport", 50, 80);
+    if (logo) {
+      ctx.drawImage(logo, 50, 28, Math.round((logo.width * 84) / logo.height), 84);
+    } else {
+      ctx.font = "bold 44px sans-serif";
+      ctx.fillText(ticket.company_name || "AXIS Transport", 50, 80);
+    }
     ctx.font = "24px sans-serif";
-    ctx.fillText("Billet électronique", 50, 118);
+    ctx.fillText("Billet électronique", 50, 144);
     if (qr) ctx.drawImage(qr, 200, 160, 400, 400);
     const rows: [string, string][] = [
       ["Référence", ticket.reference],
@@ -145,12 +156,14 @@ export default function PublicTicketPage() {
       <div className="max-w-lg mx-auto bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200">
         
         {/* Header Branding */}
-        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white text-center relative">
-          <div className="inline-block bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full text-xs font-semibold tracking-wider uppercase mb-2">
+        <div className="bg-white border-b border-slate-200 p-6 text-center relative">
+          <div className="inline-block bg-axis-100 text-axis-900 px-3 py-1 rounded-full text-xs font-semibold tracking-wider uppercase mb-3">
             Billet Électronique Officiel
           </div>
-          <h1 className="text-2xl font-black tracking-tight">{ticket.company_name}</h1>
-          <p className="text-slate-400 text-xs mt-1">Votre réseau de transport fiable</p>
+          <h1>
+            <img src="/images/axis-logo.png" alt={ticket.company_name || "AXIS Transport"} width={570} height={176} className="mx-auto h-16 w-auto" />
+          </h1>
+          <p className="text-slate-500 text-xs mt-2">Votre réseau de transport fiable</p>
         </div>
 
         {/* Status Badge */}

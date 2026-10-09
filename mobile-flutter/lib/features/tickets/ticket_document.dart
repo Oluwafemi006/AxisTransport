@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart' show rootBundle;
+
 import 'dart:typed_data';
 
 import 'package:pdf/pdf.dart';
@@ -65,7 +67,15 @@ String ticketFileName(Ticket ticket) =>
     'billet-axis-${ticket.reference.replaceAll(RegExp(r'[^A-Za-z0-9-]'), '')}.pdf';
 
 /// Billet au format PDF : QR code et informations du serveur, rien d'autre.
-Future<Uint8List> buildTicketPdf(Ticket ticket) {
+Future<Uint8List> buildTicketPdf(Ticket ticket) async {
+  // Logo officiel ; s'il ne peut pas être chargé, le nom est écrit en texte.
+  pw.MemoryImage? logo;
+  try {
+    final data = await rootBundle.load('assets/axis-logo-ticket.png');
+    logo = pw.MemoryImage(data.buffer.asUint8List());
+  } catch (_) {
+    logo = null;
+  }
   final document = pw.Document(title: pdfSafe('Billet ${ticket.reference}'));
   final fields = ticketFields(ticket);
   document.addPage(
@@ -75,12 +85,21 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) {
       build: (context) => pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
+          if (logo != null)
+            pw.Align(
+              alignment: pw.Alignment.centerLeft,
+              child: pw.Image(logo, height: 44),
+            )
+          else
+            pw.Text(
+              'AXIS Transport',
+              style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
+            ),
+          pw.SizedBox(height: 4),
           pw.Text(
-            'AXIS Transport',
-            style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
+            pdfSafe('Billet électronique'),
+            style: const pw.TextStyle(fontSize: 12),
           ),
-          pw.SizedBox(height: 2),
-          pw.Text(pdfSafe('Billet électronique'), style: const pw.TextStyle(fontSize: 12)),
           pw.SizedBox(height: 18),
           if (ticket.isConfirmed && ticket.qrToken.isNotEmpty)
             pw.Center(
@@ -104,11 +123,17 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) {
                     width: 105,
                     child: pw.Text(
                       pdfSafe(label),
-                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11),
+                      style: pw.TextStyle(
+                        fontWeight: pw.FontWeight.bold,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                   pw.Expanded(
-                    child: pw.Text(pdfSafe(value), style: const pw.TextStyle(fontSize: 11)),
+                    child: pw.Text(
+                      pdfSafe(value),
+                      style: const pw.TextStyle(fontSize: 11),
+                    ),
                   ),
                 ],
               ),
@@ -128,12 +153,18 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) {
 /// Message de partage : la référence et le trajet. Le lien n'apparaît que si le serveur
 /// fournit l'adresse publique du site ; l'application n'en fabrique jamais.
 String ticketShareText(Ticket ticket) {
-  final route = ticketFields(ticket).firstWhere((item) => item.$1 == 'Trajet').$2;
+  final route = ticketFields(ticket)
+      .firstWhere((item) => item.$1 == 'Trajet')
+      .$2;
   final lines = [
     'AXIS Transport',
     'Billet : ${ticket.reference}',
     'Trajet : $route',
-    if (ticket.publicUrl.isNotEmpty) ...['', 'Consultez votre billet :', ticket.publicUrl],
+    if (ticket.publicUrl.isNotEmpty) ...[
+      '',
+      'Consultez votre billet :',
+      ticket.publicUrl,
+    ],
   ];
   return lines.join('\n');
 }
