@@ -1,3 +1,4 @@
+from django.core.cache import cache
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
@@ -8,6 +9,7 @@ from .factories import build_operational_context
 
 class PublicTicketAPITest(APITestCase):
     def setUp(self):
+        cache.clear()  # compteur de la limite de requêtes
         self.context = build_operational_context()
         trip = self.context["trip"]
         self.seat = trip.seats.order_by("number").first()

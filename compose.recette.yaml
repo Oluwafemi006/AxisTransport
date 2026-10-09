@@ -24,7 +24,10 @@ x-backend-environment: &backend-environment
   FEDAPAY_WEBHOOK_TOLERANCE_SECONDS: ${FEDAPAY_WEBHOOK_TOLERANCE_SECONDS:-300}
   FEDAPAY_CALLBACK_URL: ${FEDAPAY_CALLBACK_URL:-http://localhost:3100/paiement/retour}
   PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
+  # Nombre de proxys devant l'API : 1 quand elle n'est jointe que par le tunnel. Sert à lire la vraie adresse IP
+  # du visiteur pour les limites de requêtes.
   AXIS_NUM_PROXIES: ${AXIS_NUM_PROXIES:-1}
+  AXIS_PUBLIC_TICKET_RATE: ${AXIS_PUBLIC_TICKET_RATE:-60/min}
   AXIS_CACHE_DIR: /tmp/axis-cache
 
 services:

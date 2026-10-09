@@ -117,6 +117,7 @@ class BookingApiTests(APITestCase):
             "/api/v1/client/bookings/",
             {
                 "trip": trip.pk,
+                "contact_phone": "90000000",
                 "passengers": [
                     self._passenger(name="Enfant Voyageur", seat=seat, passenger_type=Passenger.Type.CHILD),
                 ],

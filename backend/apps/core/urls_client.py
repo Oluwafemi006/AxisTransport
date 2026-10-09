@@ -58,6 +58,7 @@ from .serializers import (
 from .payments import settle_booking_payment, settle_ticket_payment
 from .services import (
     hash_guest_token,
+    is_plausible_phone,
     release_expired_holds,
     reserve_booking,
     reserve_ticket,
@@ -345,6 +346,11 @@ class ClientBookingViewSet(viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         customer = request.user if request.user.is_authenticated else None
+        # Sans compte, le téléphone est le seul moyen de joindre le voyageur : il est obligatoire.
+        if customer is None and not is_plausible_phone(data.get("contact_phone", "")):
+            raise ValidationError(
+                {"contact_phone": "Un numéro de téléphone valide est obligatoire pour réserver sans compte."}
+            )
         try:
             booking, guest_token = reserve_booking(
                 trip=data["trip"],

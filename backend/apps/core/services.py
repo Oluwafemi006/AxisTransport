@@ -1,3 +1,4 @@
+import re
 import hashlib
 import secrets
 from datetime import timedelta
@@ -67,6 +68,14 @@ def configured_hold_duration():
     if minutes <= 0:
         raise ImproperlyConfigured("'ticket_hold_minutes' doit être un entier positif.")
     return timedelta(minutes=minutes)
+
+
+def is_plausible_phone(value):
+    """Forme générale d'un numéro de téléphone, sans règle propre à un pays : 6 à 15 chiffres, « + » initial admis."""
+    text = (value or "").strip()
+    if not re.fullmatch(r"\+?[0-9(][0-9 ().-]*", text):
+        return False
+    return 6 <= sum(character.isdigit() for character in text) <= 15
 
 
 DEFAULT_BOARDING_LEAD_MINUTES = 30

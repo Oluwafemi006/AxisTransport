@@ -156,6 +156,15 @@ class ParcelTrackingThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
 
 
+class PublicTicketThrottle(SimpleRateThrottle):
+    """Limite par adresse IP sur la page publique d'un billet : freine l'essai de références en série."""
+
+    scope = "public_ticket"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
+
+
 class ParcelTrackingView(APIView):
     """
     Suivi d'un colis par son code. Ne renvoie que le parcours et les étapes :
@@ -961,6 +970,7 @@ class PublicTicketDetailView(APIView):
     GET /api/v1/client/tickets/public/<reference>/
     """
     permission_classes = [AllowAny]
+    throttle_classes = [PublicTicketThrottle]
 
     def get(self, request, reference):
         ticket = get_object_or_404(

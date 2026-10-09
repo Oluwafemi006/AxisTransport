@@ -500,8 +500,8 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
             <label style={{ marginTop: '20px' }}>Nom du passager</label>
             <input value={passengerName} onChange={(e) => setPassengerName(e.target.value)} required />
             
-            <label style={{ marginTop: '20px' }}>Téléphone</label>
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <label style={{ marginTop: '20px' }}>Téléphone{!user && " (obligatoire sans compte)"}</label>
+            <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required={!user} pattern={user ? undefined : "\\+?[0-9\\(][0-9 \\(\\)\\.\\-]{5,}"} title="Numéro de téléphone" />
             
             <button className="btn p" style={{ marginTop: '30px', width: '100%' }} disabled={!seatId || !selectedTrip?.current_fare}>
               Réserver {selectedTrip?.current_fare ? ` · ${money(selectedTrip.current_fare.amount, selectedTrip.current_fare.currency)}` : ""}

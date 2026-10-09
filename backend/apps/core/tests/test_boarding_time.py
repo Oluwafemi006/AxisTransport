@@ -1,3 +1,4 @@
+from django.core.cache import cache
 from datetime import datetime, time, timedelta
 
 from django.utils import timezone
@@ -15,6 +16,7 @@ class BoardingTimeTests(APITestCase):
     """Heure d'embarquement = départ − boarding_lead_minutes, calculée à chaque réponse."""
 
     def setUp(self):
+        cache.clear()  # compteur de la limite de requêtes
         self.context = build_operational_context(trip_date=timezone.localdate() + timedelta(days=1))
         self.trip = self.context["trip"]
         self.ticket = Ticket.objects.create(
