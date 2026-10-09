@@ -54,6 +54,7 @@ Points d'attention :
 | `ACTIVE_PAYMENT_PROVIDER` | Prestataire activé au premier démarrage. | `fedapay` |
 | `AXIS_ADMIN_USERNAME`, `AXIS_ADMIN_PASSWORD`, `AXIS_ADMIN_EMAIL` | Compte administrateur créé au premier `bootstrap_axis`. | Mot de passe fort, unique |
 | `AXIS_PARCEL_TRACKING_RATE` | Limite du suivi de colis par adresse IP. | `20/min` |
+| `AXIS_PUBLIC_TICKET_RATE` | Limite de lecture de la page publique d'un billet par adresse IP. La page appelle l'API depuis le navigateur du visiteur, pas depuis le serveur du site. | `60/min` |
 | `AXIS_CACHE_DIR` | Dossier du cache (compteurs de limite de requêtes). | Dossier accessible en écriture ; par défaut le dossier temporaire du système |
 | `AXIS_NUM_PROXIES` | Nombre de proxys devant l'API, pour lire la vraie adresse IP du client. | `1` derrière un seul proxy |
 | `AXIS_PAYMENT_SIMULATION` | Paiement simulé. Sans effet quand `DJANGO_DEBUG` est faux. | absente |
@@ -117,7 +118,7 @@ La base de recette démarre presque vide : lieux Cotonou et Parakou, véhicule �
 `TUNNEL` désigne l'adresse HTTPS fournie par l'outil de tunnel (exemple : `https://xxxx.exemple.test`).
 
 1. Dans `.env.recette` : ajouter le nom d'hôte du tunnel à `DJANGO_ALLOWED_HOSTS` (sans `https://`), mettre `TUNNEL` dans `DJANGO_CSRF_TRUSTED_ORIGINS`.
-2. Chez FedaPay (compte sandbox) : déclarer le webhook `TUNNEL/api/v1/client/webhooks/fedapay/`, recopier son secret dans `FEDAPAY_WEBHOOK_SECRET`.
+2. Chez FedaPay (compte sandbox) : déclarer le webhook `TUNNEL/api/v1/client/webhooks/fedapay/`. Recopier son secret dans le fichier local `.env.recette`, sur la ligne `FEDAPAY_WEBHOOK_SECRET=` (et la clé secrète sandbox sur `FEDAPAY_SECRET_KEY=`). Ce fichier est ignoré par Git ; ces valeurs ne se collent ni dans une discussion ni dans un commit.
 3. Relancer la commande `up -d` ci-dessus, ouvrir le tunnel vers le port 8100, vérifier `GET TUNNEL/api/v1/health/`.
 4. Essai : acheter sur `http://localhost:3100`, payer, fermer l'onglet sans cliquer sur « vérifier ». Le billet doit passer à « émis » par le seul webhook.
 5. Fermer le tunnel, retirer le webhook chez FedaPay, puis `docker compose -p axis-recette --env-file .env.recette -f compose.recette.yaml down`.
