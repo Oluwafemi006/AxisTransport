@@ -27,14 +27,22 @@ enum PaymentPhase {
 class BookingCheckoutState {
   const BookingCheckoutState({
     required this.methods,
+    this.tripQuotes = const [],
     this.reservation,
     this.checkout,
     this.phase = PaymentPhase.idle,
     this.busy = false,
+    this.paymentFailed = false,
     this.error,
   });
 
   final List<PaymentMethod> methods;
+
+  /// Total à payer par moyen de paiement, donné par le serveur AVANT la réservation.
+  final List<PaymentQuote> tripQuotes;
+
+  /// La réservation existe mais le paiement n'a pas pu démarrer : on réessaie sur la même réservation.
+  final bool paymentFailed;
   final BookingReservation? reservation;
 
   /// Transaction de paiement créée par le serveur, en attente de confirmation.
@@ -49,10 +57,14 @@ class BookingCheckoutState {
     bool clearCheckout = false,
     PaymentPhase? phase,
     bool? busy,
+    bool? paymentFailed,
+    List<PaymentQuote>? tripQuotes,
     String? error,
   }) {
     return BookingCheckoutState(
       methods: methods,
+      tripQuotes: tripQuotes ?? this.tripQuotes,
+      paymentFailed: paymentFailed ?? false,
       reservation: reservation ?? this.reservation,
       checkout: clearCheckout ? null : (checkout ?? this.checkout),
       phase: phase ?? this.phase,
@@ -64,7 +76,10 @@ class BookingCheckoutState {
 
 /// Traduit le refus du serveur en état de paiement. Aucune règle n'est décidée ici :
 /// l'application ne fait que lire ce que le serveur a répondu.
-PaymentPhase phaseFromRefusal(ApiException error, {required bool reservationExpired}) {
+PaymentPhase phaseFromRefusal(
+  ApiException error, {
+  required bool reservationExpired,
+}) {
   if (error.refundDue) return PaymentPhase.refundDue;
   final status = error.paymentStatus;
   if (status == 'pending') {
@@ -74,8 +89,7 @@ PaymentPhase phaseFromRefusal(ApiException error, {required bool reservationExpi
   return reservationExpired ? PaymentPhase.expired : PaymentPhase.awaiting;
 }
 
-class BookingCheckoutNotifier
-    extends AsyncNotifier<BookingCheckoutState> {
+class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
   @override
   Future<BookingCheckoutState> build() async {
     final client = ref.watch(apiClientProvider);
@@ -83,6 +97,119 @@ class BookingCheckoutNotifier
     // Seuls les moyens payables en ligne sont proposés dans l'application.
     final methods = allMethods.where((m) => m.active && m.online).toList();
     return BookingCheckoutState(methods: methods);
+  }
+
+  // Verrou immédiat contre le double appui : une seule action de paiement à la fois.
+  bool _running = false;
+
+  /// Demande au serveur le total à payer pour ce trajet, avant toute réservation.
+  Future<void> loadQuotes({
+    required int tripId,
+    required int passengers,
+  }) async {
+    try {
+      final quotes = await ref
+          .read(apiClientProvider)
+          .tripPaymentQuotes(tripId: tripId, passengers: passengers);
+      final current = state.value;
+      if (current != null) {
+        state = AsyncData(
+          current.copyWith(
+            tripQuotes: quotes,
+            busy: current.busy,
+            paymentFailed: current.paymentFailed,
+            error: current.error,
+          ),
+        );
+      }
+    } catch (_) {
+      // Sans réponse du serveur, aucun total n'est affiché : rien n'est calculé ici.
+    }
+  }
+
+  /// Action unique : bloque les sièges puis crée le paiement, dans un seul enchaînement.
+  /// Si une réservation est déjà en cours (échec précédent, reprise), elle est réutilisée :
+  /// jamais de seconde réservation.
+  Future<PaymentCheckout?> payNow(
+    BookingDraft draft,
+    PaymentMethod method,
+  ) async {
+    if (_running) return null;
+    _running = true;
+    try {
+      final current = state.value;
+      if (current == null) return null;
+      if (current.reservation == null) {
+        if (!draft.hasAllSeats || draft.trip == null) return null;
+        state = AsyncData(current.copyWith(busy: true));
+        try {
+          final reservation = await _createReservation(draft);
+          state = AsyncData(
+            BookingCheckoutState(
+              methods: current.methods,
+              tripQuotes: current.tripQuotes,
+              reservation: reservation,
+            ),
+          );
+        } catch (e) {
+          state = AsyncData(current.copyWith(error: e.toString()));
+          return null;
+        }
+      }
+      return await startPayment(method);
+    } finally {
+      _running = false;
+    }
+  }
+
+  /// Annule la réservation non payée en cours ; le serveur libère les sièges.
+  Future<bool> cancel() async {
+    final current = state.value;
+    final reservation = current?.reservation;
+    if (current == null || reservation == null || _running) return false;
+    _running = true;
+    state = AsyncData(current.copyWith(busy: true));
+    try {
+      await ref
+          .read(apiClientProvider)
+          .cancelBooking(
+            bookingId: reservation.id,
+            guestAccessToken: reservation.guestAccessToken,
+          );
+      state = AsyncData(
+        BookingCheckoutState(
+          methods: current.methods,
+          tripQuotes: current.tripQuotes,
+        ),
+      );
+      return true;
+    } catch (e) {
+      state = AsyncData(current.copyWith(error: e.toString()));
+      return false;
+    } finally {
+      _running = false;
+    }
+  }
+
+  Future<BookingReservation> _createReservation(BookingDraft draft) {
+    final contactPhone = draft.passengers
+        .map((item) => item.phone.trim())
+        .firstWhere((phone) => phone.isNotEmpty, orElse: () => '');
+    return ref
+        .read(apiClientProvider)
+        .reserveBooking(
+          trip: draft.trip!.id,
+          contactPhone: contactPhone,
+          passengers: draft.passengers.map((passenger) {
+            final seat = draft.seatsByPassenger[passenger.id]!;
+            return {
+              'full_name': passenger.fullName,
+              'phone': passenger.phone,
+              'passenger_type': passenger.type.apiValue,
+              'seat': seat.id,
+            };
+          }).toList(),
+        );
   }
 
   Future<void> reserve(BookingDraft draft) async {
@@ -127,29 +254,40 @@ class BookingCheckoutNotifier
     final reservation = current?.reservation;
     if (current == null || reservation == null) return null;
     if (reservation.isExpired) {
-      state = AsyncData(current.copyWith(phase: PaymentPhase.expired, clearCheckout: true));
+      state = AsyncData(
+        current.copyWith(phase: PaymentPhase.expired, clearCheckout: true),
+      );
       return null;
     }
 
     state = AsyncData(current.copyWith(busy: true));
     try {
-      final checkout = await ref.read(apiClientProvider).checkoutBooking(
+      final checkout = await ref
+          .read(apiClientProvider)
+          .checkoutBooking(
             bookingId: reservation.id,
             paymentMethod: method.id,
             guestAccessToken: reservation.guestAccessToken,
           );
-      state = AsyncData(current.copyWith(checkout: checkout, phase: PaymentPhase.awaiting));
+      state = AsyncData(
+        current.copyWith(checkout: checkout, phase: PaymentPhase.awaiting),
+      );
       return checkout;
     } on ApiException catch (e) {
       state = AsyncData(
         current.copyWith(
           error: e.toString(),
-          phase: !e.isNetwork && reservation.isExpired ? PaymentPhase.expired : current.phase,
+          paymentFailed: true,
+          phase: !e.isNetwork && reservation.isExpired
+              ? PaymentPhase.expired
+              : current.phase,
         ),
       );
       return null;
     } catch (e) {
-      state = AsyncData(current.copyWith(error: e.toString()));
+      state = AsyncData(
+        current.copyWith(error: e.toString(), paymentFailed: true),
+      );
       return null;
     }
   }
@@ -172,8 +310,9 @@ class BookingCheckoutNotifier
         externalReference: checkout.transactionId,
       );
 
-      final confirmedTickets =
-          paidReservation.tickets.where((item) => item.isConfirmed).toList();
+      final confirmedTickets = paidReservation.tickets
+          .where((item) => item.isConfirmed)
+          .toList();
 
       // Copie locale : le billet reste consultable hors connexion, y compris sans compte.
       for (final ticket in confirmedTickets) {
@@ -191,7 +330,10 @@ class BookingCheckoutNotifier
         state = AsyncData(current.copyWith(error: e.toString()));
         return null;
       }
-      final phase = phaseFromRefusal(e, reservationExpired: reservation.isExpired);
+      final phase = phaseFromRefusal(
+        e,
+        reservationExpired: reservation.isExpired,
+      );
       state = AsyncData(
         current.copyWith(
           phase: phase,
@@ -210,11 +352,16 @@ class BookingCheckoutNotifier
   /// Abandonne la réservation en cours (expirée ou à rembourser) pour en démarrer une nouvelle.
   void reset() {
     final methods = state.value?.methods ?? const <PaymentMethod>[];
-    state = AsyncData(BookingCheckoutState(methods: methods));
+    state = AsyncData(
+      BookingCheckoutState(
+        methods: methods,
+        tripQuotes: state.value?.tripQuotes ?? const [],
+      ),
+    );
   }
 }
 
-final bookingCheckoutProvider = AsyncNotifierProvider<
-    BookingCheckoutNotifier, BookingCheckoutState>(
-  BookingCheckoutNotifier.new,
-);
+final bookingCheckoutProvider =
+    AsyncNotifierProvider<BookingCheckoutNotifier, BookingCheckoutState>(
+      BookingCheckoutNotifier.new,
+    );

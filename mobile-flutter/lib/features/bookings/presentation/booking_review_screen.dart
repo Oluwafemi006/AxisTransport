@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,7 +20,8 @@ class BookingReviewScreen extends ConsumerStatefulWidget {
   final int tripId;
 
   @override
-  ConsumerState<BookingReviewScreen> createState() => _BookingReviewScreenState();
+  ConsumerState<BookingReviewScreen> createState() =>
+      _BookingReviewScreenState();
 }
 
 class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
@@ -29,6 +32,17 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Le total à payer (tarif + frais) est demandé au serveur dès l'ouverture, avant tout appui.
+    Future.microtask(() {
+      final draft = ref.read(bookingDraftProvider);
+      if (draft.trip?.id != widget.tripId || draft.passengers.isEmpty) return;
+      ref
+          .read(bookingCheckoutProvider.notifier)
+          .loadQuotes(
+            tripId: widget.tripId,
+            passengers: draft.passengers.length,
+          );
+    });
   }
 
   @override
@@ -46,23 +60,60 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
   }
 
   Future<void> _openPaymentPage(String url) async {
-    final opened = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    final opened = await launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    );
     if (!opened && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Impossible d\'ouvrir la page de paiement.')),
+        const SnackBar(
+          content: Text('Impossible d\'ouvrir la page de paiement.'),
+        ),
       );
     }
   }
 
-  Future<void> _startPayment() async {
+  /// Action unique : réserve les sièges (si ce n'est pas déjà fait) puis ouvre le paiement.
+  Future<void> _payNow() async {
     final method = _selectedMethod;
     if (method == null) return;
-    final checkout = await ref.read(bookingCheckoutProvider.notifier).startPayment(method);
+    final checkout = await ref
+        .read(bookingCheckoutProvider.notifier)
+        .payNow(ref.read(bookingDraftProvider), method);
     if (checkout == null) return;
     if (checkout.paymentUrl == null) {
       await _verifyPayment();
     } else {
       await _openPaymentPage(checkout.paymentUrl!);
+    }
+  }
+
+  Future<void> _cancelBooking() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Annuler la réservation ?'),
+        content: const Text('Les sièges seront libérés.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Non'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Oui, annuler'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final cancelled = await ref.read(bookingCheckoutProvider.notifier).cancel();
+    if (cancelled && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Réservation annulée. Les sièges sont libérés.'),
+        ),
+      );
     }
   }
 
@@ -83,7 +134,6 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
     final draft = ref.watch(bookingDraftProvider);
     final trip = draft.trip;
     final checkoutState = ref.watch(bookingCheckoutProvider);
-    final checkoutNotifier = ref.read(bookingCheckoutProvider.notifier);
 
     if (trip?.id != widget.tripId || !draft.hasAllSeats) {
       return Scaffold(
@@ -116,8 +166,9 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
 
     final stateData = checkoutState.value;
     final isBusy = checkoutState.isLoading || (stateData?.busy ?? false);
-    final errorMessage =
-        checkoutState.hasError ? checkoutState.error.toString() : stateData?.error;
+    final errorMessage = checkoutState.hasError
+        ? checkoutState.error.toString()
+        : stateData?.error;
     final methods = stateData?.methods ?? [];
     final pending = stateData?.reservation;
     final checkout = stateData?.checkout;
@@ -132,8 +183,21 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
     }
 
     // Frais et total viennent du serveur (jamais calculés dans l'application).
-    final quote = checkout?.quote ??
-        (_selectedMethod == null ? null : pending?.quoteFor(_selectedMethod!.id));
+    final tripQuotes = stateData?.tripQuotes ?? const <PaymentQuote>[];
+    PaymentQuote? tripQuoteFor(int methodId) {
+      for (final item in tripQuotes) {
+        if (item.paymentMethod == methodId) return item;
+      }
+      return null;
+    }
+
+    final quote =
+        checkout?.quote ??
+        (_selectedMethod == null
+            ? null
+            : pending?.quoteFor(_selectedMethod!.id) ??
+                  tripQuoteFor(_selectedMethod!.id));
+    final paymentFailed = stateData?.paymentFailed ?? false;
     final currency = trip!.currentFare?.currency ?? 'XOF';
     final baseAmount = pending?.amount ?? draft.totalAmount;
     final feePercent = _selectedMethod?.feePercentage ?? 0.0;
@@ -225,7 +289,10 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                     ),
                     Text(
                       formatMoney(baseAmount, currency),
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
                     ),
                   ],
                 ),
@@ -236,12 +303,18 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                       Expanded(
                         child: Text(
                           'Frais de paiement (${feePercent.toStringAsFixed(1)}%)',
-                          style: const TextStyle(fontSize: 14, color: AxisColors.muted),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AxisColors.muted,
+                          ),
                         ),
                       ),
                       Text(
                         '+ ${formatMoney(feeAmount, currency)}',
-                        style: const TextStyle(color: AxisColors.navy, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          color: AxisColors.navy,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ],
                   ),
@@ -251,8 +324,13 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                   children: [
                     Expanded(
                       child: Text(
-                        quote == null ? 'Total hors frais de paiement' : 'Total à payer',
-                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                        quote == null
+                            ? 'Total hors frais de paiement'
+                            : 'Total à payer',
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
                     Text(
@@ -270,17 +348,84 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
           ),
           const SizedBox(height: 8),
 
-          if (pending == null)
+          // Choix du moyen de paiement, seulement s'il y en a plusieurs : il précède l'action unique.
+          if (methods.length > 1 &&
+              checkout == null &&
+              phase != PaymentPhase.expired &&
+              phase != PaymentPhase.refundDue) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Moyen de paiement',
+              style: TextStyle(
+                color: AxisColors.navyDark,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: methods.map((method) {
+                return ChoiceChip(
+                  label: Text(
+                    method.feePercentage > 0
+                        ? '${method.label} (+${method.feePercentage.toStringAsFixed(1)}%)'
+                        : method.label,
+                  ),
+                  selected: _selectedMethod?.id == method.id,
+                  onSelected: (selected) {
+                    if (selected) setState(() => _selectedMethod = method);
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          if (methods.isEmpty)
+            const Notice(
+              'Aucun paiement en ligne n\'est disponible pour le moment.',
+              error: true,
+            )
+          else if (pending == null)
+            // Une seule action : réserver les sièges et payer.
             FilledButton(
-              onPressed: isBusy ? null : () => checkoutNotifier.reserve(draft),
-              child: Text(isBusy ? 'Patientez…' : 'Valider et Bloquer les sièges'),
+              onPressed: isBusy || quote == null ? null : _payNow,
+              child: Text(
+                isBusy
+                    ? 'Patientez…'
+                    : quote == null
+                    ? 'Montant en cours de calcul…'
+                    : 'Payer ${formatMoney(quote.total, quote.currency)}',
+              ),
             )
           else ...[
+            AxisCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Réservation en cours · ${pending.reference}',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 6),
+                  if (pending.reservationExpiresAt != null &&
+                      phase != PaymentPhase.expired &&
+                      phase != PaymentPhase.refundDue)
+                    HoldCountdown(expiresAt: pending.reservationExpiresAt!),
+                ],
+              ),
+            ),
             switch (phase) {
               PaymentPhase.idle => Notice(
-                heldUntil == null
+                paymentFailed
+                    ? 'Le paiement n\'a pas pu démarrer. Vos sièges restent bloqués'
+                          '${heldUntil == null ? '.' : ' jusqu\'à $heldUntil.'}'
+                    : heldUntil == null
                     ? 'Sièges réservés temporairement. Finalisez le paiement.'
                     : 'Sièges bloqués jusqu\'à $heldUntil. Finalisez le paiement avant cette heure.',
+                error: paymentFailed,
               ),
               PaymentPhase.awaiting => Notice(
                 'Paiement en attente. Terminez-le sur la page de paiement, puis revenez ici : '
@@ -304,72 +449,47 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                 error: true,
               ),
             },
-            if (phase == PaymentPhase.expired || phase == PaymentPhase.refundDue) ...[
-              const SizedBox(height: 16),
+            const SizedBox(height: 16),
+            if (phase == PaymentPhase.expired ||
+                phase == PaymentPhase.refundDue)
               FilledButton(
                 onPressed: _restart,
                 child: const Text('Recommencer une réservation'),
-              ),
-            ] else ...[
-              const SizedBox(height: 24),
-              const Text(
-                'Moyen de paiement',
-                style: TextStyle(
-                  color: AxisColors.navyDark,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (methods.isEmpty)
-                const Notice(
-                  'Aucun paiement en ligne n\'est disponible pour le moment.',
-                  error: true,
-                )
-              else ...[
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: methods.map((method) {
-                    final isSelected = _selectedMethod?.id == method.id;
-                    return ChoiceChip(
-                      label: Text(
-                        method.feePercentage > 0
-                            ? '${method.label} (+${method.feePercentage.toStringAsFixed(1)}%)'
-                            : method.label,
-                      ),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        if (selected && checkout == null) {
-                          setState(() {
-                            _selectedMethod = method;
-                          });
-                        }
-                      },
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-                if (checkout != null) ...[
-                  FilledButton(
-                    onPressed: isBusy ? null : _verifyPayment,
-                    child: Text(isBusy ? 'Vérification…' : 'J\'ai payé · vérifier'),
+              )
+            else ...[
+              if (checkout != null) ...[
+                FilledButton(
+                  onPressed: isBusy ? null : _verifyPayment,
+                  child: Text(
+                    isBusy ? 'Vérification…' : 'J\'ai payé · vérifier',
                   ),
-                  if (checkout.paymentUrl != null) ...[
-                    const SizedBox(height: 8),
-                    OutlinedButton(
-                      onPressed: isBusy ? null : () => _openPaymentPage(checkout.paymentUrl!),
-                      child: const Text('Rouvrir la page de paiement'),
-                    ),
-                  ],
-                ] else if (_selectedMethod != null)
-                  FilledButton(
-                    onPressed: isBusy ? null : _startPayment,
-                    child: Text(
-                      isBusy ? 'Traitement...' : 'Payer ${formatMoney(totalToPay, currency)}',
-                    ),
+                ),
+                if (checkout.paymentUrl != null) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: isBusy
+                        ? null
+                        : () => _openPaymentPage(checkout.paymentUrl!),
+                    child: const Text('Reprendre le paiement'),
                   ),
-              ],
+                ],
+              ] else
+                // Même réservation, même siège, même délai : seul le paiement est relancé.
+                FilledButton(
+                  onPressed: isBusy || _selectedMethod == null ? null : _payNow,
+                  child: Text(
+                    isBusy
+                        ? 'Patientez…'
+                        : paymentFailed || phase == PaymentPhase.failed
+                        ? 'Réessayer le paiement'
+                        : 'Payer ${formatMoney(totalToPay, currency)}',
+                  ),
+                ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: isBusy ? null : _cancelBooking,
+                child: const Text('Annuler la réservation'),
+              ),
             ],
           ],
           if (errorMessage != null) ...[
@@ -382,3 +502,42 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
   }
 }
 
+/// Temps restant avant la libération des sièges, à partir de l'échéance donnée par le serveur.
+class HoldCountdown extends StatefulWidget {
+  const HoldCountdown({super.key, required this.expiresAt});
+
+  final DateTime expiresAt;
+
+  @override
+  State<HoldCountdown> createState() => _HoldCountdownState();
+}
+
+class _HoldCountdownState extends State<HoldCountdown> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = widget.expiresAt.difference(DateTime.now());
+    final seconds = remaining.isNegative ? 0 : remaining.inSeconds;
+    return Text(
+      seconds == 0
+          ? 'Délai de réservation écoulé.'
+          : 'Temps restant : ${seconds ~/ 60} min ${(seconds % 60).toString().padLeft(2, '0')} s',
+      style: const TextStyle(color: AxisColors.muted),
+    );
+  }
+}

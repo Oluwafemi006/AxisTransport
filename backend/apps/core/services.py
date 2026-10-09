@@ -26,6 +26,7 @@ from .models import (
     TicketStatusHistory,
     Transaction,
     Trip,
+    PaymentAttempt,
 )
 
 
@@ -175,6 +176,30 @@ def release_expired_holds(at=None):
                     status=Booking.Status.EXPIRED, updated_at=at
                 )
     return len(tickets)
+
+
+@transaction.atomic
+def cancel_held_booking(booking, *, actor=None):
+    """
+    Annulation par le client d'une réservation NON payée : les sièges sont libérés immédiatement.
+    Renvoie (réservation, annulée_maintenant). Déjà annulée ou déjà expirée : sans effet (idempotent).
+    Une réservation payée ne s'annule pas par cette voie.
+    """
+    locked = Booking.objects.select_for_update().get(pk=booking.pk)
+    if locked.status in {Booking.Status.CANCELLED, Booking.Status.EXPIRED}:
+        return locked, False
+    if locked.status != Booking.Status.HELD:
+        raise ValidationError("Cette réservation est déjà payée : elle ne peut pas être annulée ici.")
+    for ticket in locked.tickets.filter(status=Ticket.Status.HELD):
+        transition_ticket(ticket, Ticket.Status.CANCELLED, actor=actor, note="Annulée par le client avant paiement")
+    locked.status = Booking.Status.CANCELLED
+    locked.save(update_fields=["status", "updated_at"])
+    # Transactions déjà créées chez le prestataire : abandonnées côté Axis. Si le client paie quand même,
+    # le paiement suit le chemin « à rembourser » (aucun billet, aucun siège repris).
+    PaymentAttempt.objects.filter(booking=locked, outcome=PaymentAttempt.Outcome.PENDING).update(
+        outcome=PaymentAttempt.Outcome.CANCELLED, updated_at=timezone.now()
+    )
+    return locked, True
 
 
 def hash_guest_token(token):

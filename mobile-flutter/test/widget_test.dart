@@ -28,7 +28,14 @@ class _MemoryStore extends SessionStore {
   Future<User?> readCachedUser() async => null;
 }
 
-const _client = User(id: 1, username: 'eddy', firstName: 'Eddy', lastName: '', phone: '', role: 'CLIENT');
+const _client = User(
+  id: 1,
+  username: 'eddy',
+  firstName: 'Eddy',
+  lastName: '',
+  phone: '',
+  role: 'CLIENT',
+);
 
 class _OfflineStore extends _MemoryStore {
   _OfflineStore(this.ticket);
@@ -157,7 +164,31 @@ class _BookingApi extends ApiClient {
   ];
 
   @override
-  Future<List<PaymentMethod>> paymentMethods() async => [];
+  Future<List<PaymentMethod>> paymentMethods() async => const [
+    PaymentMethod(
+      id: 2,
+      code: 'FEDAPAY',
+      label: 'FedaPay',
+      active: true,
+      feePercentage: 1.8,
+      online: true,
+    ),
+  ];
+
+  // Total donné par le serveur avant toute réservation : 2 × 5 000 + 1,8 % de frais.
+  @override
+  Future<List<PaymentQuote>> tripPaymentQuotes({
+    required int tripId,
+    int passengers = 1,
+  }) async => [
+    PaymentQuote(
+      paymentMethod: 2,
+      amount: 5000 * passengers,
+      feeAmount: 90 * passengers,
+      total: 5090 * passengers,
+      currency: 'XOF',
+    ),
+  ];
 
   @override
   Future<User> me() async => _client;
@@ -165,39 +196,42 @@ class _BookingApi extends ApiClient {
 
 class _AnonymousBookingApi extends _BookingApi {
   @override
-  Future<User> me() async => throw ApiException('Non connecté', statusCode: 401);
+  Future<User> me() async =>
+      throw ApiException('Non connecté', statusCode: 401);
 }
 
 class _SignedOutApi extends ApiClient {
   _SignedOutApi() : super(store: _MemoryStore());
 
   @override
-  Future<User> me() async => throw ApiException('Non connecté', statusCode: 401);
+  Future<User> me() async =>
+      throw ApiException('Non connecté', statusCode: 401);
 }
 
 void main() {
-  testWidgets('sans compte connecté, seule la connexion ou l’inscription est accessible', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [apiClientProvider.overrideWithValue(_SignedOutApi())],
-        child: const AxisTransportApp(),
-      ),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'sans compte connecté, seule la connexion ou l’inscription est accessible',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [apiClientProvider.overrideWithValue(_SignedOutApi())],
+          child: const AxisTransportApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Se connecter'), findsOneWidget);
-    expect(find.text('Créer un compte client'), findsOneWidget);
-    expect(find.text('Où souhaitez-vous aller ?'), findsNothing);
-    expect(find.text('Rechercher un trajet'), findsNothing);
-    expect(find.text('Billets'), findsNothing);
+      expect(find.text('Se connecter'), findsOneWidget);
+      expect(find.text('Créer un compte client'), findsOneWidget);
+      expect(find.text('Où souhaitez-vous aller ?'), findsNothing);
+      expect(find.text('Rechercher un trajet'), findsNothing);
+      expect(find.text('Billets'), findsNothing);
 
-    await tester.tap(find.text('Créer un compte client'));
-    await tester.pumpAndSettle();
-    expect(find.text('Créer et continuer'), findsOneWidget);
-    expect(find.text('Téléphone'), findsOneWidget);
-  });
+      await tester.tap(find.text('Créer un compte client'));
+      await tester.pumpAndSettle();
+      expect(find.text('Créer et continuer'), findsOneWidget);
+      expect(find.text('Téléphone'), findsOneWidget);
+    },
+  );
 
   testWidgets('affiche le parcours client Axis sans espace équipe', (
     tester,
@@ -274,7 +308,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         // Écran isolé, sans nom prérempli par un compte.
-        overrides: [apiClientProvider.overrideWithValue(_AnonymousBookingApi())],
+        overrides: [
+          apiClientProvider.overrideWithValue(_AnonymousBookingApi()),
+        ],
         child: const MaterialApp(home: BookingScreen(tripId: 1)),
       ),
     );
@@ -368,9 +404,10 @@ void main() {
 
     expect(find.text('Siège 3A'), findsOneWidget);
     expect(find.text('Siège 3B'), findsOneWidget);
-    // Prix des billets + total hors frais : les frais ne viennent du serveur qu'après le blocage.
-    expect(find.text('10 000 XOF'), findsNWidgets(2));
-    expect(find.text('Valider et Bloquer les sièges'), findsOneWidget);
+    // Une seule action, avec le total (tarif + frais) donné par le serveur avant tout appui.
+    expect(find.textContaining(RegExp(r'^Payer 10\s180 XOF$')), findsOneWidget);
+    expect(find.text('Valider et Bloquer les sièges'), findsNothing);
+    expect(find.text('Total à payer'), findsOneWidget);
     expect(find.textContaining('réservation atomique'), findsNothing);
   });
 }

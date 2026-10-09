@@ -59,6 +59,7 @@ from .serializers import (
 )
 from .payments import ONLINE_PROVIDERS, SIMULATION, payment_quote, settle_booking_payment, settle_ticket_payment
 from .services import (
+    cancel_held_booking,
     hash_guest_token,
     is_plausible_phone,
     release_expired_holds,
@@ -398,6 +399,19 @@ class ClientBookingViewSet(viewsets.GenericViewSet):
         """Consulter une réservation. Vérifie l'ownership ou le guest_token."""
         booking = self._get_booking(pk)
         return Response(self._serialized_booking(booking))
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        """
+        Annuler une réservation non payée et libérer ses sièges tout de suite.
+        Réservé au propriétaire du compte ou au porteur du jeton de réservation (invité).
+        """
+        booking = self._get_booking(pk)
+        try:
+            booking, cancelled = cancel_held_booking(booking, actor=request.user if request.user.is_authenticated else None)
+        except DjangoValidationError as exc:
+            raise service_validation_error(exc)
+        return Response(self._serialized_booking(self.BASE_QUERYSET.get(pk=booking.pk), cancelled=cancelled))
 
     @action(detail=True, methods=["post"])
     def checkout(self, request, pk=None):

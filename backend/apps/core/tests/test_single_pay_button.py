@@ -119,13 +119,3 @@ class SinglePayButtonTests(APITestCase):
         other = self.book(seat=self.trip.seats.order_by("number")[1])
         response = self.checkout(created.data["id"], other.data["guest_access_token"])
         self.assertEqual(response.status_code, 403)
-
-    # ── Annulation : aucune n'existe côté serveur pour le client
-    def test_no_client_cancellation_endpoint_exists(self):
-        created = self.book()
-        booking_id, token = created.data["id"], created.data["guest_access_token"]
-        for method, url in (("post", f"{BOOKINGS}{booking_id}/cancel/"), ("delete", f"{BOOKINGS}{booking_id}/")):
-            response = getattr(self.client, method)(url, HTTP_X_BOOKING_TOKEN=token)
-            self.assertIn(response.status_code, (404, 405), url)
-        self.seat.refresh_from_db()
-        self.assertEqual(self.seat.status, Seat.Status.HELD)

@@ -14,11 +14,14 @@ export default function PaymentReturnPage() {
   const [recovery, setRecovery] = useState<Recovery>("none");
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [detail, setDetail] = useState("");
+  // Réservation faite sans compte : le billet n'est gardé nulle part sur le site.
+  const [guest, setGuest] = useState(false);
 
   // Réservation faite sans compte dans ce navigateur : le billet se récupère ici, même si l'onglet d'origine est fermé.
   const recover = useCallback(async (stored: GuestBooking, transactionId: string | null) => {
     setRecovery("checking");
     setDetail("");
+    setGuest(Boolean(stored.token));
     // Un invité accède à sa réservation par son jeton, un client connecté par son compte.
     const headers = bookingAccessHeaders(stored);
     const authenticated = !stored.token;
@@ -62,7 +65,9 @@ export default function PaymentReturnPage() {
             <a href={`/t/${ticket.reference}`} onClick={clearGuestBooking} className="primary-button mt-5 w-full">
               Voir et télécharger mon billet
             </a>
-            <p className="mt-3 text-xs text-slate-500">Sans compte, ce billet n’est pas conservé sur le site : téléchargez-le maintenant.</p>
+            <p className="mt-3 text-xs text-slate-500">
+              {guest ? "Sans compte, ce billet n’est pas conservé sur le site : téléchargez-le maintenant." : "Ce billet est aussi disponible dans votre compte, onglet Billets."}
+            </p>
           </div>
         )}
 

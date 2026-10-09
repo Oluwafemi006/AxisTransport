@@ -474,6 +474,21 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     void loadSeats();
   }
 
+  // Annulation d'une réservation non payée : le serveur libère le siège tout de suite.
+  async function cancelBooking() {
+    if (locked.current || !booking) return;
+    if (!window.confirm("Annuler cette réservation ? Le siège sera libéré.")) return;
+    locked.current = true;
+    setBusy(true);
+    try {
+      await apiFetch(`/client/bookings/${booking.id}/cancel/`, { method: "POST", headers: access(booking) }, !booking.token);
+      forget();
+      setMessage("Réservation annulée. Le siège est libéré.");
+      void onChanged();
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Annulation impossible."); }
+    finally { locked.current = false; setBusy(false); }
+  }
+
   async function createBooking() {
     const created = await apiFetch<BookingPayload>("/client/bookings/", { method: "POST", body: JSON.stringify({ trip: Number(tripId), contact_phone: phone, passengers: [{ full_name: passengerName, phone, seat: Number(seatId) }] }) }, !!user);
     const current = { id: created.id, token: created.guest_access_token ?? null };
@@ -663,6 +678,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
                     <button key={method.id} type="button" className="btn" disabled={busy} onClick={() => void payHeld(method.id)}>Payer avec {method.label}</button>
                   ))}
                   {checkout && <button type="button" className="btn" disabled={busy} onClick={() => void confirmPayment()}>J’ai payé · vérifier</button>}
+                  <button type="button" className="btn" disabled={busy} onClick={() => void cancelBooking()} style={{ borderColor: '#B42318', color: '#B42318' }}>Annuler la réservation</button>
                 </div>
                 {payableQuotes.length === 0 && <p style={{ fontSize: '14px' }}>Aucun paiement en ligne n’est disponible. Réglez votre billet au guichet.</p>}
               </>

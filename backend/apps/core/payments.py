@@ -567,7 +567,9 @@ def reconcile_pending_payments(now=None):
         return counts
     now = now or timezone.now()
     oldest = now - timedelta(minutes=settings.AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES)
-    pending = PaymentAttempt.objects.filter(provider=FEDAPAY, outcome=PaymentAttempt.Outcome.PENDING)
+    # « Annulée » = réservation annulée par le client : toujours surveillée, pour voir un paiement fait malgré tout.
+    watched = (PaymentAttempt.Outcome.PENDING, PaymentAttempt.Outcome.CANCELLED)
+    pending = PaymentAttempt.objects.filter(provider=FEDAPAY, outcome__in=watched)
 
     # Trop anciennes : on cesse de les interroger, sans appel au prestataire.
     counts["abandoned"] = pending.filter(created_at__lt=oldest).update(
@@ -601,7 +603,7 @@ def reconcile_pending_payments(now=None):
                 logger.info("Rattrapage : transaction %s %s chez FedaPay.", attempt.external_id, exc.provider_status)
             else:
                 counts["pending"] += 1
-                close(attempt, PaymentAttempt.Outcome.PENDING, exc.provider_status)
+                close(attempt, attempt.outcome, exc.provider_status)
             continue
         except ValidationError as exc:
             # Paiement approuvé mais impossible à transformer en billet : argent possiblement encaissé sans billet.

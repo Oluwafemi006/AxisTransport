@@ -614,6 +614,9 @@ class PaymentAttempt(TimeStampedModel):
         REFUND_DUE = "REFUND_DUE", "Payée après expiration – à rembourser"
         REFUSED = "REFUSED", "Refusée ou annulée chez le prestataire"
         ABANDONED = "ABANDONED", "Abandonnée (jamais payée)"
+        # Réservation annulée par le client : abandonnée côté Axis, mais encore surveillée — un paiement
+        # fait malgré tout doit être vu et remboursé.
+        CANCELLED = "CANCELLED", "Abandonnée – réservation annulée"
         ANOMALY = "ANOMALY", "Anomalie – voir les incidents de paiement"
 
     provider = models.CharField(max_length=40)

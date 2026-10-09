@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+
 import 'dart:async';
 
 import 'package:dio/dio.dart';
@@ -147,7 +148,9 @@ class ApiClient {
   }
 
   Future<Trip> trip(int tripId) async {
-    final payload = await _request<Map<String, dynamic>>('/client/trips/$tripId/');
+    final payload = await _request<Map<String, dynamic>>(
+      '/client/trips/$tripId/',
+    );
     return Trip.fromJson(payload);
   }
 
@@ -179,15 +182,26 @@ class ApiClient {
   }
 
   Future<List<PaymentMethod>> paymentMethods() {
-    return _list('/client/payment-methods/', (json) => PaymentMethod.fromJson(json));
+    return _list(
+      '/client/payment-methods/',
+      (json) => PaymentMethod.fromJson(json),
+    );
   }
 
   Future<List<Ticket>> tickets() {
-    return _list('/client/tickets/', (json) => Ticket.fromJson(json), auth: true);
+    return _list(
+      '/client/tickets/',
+      (json) => Ticket.fromJson(json),
+      auth: true,
+    );
   }
 
   Future<List<Parcel>> parcels() {
-    return _list('/client/parcels/', (json) => Parcel.fromJson(json), auth: true);
+    return _list(
+      '/client/parcels/',
+      (json) => Parcel.fromJson(json),
+      auth: true,
+    );
   }
 
   /// Suivi d'un colis par son code. Le client ne crée jamais de colis : l'agence l'enregistre.
@@ -264,6 +278,35 @@ class ApiClient {
     return BookingReservation.fromJson(payload);
   }
 
+  /// Total à payer AVANT toute réservation, par moyen de paiement en ligne (tarif + frais), calculé par le serveur.
+  Future<List<PaymentQuote>> tripPaymentQuotes({
+    required int tripId,
+    int passengers = 1,
+  }) async {
+    final payload = await _request<List<dynamic>>(
+      '/client/trips/$tripId/payment-quotes/',
+      queryParameters: {'passengers': '$passengers'},
+    );
+    return payload
+        .map((item) => PaymentQuote.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Annule une réservation non payée : le serveur libère les sièges tout de suite.
+  Future<void> cancelBooking({
+    required int bookingId,
+    String? guestAccessToken,
+  }) async {
+    await _request<dynamic>(
+      '/client/bookings/$bookingId/cancel/',
+      data: const <String, dynamic>{},
+      auth: true,
+      headers: guestAccessToken == null
+          ? null
+          : {'X-Booking-Token': guestAccessToken},
+    );
+  }
+
   /// Demande au serveur de créer la transaction de paiement (montant fixé côté serveur).
   Future<PaymentCheckout> checkoutBooking({
     required int bookingId,
@@ -303,7 +346,11 @@ class ApiClient {
     );
   }
 
-  Future<Ticket> pay(int ticketId, int paymentMethod, {String externalReference = ''}) async {
+  Future<Ticket> pay(
+    int ticketId,
+    int paymentMethod, {
+    String externalReference = '',
+  }) async {
     final payload = await _request<Map<String, dynamic>>(
       '/client/tickets/$ticketId/pay/',
       data: {
@@ -410,7 +457,9 @@ class ApiClient {
   String _userMessageFrom(DioException error) {
     final payload = error.response?.data;
     // Une page HTML d'erreur du serveur n'est pas un message pour l'utilisateur.
-    if (payload is String && payload.isNotEmpty && !payload.trimLeft().startsWith('<')) {
+    if (payload is String &&
+        payload.isNotEmpty &&
+        !payload.trimLeft().startsWith('<')) {
       return payload;
     }
     if (payload is Map) {
