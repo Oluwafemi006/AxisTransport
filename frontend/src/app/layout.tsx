@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: { default: "Axis Transport", template: "%s · Axis Transport" },
   description: "Billetterie, colis et location de véhicules Axis Transport.",
   manifest: "/manifest.webmanifest",
+  icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
 };
 
 export const viewport: Viewport = {

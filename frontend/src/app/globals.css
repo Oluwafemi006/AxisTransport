@@ -87,6 +87,15 @@ header {
   font-size: 18px;
 }
 
+.logo img {
+  height: 52px;
+  width: auto;
+}
+
+.fg a.logo img {
+  height: 34px;
+}
+
 .menu {
   display: flex;
   gap: 4px;

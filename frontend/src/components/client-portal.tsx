@@ -113,7 +113,7 @@ export function ClientPortal() {
       <header>
         <div className="wrap nav">
           <a className="logo" href="#" onClick={(e) => { e.preventDefault(); setTab("accueil"); }}>
-            <i>A</i>AXIS Transport
+            <img src="/images/axis-logo.png" alt="AXIS Transport" width={570} height={176} />
           </a>
           <nav className="menu">
             <button className={tab === "accueil" ? "on" : ""} onClick={() => setTab("accueil")}>Accueil</button>
@@ -332,7 +332,7 @@ export function ClientPortal() {
           <div className="fg">
             <div>
               <a className="logo" style={{ color: '#fff' }} href="#">
-                <i style={{ background: '#fff', color: 'var(--navy)' }}>A</i>AXIS Transport
+                <img src="/images/axis-emblem.png" alt="" width={192} height={192} />AXIS Transport
               </a>
               <p style={{ marginTop: '10px', opacity: '.8' }}>Voyager, expédier, louer.</p>
             </div>
