@@ -55,6 +55,10 @@ Points d'attention :
 | `AXIS_ADMIN_USERNAME`, `AXIS_ADMIN_PASSWORD`, `AXIS_ADMIN_EMAIL` | Compte administrateur créé au premier `bootstrap_axis`. | Mot de passe fort, unique |
 | `AXIS_PARCEL_TRACKING_RATE` | Limite du suivi de colis par adresse IP. | `20/min` |
 | `AXIS_PUBLIC_TICKET_RATE` | Limite de lecture de la page publique d'un billet par adresse IP. La page appelle l'API depuis le navigateur du visiteur, pas depuis le serveur du site. | `60/min` |
+| `AXIS_PAYMENT_RECONCILE_ENABLED` | Interrupteur du rattrapage des paiements jamais confirmés (commande `reconcile_payments`). | `true` |
+| `AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES` | Durée pendant laquelle une transaction créée est réinterrogée chez FedaPay. | `1440` (24 h, durée de validité observée du lien de paiement) |
+| `AXIS_PAYMENT_RECONCILE_BATCH` | Nombre maximal de transactions interrogées par passage. | `20` |
+| `AXIS_PAYMENT_RECONCILE_INTERVAL_SECONDS` | Intervalle entre deux passages (profil de recette). | `60` |
 | `AXIS_CACHE_DIR` | Dossier du cache (compteurs de limite de requêtes). | Dossier accessible en écriture ; par défaut le dossier temporaire du système |
 | `AXIS_NUM_PROXIES` | Nombre de proxys devant l'API, pour lire la vraie adresse IP du client. | `1` derrière un seul proxy |
 | `AXIS_PAYMENT_SIMULATION` | Paiement simulé. Sans effet quand `DJANGO_DEBUG` est faux. | absente |
@@ -74,6 +78,7 @@ Ces points ne sont pas implémentés. Ils sont à traiter avant d'ouvrir le back
 | Cache partagé entre machines | Le cache est un dossier local (`AXIS_CACHE_DIR`), commun aux processus d'une même machine. Si l'API tourne sur plusieurs machines, chaque machine compte la limite du suivi de colis séparément : il faudra alors un cache commun (Redis). |
 | Limite de requêtes sur la connexion, l'inscription et la réservation | Absente : seul le suivi de colis est limité. |
 | Expiration des sièges | La commande `expire_ticket_holds` doit être planifiée chaque minute. |
+| Rattrapage des paiements | La commande `reconcile_payments` doit être planifiée (chaque minute). Sans elle, un paiement dont le webhook est perdu n'est confirmé que si le client revient. |
 | Configuration de lancement | `compose.yaml` est une configuration de développement (`DEBUG=true`, `ALLOWED_HOSTS` contenant `*`, mot de passe PostgreSQL `axis`). Ne pas l'utiliser telle quelle. |
 
 ### Commandes au déploiement
@@ -100,6 +105,7 @@ Le profil de recette est `compose.recette.yaml`, distinct de `compose.yaml` :
 | Sites autorisés (CORS), hôtes, CSRF | localhost | lus dans `.env.recette` |
 | Fichiers statiques de `/django-admin/` | servis | servis (`collectstatic` au démarrage) |
 | Expiration des sièges | à la main | service `holds`, chaque minute |
+| Rattrapage des paiements | à la main (`reconcile_payments`) | service `payments`, chaque minute |
 | Ports | API 8000, site 3000 | API 8100, site 3100 |
 
 Seul le backend (port 8100) est exposé par le tunnel. Le site de recette reste local (port 3100) et appelle l'API locale.
@@ -131,6 +137,13 @@ Pour appeler ce backend depuis le site Vercel (hors du but de cet essai) : ajout
 - **PC allumé** : PC éteint, en veille ou sans réseau = webhook perdu. FedaPay peut le renvoyer, sans garantie de délai.
 - **API publique pendant l'essai** : toute personne connaissant l'adresse peut appeler l'API et tenter de se connecter à l'administration. D'où le mot de passe fort et la durée courte.
 - **Pas de limite de requêtes** sur la connexion, l'inscription et la réservation.
+
+### Paiements : webhook, rattrapage, incidents
+
+- **Webhook** : FedaPay désactive un webhook après 10 essais sans réponse 2xx. Le serveur répond donc 200 à un message authentique qu'il refuse pour une raison définitive, et enregistre un **incident de paiement** ; il répond 400 à une signature absente ou invalide, et 503 à une erreur passagère (FedaPay ou base injoignable) pour que FedaPay réessaie.
+- **Rattrapage** : chaque transaction créée est enregistrée. `reconcile_payments` réinterroge FedaPay pour celles qui ne sont pas confirmées et émet le billet par le même chemin que le webhook (jamais deux billets pour un paiement ; un paiement après expiration reste « à rembourser »).
+- **À surveiller par l'administrateur**, dans `/django-admin/` : « Payment incidents » (argent possiblement encaissé sans billet, à traiter à la main) et « Payment receipts » filtrés sur `refund_due`.
+- La documentation FedaPay ne publie aucune limite de débit pour son API. Le rattrapage se borne lui-même : au plus `AXIS_PAYMENT_RECONCILE_BATCH` appels par passage, relectures espacées (chaque passage pendant 30 min, puis toutes les 10 min jusqu'à 2 h, puis chaque heure), arrêt du passage dès une réponse 429 ou 5xx.
 
 ## 3. À ne jamais faire en production
 

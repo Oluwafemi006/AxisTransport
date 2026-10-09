@@ -12,7 +12,7 @@ from django.test import TransactionTestCase, override_settings
 from rest_framework.test import APIClient, APITestCase
 
 from apps.core import payments
-from apps.core.models import Booking, PaymentMethod, PaymentReceipt, Ticket, Transaction, User
+from apps.core.models import Booking, PaymentIncident, PaymentMethod, PaymentReceipt, Ticket, Transaction, User
 from apps.core.services import pay_and_issue_booking, reserve_booking
 
 from .factories import build_operational_context
@@ -313,15 +313,23 @@ class FedaPayWebhookTests(APITestCase):
         body = webhook_body()
         with mock.patch(FETCH, return_value=fedapay_transaction(self.booking, amount=100)):
             response = self.post(body, **signed_headers(body))
-        self.assertEqual(response.status_code, 400)
+        # Refus définitif d'un message authentique : accusé de réception (200), aucun billet, incident enregistré.
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["status"], "REFUSED")
         self.assert_held()
+        incident = PaymentIncident.objects.get()
+        self.assertEqual((incident.external_id, incident.amount, incident.amount_verified), ("1001", Decimal("100"), True))
+        self.assertEqual(incident.booking, self.booking)
+        self.assertIn("Montant payé", incident.reason)
 
     def test_signed_webhook_not_approved_by_api_is_refused(self):
         body = webhook_body()
         with mock.patch(FETCH, return_value=fedapay_transaction(self.booking, status="pending")):
             response = self.post(body, **signed_headers(body))
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["status"], "REFUSED")
         self.assert_held()
+        self.assertIn("non approuvée", PaymentIncident.objects.get().reason)
 
     def test_non_approved_event_is_ignored(self):
         body = webhook_body(status="declined")

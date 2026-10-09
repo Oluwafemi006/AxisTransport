@@ -9,6 +9,8 @@ from .models import (
     Parcel,
     ParcelStatusHistory,
     PaymentMethod,
+    PaymentAttempt,
+    PaymentIncident,
     PaymentReceipt,
     Passenger,
     RentalBooking,
@@ -79,6 +81,22 @@ class PaymentReceiptAdmin(admin.ModelAdmin):
     list_display = ("provider", "external_id", "booking", "ticket", "amount", "currency", "source", "refund_due", "created_at")
     list_filter = ("refund_due", "provider", "source")
     search_fields = ("external_id", "booking__reference", "ticket__reference")
+
+
+@admin.register(PaymentAttempt)
+class PaymentAttemptAdmin(admin.ModelAdmin):
+    list_display = ("provider", "external_id", "booking", "amount", "outcome", "provider_status", "checks", "last_checked_at", "created_at")
+    list_filter = ("outcome", "provider")
+    search_fields = ("external_id", "booking__reference")
+    readonly_fields = ("provider", "external_id", "booking", "ticket", "amount", "currency", "checks", "last_checked_at")
+
+
+@admin.register(PaymentIncident)
+class PaymentIncidentAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "source", "event", "external_id", "amount", "currency", "amount_verified", "booking", "handled", "reason")
+    list_filter = ("handled", "source", "provider")
+    search_fields = ("external_id", "booking__reference", "reason")
+    readonly_fields = ("source", "provider", "event", "external_id", "amount", "currency", "amount_verified", "booking", "reason")
 
 
 admin.site.register(

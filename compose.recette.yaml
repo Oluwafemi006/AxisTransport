@@ -28,6 +28,10 @@ x-backend-environment: &backend-environment
   # du visiteur pour les limites de requêtes.
   AXIS_NUM_PROXIES: ${AXIS_NUM_PROXIES:-1}
   AXIS_PUBLIC_TICKET_RATE: ${AXIS_PUBLIC_TICKET_RATE:-60/min}
+  # Rattrapage des paiements jamais confirmés (service « payments » ci-dessous).
+  AXIS_PAYMENT_RECONCILE_ENABLED: ${AXIS_PAYMENT_RECONCILE_ENABLED:-true}
+  AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES: ${AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES:-1440}
+  AXIS_PAYMENT_RECONCILE_BATCH: ${AXIS_PAYMENT_RECONCILE_BATCH:-20}
   AXIS_CACHE_DIR: /tmp/axis-cache
 
 services:
@@ -68,6 +72,16 @@ services:
     environment: *backend-environment
     command: >-
       sh -c "while true; do sleep 60; python manage.py expire_ticket_holds; done"
+    depends_on:
+      backend:
+        condition: service_started
+
+  # Réinterroge FedaPay pour les paiements que ni le client ni le webhook n'ont confirmés.
+  payments:
+    build: ./backend
+    environment: *backend-environment
+    command: >-
+      sh -c "while true; do sleep ${AXIS_PAYMENT_RECONCILE_INTERVAL_SECONDS:-60}; python manage.py reconcile_payments; done"
     depends_on:
       backend:
         condition: service_started

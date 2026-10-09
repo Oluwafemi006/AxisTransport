@@ -163,6 +163,23 @@ FEDAPAY_CALLBACK_URL = os.environ.get(
 # Écart maximal accepté entre l'horodatage signé du webhook et l'heure du serveur (0 = pas de contrôle).
 FEDAPAY_WEBHOOK_TOLERANCE_SECONDS = int(os.environ.get("FEDAPAY_WEBHOOK_TOLERANCE_SECONDS", "300"))
 
+# Rattrapage des paiements non confirmés (commande « reconcile_payments », à planifier).
+AXIS_PAYMENT_RECONCILE_ENABLED = os.environ.get("AXIS_PAYMENT_RECONCILE_ENABLED", "true").lower() == "true"
+# Durée pendant laquelle une transaction créée est réinterrogée. 1440 min = 24 h : durée de validité observée
+# du lien de paiement FedaPay (un client peut encore payer pendant ce temps).
+AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES = int(os.environ.get("AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES", "1440"))
+# Nombre maximal de transactions interrogées par passage : borne les appels à l'API du prestataire.
+AXIS_PAYMENT_RECONCILE_BATCH = int(os.environ.get("AXIS_PAYMENT_RECONCILE_BATCH", "20"))
+
 # --- Paiement simulé ---
 # Actif uniquement si DEBUG est vrai ET si la variable est explicitement activée. Jamais en production.
 AXIS_PAYMENT_SIMULATION = DEBUG and os.environ.get("AXIS_PAYMENT_SIMULATION", "false").lower() == "true"
+
+# Journal des paiements (rattrapages, incidents) sur la sortie standard du processus.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"axis": {"format": "%(asctime)s %(levelname)s %(name)s : %(message)s"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "axis"}},
+    "loggers": {"axis.payments": {"handlers": ["console"], "level": "INFO", "propagate": False}},
+}

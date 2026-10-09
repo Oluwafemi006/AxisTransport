@@ -9,10 +9,12 @@ Toute émission passe par settle_booking_payment / settle_ticket_payment :
 """
 import hashlib
 import hmac
+import logging
 import re
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 import requests
@@ -21,7 +23,16 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from .models import Booking, PaymentMethod, PaymentReceipt, Ticket, Transaction, User
+from .models import (
+    Booking,
+    PaymentAttempt,
+    PaymentIncident,
+    PaymentMethod,
+    PaymentReceipt,
+    Ticket,
+    Transaction,
+    User,
+)
 from .services import pay_and_issue_booking, pay_and_issue_ticket, transition_ticket
 
 FEDAPAY = "FEDAPAY"
@@ -32,6 +43,12 @@ ONLINE_PROVIDERS = {FEDAPAY, KKIAPAY, SIMULATION}
 COUNTER_ROLES = {User.Role.COUNTER, User.Role.ADMIN}
 
 _REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+logger = logging.getLogger("axis.payments")
+
+
+class ProviderUnavailable(ValidationError):
+    """Le prestataire n'a pas pu répondre (réseau, surcharge) : erreur passagère, à réessayer plus tard."""
 
 
 class PaymentNotApproved(ValidationError):
@@ -84,7 +101,9 @@ def _fedapay_request(method, path, *, payload=None):
             timeout=15,
         )
     except requests.RequestException as exc:
-        raise ValidationError("Impossible de contacter FedaPay.") from exc
+        raise ProviderUnavailable("Impossible de contacter FedaPay.") from exc
+    if response.status_code == 429 or response.status_code >= 500:
+        raise ProviderUnavailable(f"FedaPay momentanément indisponible (HTTP {response.status_code}).")
     if response.status_code != 200:
         raise ValidationError(f"Requête FedaPay refusée (HTTP {response.status_code}).")
     try:
@@ -289,6 +308,16 @@ def create_checkout(target, *, payment_method):
     data = _fedapay_create_transaction(payload)
     if not data.get("id") or not data.get("payment_url"):
         raise ValidationError("FedaPay n'a pas renvoyé de lien de paiement.")
+    # Trace de la transaction créée : permet au serveur de rattraper un paiement jamais confirmé.
+    PaymentAttempt.objects.get_or_create(
+        provider=FEDAPAY,
+        external_id=str(data["id"]),
+        defaults={
+            "amount": quote["total"],
+            "currency": target.currency,
+            **({"booking": target} if isinstance(target, Booking) else {"ticket": target}),
+        },
+    )
     return {
         "transaction_id": str(data["id"]),
         "payment_url": data["payment_url"],
@@ -449,24 +478,161 @@ def verify_fedapay_signature(payload, header, secret, *, tolerance, now=None):
         raise ValidationError("Horodatage de signature hors tolérance.")
 
 
-def settle_from_fedapay_webhook(transaction_id):
-    """Émission déclenchée par un webhook déjà authentifié. La réservation vient des données vérifiées par l'API."""
+def settle_fedapay_transaction(transaction_id, *, source):
+    """
+    Émission à partir d'un numéro de transaction FedaPay, sans intervention du client (webhook ou rattrapage).
+    La transaction est relue auprès de FedaPay et la réservation vient de ces données vérifiées.
+    En cas de refus, l'erreur porte la preuve relue (`proof`) et la réservation (`booking`) quand elles sont connues.
+    """
     proof = verify_fedapay_transaction(transaction_id)
     booking = None
-    if "booking_id" in proof.metadata and str(proof.metadata["booking_id"]).isdigit():
-        booking = Booking.objects.filter(pk=int(proof.metadata["booking_id"])).first()
-    elif "booking_reference" in proof.metadata:
-        booking = Booking.objects.filter(reference=str(proof.metadata["booking_reference"])).first()
-    if booking is None:
-        raise ValidationError("Aucune réservation rattachée à cette transaction.")
-    payment_method = PaymentMethod.objects.filter(code__iexact=FEDAPAY, active=True).first()
-    if payment_method is None:
-        raise ValidationError("Le moyen de paiement FedaPay n'est pas actif.")
-    return _settle(
-        booking,
-        payment_method=payment_method,
-        external_reference=proof.external_id,
-        actor=None,
-        source=PaymentReceipt.Source.WEBHOOK,
-        proof=proof,
+    try:
+        if "booking_id" in proof.metadata and str(proof.metadata["booking_id"]).isdigit():
+            booking = Booking.objects.filter(pk=int(proof.metadata["booking_id"])).first()
+        elif "booking_reference" in proof.metadata:
+            booking = Booking.objects.filter(reference=str(proof.metadata["booking_reference"])).first()
+        if booking is None:
+            raise ValidationError("Aucune réservation rattachée à cette transaction.")
+        payment_method = PaymentMethod.objects.filter(code__iexact=FEDAPAY, active=True).first()
+        if payment_method is None:
+            raise ValidationError("Le moyen de paiement FedaPay n'est pas actif.")
+        return _settle(
+            booking,
+            payment_method=payment_method,
+            external_reference=proof.external_id,
+            actor=None,
+            source=source,
+            proof=proof,
+        )
+    except ValidationError as exc:
+        exc.proof, exc.booking = proof, booking
+        raise
+
+
+def settle_from_fedapay_webhook(transaction_id):
+    """Émission déclenchée par un webhook déjà authentifié."""
+    return settle_fedapay_transaction(transaction_id, source=PaymentReceipt.Source.WEBHOOK)
+
+
+def record_payment_incident(*, source, reason, event="", external_id="", amount=None, currency="", verified=False, booking=None):
+    """Garde une trace durable d'un paiement signalé que le serveur a refusé de transformer en billet."""
+    incident = PaymentIncident.objects.create(
+        source=source,
+        provider=FEDAPAY,
+        event=str(event or "")[:80],
+        external_id=str(external_id or "")[:120],
+        amount=amount,
+        currency=str(currency or "")[:8],
+        amount_verified=verified,
+        booking=booking,
+        reason=reason,
     )
+    logger.warning("Incident de paiement %s : transaction %s, motif : %s", incident.pk, external_id or "?", reason)
+    return incident
+
+
+def _refusal_text(exc):
+    return " ".join(str(message) for message in getattr(exc, "messages", [str(exc)]))
+
+
+# ─── Rattrapage des paiements non confirmés ──────────────────────────────────
+
+# Statuts FedaPay après lesquels une transaction ne sera jamais payée.
+_FINAL_UNPAID_STATUSES = {"declined", "canceled", "cancelled", "refunded", "expired"}
+
+
+def _due_for_check(attempt, now):
+    """Espacement des relectures : chaque passage pendant 30 min, puis toutes les 10 min jusqu'à 2 h, puis chaque heure."""
+    if attempt.last_checked_at is None:
+        return True
+    age = now - attempt.created_at
+    if age < timedelta(minutes=30):
+        return True
+    wait = timedelta(minutes=10) if age < timedelta(hours=2) else timedelta(hours=1)
+    return now - attempt.last_checked_at >= wait
+
+
+def reconcile_pending_payments(now=None):
+    """
+    Réinterroge FedaPay pour les transactions créées dont le paiement n'a jamais été confirmé
+    (ni par le client, ni par le webhook). L'émission passe par le même chemin que le webhook.
+    Renvoie un décompte par résultat.
+    """
+    counts = {"checked": 0, "settled": 0, "refund_due": 0, "refused": 0, "abandoned": 0, "anomalies": 0, "pending": 0}
+    if not settings.AXIS_PAYMENT_RECONCILE_ENABLED:
+        logger.info("Rattrapage des paiements désactivé (AXIS_PAYMENT_RECONCILE_ENABLED).")
+        return counts
+    if not settings.FEDAPAY_SECRET_KEY:
+        logger.info("Rattrapage des paiements ignoré : aucune clé FedaPay configurée.")
+        return counts
+    now = now or timezone.now()
+    oldest = now - timedelta(minutes=settings.AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES)
+    pending = PaymentAttempt.objects.filter(provider=FEDAPAY, outcome=PaymentAttempt.Outcome.PENDING)
+
+    # Trop anciennes : on cesse de les interroger, sans appel au prestataire.
+    counts["abandoned"] = pending.filter(created_at__lt=oldest).update(
+        outcome=PaymentAttempt.Outcome.ABANDONED, updated_at=now
+    )
+
+    def close(attempt, outcome, provider_status=""):
+        attempt.outcome, attempt.provider_status = outcome, provider_status[:40]
+        attempt.save(update_fields=["outcome", "provider_status", "checks", "last_checked_at", "updated_at"])
+
+    queue = pending.filter(created_at__gte=oldest).order_by("last_checked_at", "created_at")
+    for attempt in [item for item in queue if _due_for_check(item, now)][: settings.AXIS_PAYMENT_RECONCILE_BATCH]:
+        # Déjà réglée par le client ou le webhook : rien à demander au prestataire.
+        receipt = PaymentReceipt.objects.filter(provider=attempt.provider, external_id=attempt.external_id).first()
+        if receipt:
+            close(attempt, PaymentAttempt.Outcome.REFUND_DUE if receipt.refund_due else PaymentAttempt.Outcome.SETTLED)
+            continue
+        attempt.checks += 1
+        attempt.last_checked_at = now
+        counts["checked"] += 1
+        try:
+            settlement = settle_fedapay_transaction(attempt.external_id, source=PaymentReceipt.Source.RECONCILIATION)
+        except ProviderUnavailable as exc:
+            # Prestataire injoignable ou saturé : on arrête ce passage, le suivant réessaiera.
+            logger.warning("Rattrapage interrompu : %s", _refusal_text(exc))
+            break
+        except PaymentNotApproved as exc:
+            if exc.provider_status.lower() in _FINAL_UNPAID_STATUSES:
+                counts["refused"] += 1
+                close(attempt, PaymentAttempt.Outcome.REFUSED, exc.provider_status)
+                logger.info("Rattrapage : transaction %s %s chez FedaPay.", attempt.external_id, exc.provider_status)
+            else:
+                counts["pending"] += 1
+                close(attempt, PaymentAttempt.Outcome.PENDING, exc.provider_status)
+            continue
+        except ValidationError as exc:
+            # Paiement approuvé mais impossible à transformer en billet : argent possiblement encaissé sans billet.
+            proof = getattr(exc, "proof", None)
+            record_payment_incident(
+                source=PaymentIncident.Source.RECONCILIATION,
+                reason=_refusal_text(exc),
+                external_id=attempt.external_id,
+                amount=proof.amount if proof else attempt.amount,
+                currency=proof.currency if proof else attempt.currency,
+                verified=proof is not None,
+                booking=getattr(exc, "booking", None) or attempt.booking,
+            )
+            counts["anomalies"] += 1
+            close(attempt, PaymentAttempt.Outcome.ANOMALY, "approved" if proof else "")
+            continue
+        if settlement.refund_due:
+            counts["refund_due"] += 1
+            close(attempt, PaymentAttempt.Outcome.REFUND_DUE, "approved")
+            logger.warning(
+                "Rattrapage : transaction %s payée après expiration, à rembourser (réservation %s).",
+                attempt.external_id,
+                settlement.target.reference,
+            )
+        else:
+            counts["settled"] += 1
+            close(attempt, PaymentAttempt.Outcome.SETTLED, "approved")
+            logger.info(
+                "Rattrapage : transaction %s confirmée, %s billet(s) émis (réservation %s).",
+                attempt.external_id,
+                len(settlement.tickets) if settlement.created else 0,
+                settlement.target.reference,
+            )
+    return counts

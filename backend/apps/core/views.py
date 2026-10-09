@@ -1,11 +1,12 @@
 import hmac
 import json
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 
 from django.conf import settings
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -34,6 +35,7 @@ from .models import (
     Trip,
     User,
     Vehicle,
+    PaymentIncident,
 )
 from .permissions import (
     IsAxisAdmin,
@@ -70,7 +72,9 @@ from .serializers import (
 from .payments import (
     REFUND_DUE_MESSAGE,
     PaymentNotApproved,
+    ProviderUnavailable,
     create_checkout,
+    record_payment_incident,
     settle_booking_payment,
     settle_from_fedapay_webhook,
     settle_ticket_payment,
@@ -825,21 +829,35 @@ class FedaPayWebhookView(APIView):
         except DjangoValidationError:
             return Response({"error": "Signature invalide."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # À partir d'ici le message est authentique. Un refus définitif répond 200 (FedaPay désactive le webhook
+        # après 10 essais sans réponse 2xx) et laisse une trace durable ; une erreur passagère répond 503
+        # pour que FedaPay réessaie.
         try:
             event = json.loads(raw_body)
         except ValueError:
-            return Response({"error": "Corps illisible."}, status=status.HTTP_400_BAD_REQUEST)
+            return self._refused(reason="Corps du message illisible.")
         entity = event.get("entity") if isinstance(event, dict) else None
         if not isinstance(entity, dict) or entity.get("status") != "approved":
             return Response({"message": "Événement ignoré."}, status=status.HTTP_200_OK)
+        event_name = event.get("name", "")
         transaction_id = entity.get("id")
         if not transaction_id:
-            return Response({"error": "Identifiant de transaction manquant."}, status=status.HTTP_400_BAD_REQUEST)
+            return self._refused(reason="Identifiant de transaction manquant.", event=event_name, entity=entity)
 
         try:
             settlement = settle_from_fedapay_webhook(transaction_id)
+        except ProviderUnavailable as exc:
+            return Response({"error": exc.messages}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except DatabaseError:
+            return Response({"error": "Base de données indisponible."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except DjangoValidationError as exc:
-            return Response({"error": exc.messages}, status=status.HTTP_400_BAD_REQUEST)
+            return self._refused(
+                reason=" ".join(str(message) for message in exc.messages),
+                event=event_name,
+                entity=entity,
+                proof=getattr(exc, "proof", None),
+                booking=getattr(exc, "booking", None),
+            )
         return Response(
             {
                 "status": "REFUND_DUE" if settlement.refund_due else "SUCCESS",
@@ -849,6 +867,32 @@ class FedaPayWebhookView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+    def _refused(self, *, reason, event="", entity=None, proof=None, booking=None):
+        """Refus définitif d'un message authentique : enregistré pour l'administrateur, puis accusé de réception."""
+        entity = entity or {}
+        amount = proof.amount if proof else None
+        if amount is None:
+            try:
+                amount = Decimal(str(entity.get("amount")))
+            except (InvalidOperation, TypeError):
+                amount = None
+        currency = entity.get("currency")
+        try:
+            incident = record_payment_incident(
+                source=PaymentIncident.Source.WEBHOOK,
+                reason=reason,
+                event=event,
+                external_id=entity.get("id") or "",
+                amount=amount,
+                currency=proof.currency if proof else (currency.get("iso", "") if isinstance(currency, dict) else ""),
+                verified=proof is not None,
+                booking=booking,
+            )
+        except DatabaseError:
+            # Sans trace durable, on ne prétend pas avoir traité : FedaPay réessaiera.
+            return Response({"error": "Base de données indisponible."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"status": "REFUSED", "incident": incident.pk, "reason": reason}, status=status.HTTP_200_OK)
 
 
 class StaffTicketViewSet(viewsets.GenericViewSet):

@@ -416,10 +416,13 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     return () => { cancelled = true; };
   }, [user]);
 
-  useEffect(() => {
-    if (!tripId) return setSeats([]);
-    apiList<Seat>(`/client/seats/?trip=${tripId}`, false).then(setSeats).catch((reason) => setMessage(reason.message));
+  // Plan de sièges relu auprès du serveur : après une réservation ou un paiement, un siège pris n'est plus proposé.
+  const loadSeats = useCallback(async () => {
+    if (!tripId) { setSeats([]); return; }
+    try { setSeats(await apiList<Seat>(`/client/seats/?trip=${tripId}`, false)); } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Plan de sièges indisponible."); }
   }, [tripId]);
+
+  useEffect(() => { void loadSeats(); }, [loadSeats]);
 
   async function reserve(event: FormEvent) {
     event.preventDefault();
@@ -431,7 +434,8 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
       setPending(created.tickets[0]);
       setCheckout(null);
       setMessage("Siège réservé temporairement. Finalisez le paiement avant l’expiration.");
-      await onChanged();
+      setSeatId("");
+      await Promise.all([onChanged(), loadSeats()]);
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Réservation impossible."); }
   }
 
@@ -460,7 +464,8 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
       setPending(response.booking.tickets[0]);
       setCheckout(null);
       setMessage("Paiement confirmé, ticket émis.");
-      await onChanged();
+      setSeatId("");
+      await Promise.all([onChanged(), loadSeats()]);
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Paiement non confirmé."); }
   }
 
@@ -481,18 +486,24 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
               <div style={{ marginTop: '20px' }}>
                 <label>Plan de sièges</label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
-                  {seats.map((seat) => (
-                    <button type="button" key={seat.id} disabled={seat.status !== "AVAILABLE"} onClick={() => setSeatId(String(seat.id))} 
-                      style={{ 
-                        aspectRatio: '1/1', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', border: '1px solid var(--line)',
-                        background: seatId === String(seat.id) ? 'var(--blue)' : seat.status === "AVAILABLE" ? '#fff' : 'var(--bg)',
-                        color: seatId === String(seat.id) ? '#fff' : seat.status === "AVAILABLE" ? 'var(--ink)' : 'var(--mute)',
-                        cursor: seat.status === "AVAILABLE" ? 'pointer' : 'not-allowed'
-                      }}
-                    >
-                      {seat.number}
-                    </button>
-                  ))}
+                  {seats.map((seat) => {
+                    // Un siège pris (réservé ou vendu) n'apparaît jamais comme « sélectionné ».
+                    const free = seat.status === "AVAILABLE";
+                    const chosen = free && seatId === String(seat.id);
+                    return (
+                      <button type="button" key={seat.id} disabled={!free} onClick={() => setSeatId(String(seat.id))}
+                        title={chosen ? "Votre choix" : seat.status_display} aria-pressed={chosen}
+                        style={{
+                          aspectRatio: '1/1', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', border: '1px solid var(--line)',
+                          background: chosen ? 'var(--blue)' : free ? '#fff' : 'var(--bg)',
+                          color: chosen ? '#fff' : free ? 'var(--ink)' : 'var(--mute)',
+                          cursor: free ? 'pointer' : 'not-allowed'
+                        }}
+                      >
+                        {seat.number}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}

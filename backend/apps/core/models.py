@@ -559,6 +559,7 @@ class PaymentReceipt(TimeStampedModel):
         CLIENT = "CLIENT", "Confirmation client"
         WEBHOOK = "WEBHOOK", "Webhook prestataire"
         COUNTER = "COUNTER", "Encaissement guichet"
+        RECONCILIATION = "RECONCILIATION", "Rattrapage serveur"
 
     provider = models.CharField(max_length=40)
     external_id = models.CharField(max_length=120)
@@ -599,3 +600,76 @@ class PaymentReceipt(TimeStampedModel):
 
     def __str__(self):
         return f"{self.provider}:{self.external_id}"
+
+
+class PaymentAttempt(TimeStampedModel):
+    """
+    Transaction créée chez le prestataire pour une réservation. Sert au rattrapage :
+    le serveur réinterroge le prestataire quand ni le client ni le webhook n'ont confirmé le paiement.
+    """
+
+    class Outcome(models.TextChoices):
+        PENDING = "PENDING", "En attente"
+        SETTLED = "SETTLED", "Payée, billet émis"
+        REFUND_DUE = "REFUND_DUE", "Payée après expiration – à rembourser"
+        REFUSED = "REFUSED", "Refusée ou annulée chez le prestataire"
+        ABANDONED = "ABANDONED", "Abandonnée (jamais payée)"
+        ANOMALY = "ANOMALY", "Anomalie – voir les incidents de paiement"
+
+    provider = models.CharField(max_length=40)
+    external_id = models.CharField(max_length=120)
+    booking = models.ForeignKey(
+        Booking, on_delete=models.CASCADE, related_name="payment_attempts", null=True, blank=True
+    )
+    ticket = models.ForeignKey(
+        Ticket, on_delete=models.CASCADE, related_name="payment_attempts", null=True, blank=True
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, default="XOF")
+    outcome = models.CharField(max_length=16, choices=Outcome.choices, default=Outcome.PENDING, db_index=True)
+    provider_status = models.CharField(max_length=40, blank=True)
+    checks = models.PositiveIntegerField(default=0)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["provider", "external_id"], name="unique_payment_attempt"),
+        ]
+
+    def __str__(self):
+        return f"{self.provider}:{self.external_id} ({self.get_outcome_display()})"
+
+
+class PaymentIncident(TimeStampedModel):
+    """
+    Paiement signalé par le prestataire que le serveur a refusé de transformer en billet.
+    Chaque ligne peut correspondre à de l'argent encaissé sans billet : à traiter à la main.
+    """
+
+    class Source(models.TextChoices):
+        WEBHOOK = "WEBHOOK", "Webhook prestataire"
+        RECONCILIATION = "RECONCILIATION", "Rattrapage serveur"
+
+    source = models.CharField(max_length=16, choices=Source.choices)
+    provider = models.CharField(max_length=40)
+    event = models.CharField(max_length=80, blank=True)
+    external_id = models.CharField(max_length=120, blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=8, blank=True)
+    amount_verified = models.BooleanField(
+        default=False, help_text="Vrai si le montant a été relu auprès du prestataire, faux s'il vient du message reçu."
+    )
+    booking = models.ForeignKey(
+        Booking, on_delete=models.SET_NULL, related_name="payment_incidents", null=True, blank=True
+    )
+    reason = models.TextField()
+    handled = models.BooleanField(default=False, db_index=True, help_text="À cocher une fois l'incident traité.")
+    handled_note = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.provider}:{self.external_id or '?'} – {self.reason[:60]}"
+
