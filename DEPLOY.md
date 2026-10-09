@@ -43,6 +43,7 @@ Points d'attention :
 | `DJANGO_SECRET_KEY` | Clé secrète Django. | Longue chaîne aléatoire, propre à la production |
 | `DJANGO_ALLOWED_HOSTS` | Noms d'hôte acceptés, séparés par des virgules. | `api.exemple.test` (jamais `*`) |
 | `DJANGO_CORS_ALLOWED_ORIGINS` | Sites autorisés à appeler l'API, séparés par des virgules. | `https://axis.exemple.test` |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Adresses HTTPS depuis lesquelles les formulaires de `/django-admin/` sont acceptés, séparées par des virgules. | `https://api.exemple.test` |
 | `DATABASE_URL` | Base PostgreSQL. | `postgresql://UTILISATEUR:MOT_DE_PASSE@HOTE:5432/BASE` |
 | `PUBLIC_WEB_URL` | Adresse publique du site, utilisée dans les liens de billets partagés. Vide = aucun lien généré. | `https://axis.exemple.test` une fois le domaine acheté |
 | `FEDAPAY_CALLBACK_URL` | Page où FedaPay renvoie après un paiement. Par défaut : `PUBLIC_WEB_URL` + `/paiement/retour`. | `https://axis.exemple.test/paiement/retour` |
@@ -67,9 +68,7 @@ Ces points ne sont pas implémentés. Ils sont à traiter avant d'ouvrir le back
 | Manque | Conséquence aujourd'hui |
 |---|---|
 | Refus de démarrer avec la clé secrète par défaut | Si `DJANGO_SECRET_KEY` est oubliée, Django démarre avec `unsafe-development-key`. |
-| `CSRF_TRUSTED_ORIGINS` | Non configurable. L'administration Django (`/django-admin/`) refusera les formulaires en HTTPS derrière un proxy. |
 | Réglages HTTPS (`SECURE_PROXY_SSL_HEADER`, redirection HTTPS, HSTS, cookies `Secure`) | Aucun n'est défini. |
-| Fichiers statiques | Rien ne les sert sous gunicorn (pas de WhiteNoise ni de `collectstatic` au démarrage) : l'administration Django s'affiche sans style. |
 | Fichiers envoyés (`/media/`) | Servis uniquement en debug. Les pièces d'identité de location demandent un stockage privé. |
 | Cache partagé entre machines | Le cache est un dossier local (`AXIS_CACHE_DIR`), commun aux processus d'une même machine. Si l'API tourne sur plusieurs machines, chaque machine compte la limite du suivi de colis séparément : il faudra alors un cache commun (Redis). |
 | Limite de requêtes sur la connexion, l'inscription et la réservation | Absente : seul le suivi de colis est limité. |
@@ -80,59 +79,57 @@ Ces points ne sont pas implémentés. Ils sont à traiter avant d'ouvrir le back
 
 ```bash
 python manage.py migrate
+python manage.py collectstatic --noinput
 python manage.py bootstrap_axis
 gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3
 ```
 
-## 2 bis. Backend local joignable en HTTPS par un tunnel (procédure préparée, jamais exécutée)
+## 2 bis. Recette : backend local joignable en HTTPS par un tunnel
 
-Sert uniquement à un essai court : le site Vercel appelle le backend resté sur le PC. À ne lancer qu'avec l'accord explicite du responsable du projet.
-`TUNNEL` désigne ci-dessous l'adresse HTTPS fournie par l'outil de tunnel (exemple : `https://xxxx.exemple.test`).
+But unique : vérifier le webhook FedaPay (payer, fermer l'onglet, le billet doit sortir). Essai court.
+**Aucun tunnel ne se lance sans l'accord explicite du responsable du projet, donné au moment voulu.**
 
-### Avant d'ouvrir le tunnel
+Le profil de recette est `compose.recette.yaml`, distinct de `compose.yaml` :
 
-Trois points de l'état actuel rendent l'essai dangereux ou impossible ; ils ne sont pas corrigés :
+| | Développement (`compose.yaml`) | Recette (`compose.recette.yaml`) |
+|---|---|---|
+| Debug | activé | coupé |
+| Base de données | `axis_transport`, avec comptes de démonstration | `axis_recette`, séparée, un seul compte administrateur |
+| Clé secrète, mots de passe | valeurs locales connues | obligatoires, lus dans `.env.recette` |
+| Sites autorisés (CORS), hôtes, CSRF | localhost | lus dans `.env.recette` |
+| Fichiers statiques de `/django-admin/` | servis | servis (`collectstatic` au démarrage) |
+| Expiration des sièges | à la main | service `holds`, chaque minute |
+| Ports | API 8000, site 3000 | API 8100, site 3100 |
 
-| Point | Conséquence |
-|---|---|
-| `compose.yaml` lance le backend avec `DJANGO_DEBUG=true` | Les pages d'erreur détaillées et le paiement simulé (si activé) deviennent accessibles depuis Internet. |
-| Comptes de démonstration (`demo_admin`, `demo_guichet`…) au mot de passe connu | N'importe qui connaissant l'adresse peut entrer dans l'administration. Les supprimer ou changer leur mot de passe avant. |
-| `DJANGO_CORS_ALLOWED_ORIGINS` est écrit en dur dans `compose.yaml` et l'en-tête `X-Booking-Token` n'est pas autorisé | Le site Vercel ne peut pas appeler l'API ; l'achat sans compte échoue au paiement. |
+Seul le backend (port 8100) est exposé par le tunnel. Le site de recette reste local (port 3100) et appelle l'API locale.
 
-`CSRF_TRUSTED_ORIGINS` n'existe pas dans `settings.py` : l'API (jetons JWT) fonctionne sans, mais `/django-admin/` refusera ses formulaires à travers le tunnel.
+### Préparation (sans tunnel)
 
-### Variables à poser
+```bash
+cp recette.env.example .env.recette        # puis remplir ; ce fichier n'est jamais commité
+docker compose -p axis-recette --env-file .env.recette -f compose.recette.yaml up -d --build
+```
 
-Côté backend (fichier `.env` local, jamais commité) :
+La base de recette démarre presque vide : lieux Cotonou et Parakou, véhicule « Yutong » sans capacité, moyen de paiement FedaPay. Avant un achat il faut saisir, avec le compte administrateur, sur `http://localhost:3100/admin` : la capacité du véhicule, un départ, un tarif, et la durée de blocage d'un siège.
 
-| Nom | Valeur |
-|---|---|
-| `DJANGO_DEBUG` | `false` |
-| `DJANGO_SECRET_KEY` | Chaîne aléatoire longue |
-| `DJANGO_ALLOWED_HOSTS` | Nom d'hôte du tunnel, sans `https://` (pas de `*`) |
-| `DJANGO_CORS_ALLOWED_ORIGINS` | `https://axis-transport.vercel.app` |
-| `CSRF_TRUSTED_ORIGINS` | `TUNNEL` — à ajouter d'abord dans `settings.py` |
-| `PUBLIC_WEB_URL` | `https://axis-transport.vercel.app` |
-| `FEDAPAY_CALLBACK_URL` | `https://axis-transport.vercel.app/paiement/retour` |
-| `FEDAPAY_SECRET_KEY`, `FEDAPAY_WEBHOOK_SECRET`, `FEDAPAY_ENVIRONMENT` | Clés `sandbox`, `sandbox` |
+### Au moment du tunnel
 
-Côté Vercel : `NEXT_PUBLIC_API_URL` = `TUNNEL/api/v1`, puis redéployer (la variable est lue au build).
+`TUNNEL` désigne l'adresse HTTPS fournie par l'outil de tunnel (exemple : `https://xxxx.exemple.test`).
 
-Chez FedaPay (compte sandbox) : déclarer le webhook `TUNNEL/api/v1/client/webhooks/fedapay/` et recopier son secret dans `FEDAPAY_WEBHOOK_SECRET`.
+1. Dans `.env.recette` : ajouter le nom d'hôte du tunnel à `DJANGO_ALLOWED_HOSTS` (sans `https://`), mettre `TUNNEL` dans `DJANGO_CSRF_TRUSTED_ORIGINS`.
+2. Chez FedaPay (compte sandbox) : déclarer le webhook `TUNNEL/api/v1/client/webhooks/fedapay/`, recopier son secret dans `FEDAPAY_WEBHOOK_SECRET`.
+3. Relancer la commande `up -d` ci-dessus, ouvrir le tunnel vers le port 8100, vérifier `GET TUNNEL/api/v1/health/`.
+4. Essai : acheter sur `http://localhost:3100`, payer, fermer l'onglet sans cliquer sur « vérifier ». Le billet doit passer à « émis » par le seul webhook.
+5. Fermer le tunnel, retirer le webhook chez FedaPay, puis `docker compose -p axis-recette --env-file .env.recette -f compose.recette.yaml down`.
 
-### Ordre des opérations
-
-1. Poser les variables backend, redémarrer le backend, vérifier `GET http://localhost:8000/api/v1/health/`.
-2. Ouvrir le tunnel vers le port 8000 ; vérifier `GET TUNNEL/api/v1/health/`.
-3. Déclarer le webhook chez FedaPay, poser `NEXT_PUBLIC_API_URL` sur Vercel, redéployer.
-4. Faire l'essai, puis fermer le tunnel et retirer le webhook.
+Pour appeler ce backend depuis le site Vercel (hors du but de cet essai) : ajouter l'adresse Vercel à `DJANGO_CORS_ALLOWED_ORIGINS`, mettre `NEXT_PUBLIC_API_URL` = `TUNNEL/api/v1` sur Vercel et redéployer.
 
 ### Risques
 
-- **Adresse changeante** : avec un tunnel gratuit, l'adresse change à chaque lancement. Il faut alors refaire `DJANGO_ALLOWED_HOSTS`, le webhook FedaPay, `NEXT_PUBLIC_API_URL` et un redéploiement Vercel.
-- **PC allumé** : PC éteint, en veille ou sans réseau = site sans données et paiements non confirmés. Un paiement fait pendant une coupure n'est rattrapé que si le client revient vérifier ou si FedaPay renvoie le webhook.
-- **Base de données locale exposée à travers l'API** : toutes les données du PC (comptes, billets de démonstration) deviennent visibles par l'API publique.
-- **Expiration des sièges** : la commande `expire_ticket_holds` n'est pas planifiée ; à lancer à la main pendant l'essai.
+- **Adresse changeante** : avec un tunnel gratuit, l'adresse change à chaque lancement ; il faut refaire les étapes 1 à 3.
+- **PC allumé** : PC éteint, en veille ou sans réseau = webhook perdu. FedaPay peut le renvoyer, sans garantie de délai.
+- **API publique pendant l'essai** : toute personne connaissant l'adresse peut appeler l'API et tenter de se connecter à l'administration. D'où le mot de passe fort et la durée courte.
+- **Pas de limite de requêtes** sur la connexion, l'inscription et la réservation.
 
 ## 3. À ne jamais faire en production
 

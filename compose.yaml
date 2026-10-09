@@ -19,7 +19,8 @@ services:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-unsafe-local-compose-key}
       DJANGO_DEBUG: "true"
       DJANGO_ALLOWED_HOSTS: "*,localhost,127.0.0.1,backend,${AXIS_LAN_IP:-127.0.0.1}"
-      DJANGO_CORS_ALLOWED_ORIGINS: http://localhost:3000,http://${AXIS_LAN_IP:-127.0.0.1}:3000
+      # Sites autorisés à appeler l'API. AXIS_FRONTEND_ORIGINS ajoute d'autres adresses (ex. le site Vercel), séparées par des virgules.
+      DJANGO_CORS_ALLOWED_ORIGINS: http://localhost:3000,http://${AXIS_LAN_IP:-127.0.0.1}:3000,${AXIS_FRONTEND_ORIGINS:-}
       DATABASE_URL: postgresql://axis:axis@db:5432/axis_transport
       AXIS_ADMIN_USERNAME: ${AXIS_ADMIN_USERNAME:-}
       AXIS_ADMIN_PASSWORD: ${AXIS_ADMIN_PASSWORD:-}

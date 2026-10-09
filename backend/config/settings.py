@@ -3,6 +3,7 @@ import os
 import tempfile
 
 import dj_database_url
+from corsheaders.defaults import default_headers
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -30,6 +31,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Sert les fichiers statiques (administration Django) sous gunicorn.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -93,6 +96,8 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# En debug, les fichiers statiques sont servis sans « collectstatic ».
+WHITENOISE_USE_FINDERS = DEBUG
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -104,6 +109,12 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
+# Adresses HTTPS depuis lesquelles les formulaires de /django-admin/ sont acceptés (ex. adresse d'un tunnel).
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip() for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if origin.strip()
+]
+# En-têtes par défaut, plus le jeton d'une réservation faite sans compte (seul en-tête propre à Axis).
+CORS_ALLOW_HEADERS = (*default_headers, "x-booking-token")
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (

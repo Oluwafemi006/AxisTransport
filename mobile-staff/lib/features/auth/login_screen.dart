@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../core/session.dart';
 import '../../core/theme.dart';
 import '../../shared/widgets.dart';
 
+/// Connexion du personnel. Les comptes sont créés par l'administrateur : pas d'inscription ici.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -16,9 +16,6 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _username = TextEditingController();
   final _password = TextEditingController();
-  final _firstName = TextEditingController();
-  final _phone = TextEditingController();
-  bool _creating = false;
   bool _busy = false;
   String? _message;
 
@@ -26,8 +23,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   void dispose() {
     _username.dispose();
     _password.dispose();
-    _firstName.dispose();
-    _phone.dispose();
     super.dispose();
   }
 
@@ -38,18 +33,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _message = null;
     });
     try {
-      final session = ref.read(sessionProvider.notifier);
-      if (_creating) {
-        await session.register(
-          username: _username.text.trim(),
-          password: _password.text,
-          firstName: _firstName.text.trim(),
-          phone: _phone.text.trim(),
-        );
-      } else {
-        await session.login(_username.text.trim(), _password.text);
-      }
-      if (mounted) context.pop();
+      // Une fois le personnel connecté, l'application remplace cet écran par l'accueil.
+      await ref
+          .read(sessionProvider.notifier)
+          .login(_username.text.trim(), _password.text);
     } catch (error) {
       if (mounted) setState(() => _message = error.toString());
     } finally {
@@ -66,9 +53,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         children: [
           const Align(alignment: Alignment.centerLeft, child: Brand()),
           const SizedBox(height: 26),
-          Text(
-            _creating ? 'Créer mon compte' : 'Bienvenue',
-            style: const TextStyle(
+          const Text(
+            'Espace équipe',
+            style: TextStyle(
               color: AxisColors.text,
               fontSize: 30,
               fontWeight: FontWeight.w900,
@@ -76,22 +63,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Retrouvez vos billets, colis et locations dans votre compte Axis Transport.',
+            'Saisissez vos identifiants Axis.',
             style: TextStyle(color: AxisColors.muted, height: 1.45),
           ),
-          if (_creating) ...[
-            const SizedBox(height: 14),
-            TextField(
-              controller: _firstName,
-              decoration: const InputDecoration(labelText: 'Prénom'),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _phone,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: 'Téléphone'),
-            ),
-          ],
           const SizedBox(height: 14),
           TextField(
             controller: _username,
@@ -109,23 +83,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           const SizedBox(height: 16),
           FilledButton(
             onPressed: _busy ? null : _submit,
-            child: Text(
-              _busy
-                  ? 'Patientez…'
-                  : _creating
-                  ? 'Créer et continuer'
-                  : 'Se connecter',
-            ),
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton(
-            onPressed: () => setState(() {
-              _creating = !_creating;
-              _message = null;
-            }),
-            child: Text(
-              _creating ? 'J’ai déjà un compte' : 'Créer un compte client',
-            ),
+            child: Text(_busy ? 'Patientez…' : 'Se connecter'),
           ),
         ],
       ),

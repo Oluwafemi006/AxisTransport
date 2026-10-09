@@ -1,0 +1,85 @@
+# Profil de RECETTE, distinct de compose.yaml : debug coupé, base séparée, aucun compte de démonstration.
+# Sert à un essai court avec le backend joignable de l'extérieur (voir DEPLOY.md, section 2 bis).
+#
+#   cp recette.env.example .env.recette      puis remplir .env.recette (jamais commité)
+#   docker compose -p axis-recette --env-file .env.recette -f compose.recette.yaml up -d --build
+#   docker compose -p axis-recette --env-file .env.recette -f compose.recette.yaml down
+#
+# Seul le backend (port 8100) est destiné à être exposé. Le site reste local (port 3100).
+# Ne jamais lancer « seed_demo » dans ce profil : la commande refuse de tourner sans debug.
+
+x-backend-environment: &backend-environment
+  DJANGO_DEBUG: "false"
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY doit être définie dans .env.recette}
+  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?DJANGO_ALLOWED_HOSTS doit être définie dans .env.recette}
+  DJANGO_CORS_ALLOWED_ORIGINS: ${DJANGO_CORS_ALLOWED_ORIGINS:?DJANGO_CORS_ALLOWED_ORIGINS doit être définie dans .env.recette}
+  DJANGO_CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-}
+  DATABASE_URL: postgresql://axis:${RECETTE_DB_PASSWORD:?RECETTE_DB_PASSWORD doit être définie dans .env.recette}@db:5432/axis_recette
+  AXIS_ADMIN_USERNAME: ${AXIS_ADMIN_USERNAME:?AXIS_ADMIN_USERNAME doit être définie dans .env.recette}
+  AXIS_ADMIN_PASSWORD: ${AXIS_ADMIN_PASSWORD:?AXIS_ADMIN_PASSWORD doit être définie dans .env.recette}
+  ACTIVE_PAYMENT_PROVIDER: fedapay
+  FEDAPAY_SECRET_KEY: ${FEDAPAY_SECRET_KEY:-}
+  FEDAPAY_WEBHOOK_SECRET: ${FEDAPAY_WEBHOOK_SECRET:-}
+  FEDAPAY_ENVIRONMENT: ${FEDAPAY_ENVIRONMENT:-sandbox}
+  FEDAPAY_WEBHOOK_TOLERANCE_SECONDS: ${FEDAPAY_WEBHOOK_TOLERANCE_SECONDS:-300}
+  FEDAPAY_CALLBACK_URL: ${FEDAPAY_CALLBACK_URL:-http://localhost:3100/paiement/retour}
+  PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
+  AXIS_NUM_PROXIES: ${AXIS_NUM_PROXIES:-1}
+  AXIS_CACHE_DIR: /tmp/axis-cache
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: axis_recette
+      POSTGRES_USER: axis
+      POSTGRES_PASSWORD: ${RECETTE_DB_PASSWORD:?RECETTE_DB_PASSWORD doit être définie dans .env.recette}
+    volumes:
+      - recette_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U axis -d axis_recette"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment: *backend-environment
+    command: >-
+      sh -c "python manage.py migrate &&
+      python manage.py collectstatic --noinput &&
+      python manage.py bootstrap_axis &&
+      gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    volumes:
+      - recette_media:/app/media
+      - recette_cache:/tmp/axis-cache
+    ports:
+      - "8100:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Libère chaque minute les sièges dont la réservation temporaire a expiré.
+  holds:
+    build: ./backend
+    environment: *backend-environment
+    command: >-
+      sh -c "while true; do sleep 60; python manage.py expire_ticket_holds; done"
+    depends_on:
+      backend:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${RECETTE_API_URL:-http://localhost:8100/api/v1}
+    ports:
+      - "3100:3000"
+    depends_on:
+      - backend
+
+volumes:
+  recette_postgres_data:
+  recette_media:
+  recette_cache:

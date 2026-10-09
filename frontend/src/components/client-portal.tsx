@@ -5,6 +5,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import type { Checkout, Contact, Location, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
+import { clearGuestBooking, loadGuestBooking, rememberGuestPayment, saveGuestBooking } from "@/lib/guest-booking";
 
 type ClientTab = "accueil" | "billets" | "colis" | "location" | "profil";
 
@@ -394,6 +395,27 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     }
   }, [user]);
 
+  // Invité : au chargement, reprend la réservation conservée dans le navigateur (onglet fermé ou page rechargée).
+  useEffect(() => {
+    if (user) return;
+    const stored = loadGuestBooking();
+    if (!stored) return;
+    let cancelled = false;
+    apiFetch<{ status: string; tickets: Ticket[]; payment_quotes: Array<Omit<Checkout, "transaction_id" | "payment_url" | "simulated">> }>(`/client/bookings/${stored.id}/`, { headers: { "X-Booking-Token": stored.token } }, false)
+      .then((found) => {
+        if (cancelled || !found.tickets.length) return;
+        const ticket = found.tickets[0];
+        if (ticket.status !== "HELD" && ticket.status !== "ISSUED") { clearGuestBooking(); return; }
+        setBooking({ id: stored.id, token: stored.token });
+        setPending(ticket);
+        const quote = found.payment_quotes.find((item) => item.payment_method === stored.paymentMethod);
+        if (ticket.status === "HELD" && quote && stored.transactionId) setCheckout({ ...quote, transaction_id: stored.transactionId, payment_url: null, simulated: false });
+        setMessage(ticket.status === "ISSUED" ? "Votre billet est prêt." : "Réservation retrouvée. Finalisez le paiement avant l’expiration.");
+      })
+      .catch((reason) => { if ((reason as { status?: number }).status === 403 || (reason as { status?: number }).status === 404) clearGuestBooking(); });
+    return () => { cancelled = true; };
+  }, [user]);
+
   useEffect(() => {
     if (!tripId) return setSeats([]);
     apiList<Seat>(`/client/seats/?trip=${tripId}`, false).then(setSeats).catch((reason) => setMessage(reason.message));
@@ -405,6 +427,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     try {
       const created = await apiFetch<{ id: number; tickets: Ticket[]; guest_access_token?: string }>("/client/bookings/", { method: "POST", body: JSON.stringify({ trip: Number(tripId), contact_phone: phone, passengers: [{ full_name: passengerName, phone, seat: Number(seatId) }] }) }, !!user);
       setBooking({ id: created.id, token: created.guest_access_token ?? null });
+      if (created.guest_access_token) saveGuestBooking(created.id, created.guest_access_token); else clearGuestBooking();
       setPending(created.tickets[0]);
       setCheckout(null);
       setMessage("Siège réservé temporairement. Finalisez le paiement avant l’expiration.");
@@ -419,6 +442,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     try {
       const created = await apiFetch<Checkout>(`/client/bookings/${booking.id}/checkout/`, { method: "POST", headers: bookingHeaders(), body: JSON.stringify({ payment_method: method.id }) }, !!user);
       setCheckout(created);
+      if (booking.token) rememberGuestPayment(created.payment_method, created.transaction_id);
       if (created.payment_url) {
         window.open(created.payment_url, "_blank", "noopener");
         setMessage("La page de paiement s’est ouverte dans un nouvel onglet. Revenez ici une fois le paiement terminé.");
@@ -514,7 +538,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
            <div style={{ background: 'var(--okbg)', color: 'var(--ok)', padding: '20px', borderRadius: '12px', marginTop: '20px', border: '1px solid #c3e6d3', textAlign: 'center' }}>
              <p style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '10px' }}>🎉 Voyage confirmé !</p>
              <p style={{ marginBottom: '16px' }}>Votre billet {pending.reference} a été émis avec succès.</p>
-             <a href={`/t/${pending.reference}`} target="_blank" rel="noreferrer" className="btn p" style={{ display: 'inline-flex', background: 'var(--ok)', borderColor: 'var(--ok)' }}>
+             <a href={`/t/${pending.reference}`} target="_blank" rel="noreferrer" onClick={clearGuestBooking} className="btn p" style={{ display: 'inline-flex', background: 'var(--ok)', borderColor: 'var(--ok)' }}>
                Voir et télécharger mon billet
              </a>
              {!user && <p style={{ marginTop: '12px', fontSize: '13px' }}>Sans compte, ce billet n’est pas conservé sur le site : téléchargez-le maintenant.</p>}

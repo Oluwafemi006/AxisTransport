@@ -46,6 +46,10 @@ class SessionNotifier extends Notifier<SessionState> {
   Future<void> login(String username, String password) async {
     await _api.login(username, password);
     await restore();
+    // Un compte client est déconnecté par restore() : l'application est réservée au personnel.
+    if (state.user == null) {
+      throw ApiException('Cette application est réservée au personnel Axis.');
+    }
   }
 
   Future<void> register({

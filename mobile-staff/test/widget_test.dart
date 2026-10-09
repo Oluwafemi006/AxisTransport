@@ -22,27 +22,30 @@ class _MemoryStore extends SessionStore {
   Future<void> cacheTickets(List<Ticket> tickets) async {}
 }
 
+/// Faux serveur : `role` nul = personne n'est connecté.
 class _FakeApi extends ApiClient {
-  _FakeApi() : super(store: _MemoryStore());
+  _FakeApi({this.role}) : super(store: _MemoryStore());
+
+  String? role;
 
   @override
-  Future<List<Trip>> trips() async => [];
+  Future<void> login(String username, String password) async {}
 
   @override
-  Future<List<Ticket>> tickets() async => [];
+  Future<void> logout() async {}
 
   @override
-  Future<List<Place>> locations() async => [];
-
-  @override
-  Future<User> me() async => const User(
-    id: 1,
-    username: 'eddy',
-    firstName: 'Eddy',
-    lastName: '',
-    phone: '',
-    role: 'CLIENT',
-  );
+  Future<User> me() async {
+    if (role == null) throw ApiException('Non connecté');
+    return User(
+      id: 1,
+      username: 'agent',
+      firstName: 'Awa',
+      lastName: '',
+      phone: '',
+      role: role!,
+    );
+  }
 }
 
 class _BookingApi extends ApiClient {
@@ -86,16 +89,33 @@ class _BookingApi extends ApiClient {
 void main() {
   setUpAll(() => initializeDateFormatting('fr_FR'));
 
+  Future<void> pumpApp(WidgetTester tester, _FakeApi api) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [apiClientProvider.overrideWithValue(api)],
+        child: const AxisTransportApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
   testWidgets(
-    'l’accueil staff ouvre sur le scanner, sans parcours d’achat client',
+    'sans connexion, seul l’écran de connexion du personnel est accessible',
     (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [apiClientProvider.overrideWithValue(_FakeApi())],
-          child: const AxisTransportApp(),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await pumpApp(tester, _FakeApi());
+
+      expect(find.text('Espace équipe'), findsOneWidget);
+      expect(find.text('Se connecter'), findsOneWidget);
+      expect(find.text('Ouvrir le Scanner QR'), findsNothing);
+      expect(find.text('Scanner'), findsNothing);
+      expect(find.textContaining('Créer un compte'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'un contrôleur connecté arrive sur l’accueil staff avec le scanner',
+    (tester) async {
+      await pumpApp(tester, _FakeApi(role: 'CONTROLLER'));
 
       expect(find.text('Ouvrir le Scanner QR'), findsOneWidget);
       expect(find.text('Accueil'), findsOneWidget);
@@ -104,6 +124,25 @@ void main() {
       expect(find.text('Où souhaitez-vous aller ?'), findsNothing);
     },
   );
+
+  testWidgets('un compte client est refusé dans l’application staff', (
+    tester,
+  ) async {
+    await pumpApp(tester, _FakeApi(role: 'CLIENT'));
+    expect(find.text('Espace équipe'), findsOneWidget);
+    expect(find.text('Ouvrir le Scanner QR'), findsNothing);
+
+    await tester.enterText(find.byType(TextField).at(0), 'client');
+    await tester.enterText(find.byType(TextField).at(1), 'secret');
+    await tester.tap(find.text('Se connecter'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Cette application est réservée au personnel Axis.'),
+      findsOneWidget,
+    );
+    expect(find.text('Ouvrir le Scanner QR'), findsNothing);
+  });
 
   test('le résultat du scan affiche siège, trajet, embarquement et départ du serveur', () {
     final lines = scanTicketLines({
