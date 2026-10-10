@@ -401,6 +401,8 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
   // Un seul moyen de paiement en ligne : une seule action « Payer [total] ». Plusieurs : le choix reste à l'écran.
   const singleQuote = tripQuotes.length === 1 ? tripQuotes[0] : null;
   const held = pending?.status === "HELD";
+  // Un billet vient d'être émis : le formulaire ne propose plus de payer tant que l'on n'a pas choisi « Acheter un autre billet ».
+  const issued = pending?.status === "ISSUED";
   const access = (current: { token: string | null }): Record<string, string> => (current.token ? { "X-Booking-Token": current.token } : {});
 
   useEffect(() => {
@@ -472,6 +474,14 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     clearGuestBooking();
     setBooking(null); setPending(null); setCheckout(null); setBookingQuotes([]); setPaymentFailed(false); setMessage("");
     void loadSeats();
+  }
+
+  // Repart d'un formulaire vierge après un achat. Sans compte, le billet n'est gardé nulle part sur le site :
+  // on demande confirmation avant de ne plus le proposer.
+  function buyAnother() {
+    if (!user && !window.confirm("Avez-vous téléchargé votre billet ? Sans compte, il ne sera plus proposé sur cette page.")) return;
+    forget();
+    setSeatId("");
   }
 
   // Annulation d'une réservation non payée : le serveur libère le siège tout de suite.
@@ -628,12 +638,12 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
             <label style={{ marginTop: '20px' }}>Téléphone{!user && " (obligatoire sans compte)"}</label>
             <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required={!user} pattern={user ? undefined : "\\+?[0-9\\(][0-9 \\(\\)\\.\\-]{5,}"} title="Numéro de téléphone" />
 
-            {singleQuote && !held && (
+            {singleQuote && !held && !issued && (
               <p style={{ marginTop: '20px', fontSize: '14px', color: 'var(--mute)' }}>
                 Prix du billet : {money(singleQuote.amount, singleQuote.currency)} · Frais de paiement : {money(singleQuote.fee_amount, singleQuote.currency)}
               </p>
             )}
-            {!held && (singleQuote ? (
+            {!held && !issued && (singleQuote ? (
               <button className="btn p" style={{ marginTop: '12px', width: '100%' }} disabled={busy || !seatId}>
                 {busy ? "Patientez…" : `Payer ${money(singleQuote.total, singleQuote.currency)}`}
               </button>
@@ -694,6 +704,9 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
                Voir et télécharger mon billet
              </a>
              {!user && <p style={{ marginTop: '12px', fontSize: '13px' }}>Sans compte, ce billet n’est pas conservé sur le site : téléchargez-le maintenant.</p>}
+             <p style={{ marginTop: '16px' }}>
+               <button type="button" className="btn" onClick={buyAnother}>Acheter un autre billet</button>
+             </p>
            </div>
         )}
       </div>
