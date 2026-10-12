@@ -163,3 +163,330 @@ Pour appeler ce backend depuis le site Vercel (hors du but de cet essai) : ajout
 2. La page d'accueil du site affiche les villes (sinon : vérifier `NEXT_PUBLIC_API_URL` et CORS).
 3. Un paiement de test aboutit et le billet s'affiche.
 4. Le webhook FedaPay répond 200 à un événement signé, 400 sans signature.
+
+## 5. VPS : tout le projet sur un serveur (procédure écrite, jamais exécutée)
+
+Tout tourne sur le VPS : API, PostgreSQL, site Next.js, et un proxy Caddy devant. Vercel (offre Hobby, usage non commercial) ne sert plus qu'aux démonstrations.
+
+**Statut de cette section** : rédigée sans accès au serveur. Aucune commande n'a été lancée sur le VPS. Seule la syntaxe de `compose.vps.yaml` et des deux fichiers Caddy a été validée sur un PC. Tout le reste est à vérifier sur place ; la liste est au point 5.12.
+
+Notations : `<IP>` = adresse du serveur, `<DOMAINE>` = nom de domaine (pas encore choisi ; il n'est écrit nulle part dans le code, il vient de la variable `AXIS_DOMAIN`), `<UTILISATEUR>` = compte non-root créé au point 5.2.
+
+Fichiers utilisés :
+
+| Fichier | Rôle |
+|---|---|
+| `compose.vps.yaml` | Les services : `db`, `backend`, `holds` (expiration des sièges), `payments` (rattrapage), `frontend`, `caddy` |
+| `deploy/Caddyfile.http` | Variante A : HTTP sur l'adresse IP |
+| `deploy/Caddyfile.https` | Variante B : domaine et HTTPS |
+| `vps.env.example` | Modèle du fichier `.env.vps`, à remplir sur le serveur |
+
+### Les deux variantes
+
+| | A — test technique en HTTP sur l'IP | B — domaine et HTTPS |
+|---|---|---|
+| But | Vérifier que le projet démarre et fonctionne sur le serveur | Version utilisable par de vrais clients |
+| Données | Fictives uniquement | Réelles |
+| FedaPay | `sandbox` | `sandbox`, puis `live` à l'ouverture |
+| Adresse du site | `http://<IP>/` | `https://<DOMAINE>/` |
+| Adresse de l'API | `http://<IP>/api/v1` (même hôte, routée par chemin) | `https://api.<DOMAINE>/api/v1` |
+| Administration Django | `http://<IP>/django-admin/` | `https://api.<DOMAINE>/django-admin/` |
+| Certificats | Aucun : rien n'est chiffré, mots de passe compris | Obtenus et renouvelés par Caddy |
+| Ports ouverts | 22, 80 | 22, 80, 443 |
+| Fichier Caddy | `Caddyfile.http` | `Caddyfile.https` |
+
+**Réglages Django à assouplir pour la variante A : aucun.** Le code ne contient aujourd'hui ni redirection HTTPS, ni cookies « Secure », ni HSTS, ni lecture de l'en-tête du proxy (`SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_HSTS_SECONDS`, `SECURE_PROXY_SSL_HEADER` sont absents de `settings.py`). Il n'y a donc rien à désactiver pour un essai en HTTP, et rien de « caché » à remettre : ce qui change entre A et B, ce sont les variables du point 5.9.
+
+**Ce qui manque pour la variante B et demande une modification du code avant l'ouverture réelle** (non faite, à décider) :
+
+| Manque | Effet aujourd'hui |
+|---|---|
+| Cookies de session et CSRF marqués « Secure », HSTS | La redirection HTTP → HTTPS est faite par Caddy, mais Django ne l'impose pas lui-même |
+| `SECURE_PROXY_SSL_HEADER` | Django se croit en HTTP derrière Caddy. L'API (jetons JWT) n'en dépend pas ; `/django-admin/` fonctionne grâce à `DJANGO_CSRF_TRUSTED_ORIGINS` |
+| Refus de démarrer sans clé secrète | Couvert sur le VPS : `compose.vps.yaml` refuse de démarrer si `DJANGO_SECRET_KEY` est vide |
+| Limite de requêtes sur la connexion, l'inscription, la réservation | Absente |
+| Fichiers envoyés (`/media/`) | Enregistrés dans un volume, mais servis par personne hors debug : les pièces d'identité de location ne sont pas consultables |
+| HTTP non chiffré autorisé dans les deux apps mobiles | Voir 5.10 |
+
+**HTTPS avant l'achat du domaine (nom de type `sslip.io`) : non vérifié.** En principe `<IP>.sslip.io` désigne l'adresse du serveur et Caddy pourrait demander un certificat pour ce nom. Rien ne garantit ici que l'autorité de certification l'accorde (quotas partagés par tous les utilisateurs de ce service), ni que FedaPay accepte une telle adresse pour le webhook. À essayer sur le serveur avant d'y compter.
+
+### 5.1 Mesurer si le VPS tient
+
+Mesure faite sur le PC de développement, services au repos (`docker stats`) :
+
+| Service | Mémoire |
+|---|---|
+| `backend` (gunicorn, 3 processus) | 191 Mo |
+| `frontend` | 113 Mo |
+| `db` | 36 Mo |
+| **Total mesuré** | **340 Mo** |
+
+Non mesuré : les services `holds`, `payments` et `caddy`, la charge avec des visiteurs, et surtout **la construction du site sur le serveur** (`npm run build`), qui demande nettement plus de mémoire que le fonctionnement. Les caractéristiques du VPS ne sont pas connues ici. À faire sur le serveur :
+
+```bash
+free -h && nproc && df -h /        # mémoire, processeurs, disque disponibles
+docker stats --no-stream            # après le démarrage (5.4)
+```
+
+Si la construction échoue faute de mémoire : ajouter un fichier d'échange (swap) ou construire les images ailleurs. Aucune des deux solutions n'est préparée.
+
+### 5.2 Sécuriser le serveur AVANT tout déploiement
+
+Ordre à respecter. **Garder la première session root ouverte jusqu'à la fin de cette partie** : c'est le filet de sécurité.
+
+1. **Mises à jour** (session root) :
+   ```bash
+   apt update && apt upgrade -y
+   ```
+2. **Utilisateur non-root avec sudo** :
+   ```bash
+   adduser <UTILISATEUR>
+   usermod -aG sudo <UTILISATEUR>
+   ```
+3. **Clé SSH**, depuis le PC (pas depuis le serveur) :
+   ```bash
+   ssh-keygen -t ed25519            # si le PC n'a pas encore de clé
+   ssh-copy-id <UTILISATEUR>@<IP>
+   ```
+4. **Vérification dans une DEUXIÈME session**, sans fermer la première :
+   ```bash
+   ssh <UTILISATEUR>@<IP>           # doit entrer sans demander le mot de passe du compte
+   sudo -v                          # doit accepter le mot de passe de <UTILISATEUR>
+   ```
+   Ne pas continuer tant que ces deux commandes ne passent pas.
+5. **Pare-feu**, en autorisant SSH avant de l'activer :
+   ```bash
+   sudo ufw allow 22/tcp
+   sudo ufw allow 80/tcp
+   sudo ufw allow 443/tcp
+   sudo ufw enable
+   sudo ufw status
+   ```
+   Ouvrir une TROISIÈME session `ssh <UTILISATEUR>@<IP>` pour vérifier que SSH passe toujours.
+6. **Couper le mot de passe et le compte root en SSH**. Créer `/etc/ssh/sshd_config.d/00-axis.conf` :
+   ```
+   PasswordAuthentication no
+   PermitRootLogin no
+   ```
+   Puis :
+   ```bash
+   sudo grep -ri "passwordauthentication\|permitrootlogin" /etc/ssh/sshd_config /etc/ssh/sshd_config.d/
+   sudo sshd -t                     # ne doit rien afficher
+   sudo systemctl reload ssh
+   ```
+   La première commande sert à repérer un autre fichier qui remettrait le mot de passe en service (sur les images de certains hébergeurs, un fichier `50-cloud-init.conf` le fait) : le corriger aussi. Le nom du service (`ssh`) et la présence de ce fichier sur l'image Contabo sont **non vérifiés**.
+7. **Vérification dans une nouvelle session**, les anciennes toujours ouvertes :
+   ```bash
+   ssh <UTILISATEUR>@<IP>                                    # doit entrer
+   ssh -o PubkeyAuthentication=no <UTILISATEUR>@<IP>         # doit être refusé
+   ssh root@<IP>                                             # doit être refusé
+   ```
+   Si la première échoue : revenir dans une session restée ouverte, supprimer le fichier `00-axis.conf`, relancer `sudo systemctl reload ssh`.
+8. **Mises à jour automatiques de sécurité** :
+   ```bash
+   sudo apt install -y unattended-upgrades
+   sudo dpkg-reconfigure -plow unattended-upgrades
+   ```
+9. Seulement maintenant, fermer la session root d'origine.
+
+Attention : **un port publié par Docker contourne `ufw`**. `compose.vps.yaml` ne publie que les ports 80 et 443 de Caddy ; ne jamais y ajouter de ligne `ports:` pour la base ou l'API.
+
+### 5.3 Installer Docker et récupérer le code
+
+Docker, depuis le dépôt officiel de Docker pour Ubuntu (suivre la page d'installation de la documentation Docker : les commandes exactes n'ont pas été vérifiées ici), puis :
+
+```bash
+sudo usermod -aG docker <UTILISATEUR>     # se reconnecter ensuite
+docker compose version                    # doit répondre
+sudo systemctl enable docker              # Docker démarre avec le serveur
+```
+
+Le code, sans aucun secret (le dépôt n'en contient pas ; les fichiers `.env*` sont ignorés par Git). Deux façons :
+
+- **Clé de déploiement en lecture seule** : sur le serveur, `ssh-keygen -t ed25519 -f ~/.ssh/axis_deploy`, puis ajouter la clé *publique* dans les réglages du dépôt GitHub (« Deploy keys », sans droit d'écriture). Ensuite :
+  ```bash
+  GIT_SSH_COMMAND="ssh -i ~/.ssh/axis_deploy" git clone git@github.com:Oluwafemi006/AxisTransport.git ~/axis
+  ```
+- **Copie depuis le PC**, sans donner d'accès GitHub au serveur :
+  ```bash
+  git archive --format=tar.gz -o axis.tar.gz HEAD          # sur le PC, dans le dossier du projet
+  scp axis.tar.gz <UTILISATEUR>@<IP>:~                     # puis, sur le serveur :
+  mkdir -p ~/axis && tar -xzf ~/axis.tar.gz -C ~/axis
+  ```
+  `git archive` ne prend que ce qui est commité : ni `.env`, ni secrets.
+
+### 5.4 Fichier `.env.vps` et démarrage
+
+Sur le serveur, dans `~/axis` :
+
+```bash
+cp vps.env.example .env.vps
+chmod 600 .env.vps
+nano .env.vps                              # les secrets sont saisis ici, sur le serveur, et nulle part ailleurs
+docker compose --env-file .env.vps -f compose.vps.yaml up -d --build
+docker compose --env-file .env.vps -f compose.vps.yaml ps
+```
+
+Toutes les variables (S = secret, saisi sur le serveur) :
+
+| Variable | Variante A | Variante B |
+|---|---|---|
+| `AXIS_CADDYFILE` | `Caddyfile.http` | `Caddyfile.https` |
+| `AXIS_DOMAIN` | vide | `<DOMAINE>` (sans `https://`) |
+| `DJANGO_SECRET_KEY` (S) | chaîne aléatoire longue | une AUTRE chaîne aléatoire (celle de A a circulé en clair) |
+| `DJANGO_DEBUG` | fixée à `false` dans `compose.vps.yaml`, non modifiable par `.env.vps` | idem |
+| `DJANGO_ALLOWED_HOSTS` | `<IP>` | `api.<DOMAINE>` |
+| `DJANGO_CORS_ALLOWED_ORIGINS` | `http://<IP>` | `https://<DOMAINE>` |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | `http://<IP>` | `https://api.<DOMAINE>` |
+| `PUBLIC_WEB_URL` | `http://<IP>` | `https://<DOMAINE>` |
+| `AXIS_NUM_PROXIES` | `1` | `1` |
+| `POSTGRES_PASSWORD` (S) | lettres et chiffres | un autre mot de passe (voir 5.9) |
+| `NEXT_PUBLIC_API_URL` | `http://<IP>/api/v1` | `https://api.<DOMAINE>/api/v1` |
+| `AXIS_ADMIN_USERNAME`, `AXIS_ADMIN_EMAIL` | compte réel | compte réel |
+| `AXIS_ADMIN_PASSWORD` (S) | mot de passe fort | mot de passe fort, différent |
+| `FEDAPAY_ENVIRONMENT` | `sandbox` | `sandbox`, puis `live` |
+| `FEDAPAY_SECRET_KEY` (S) | clé sandbox | clé du même environnement |
+| `FEDAPAY_WEBHOOK_SECRET` (S) | secret du webhook déclaré pour `http://<IP>/api/v1/client/webhooks/fedapay/` | secret du webhook `https://api.<DOMAINE>/api/v1/client/webhooks/fedapay/` |
+| `FEDAPAY_CALLBACK_URL` | `http://<IP>/paiement/retour` | `https://<DOMAINE>/paiement/retour` |
+| `FEDAPAY_WEBHOOK_TOLERANCE_SECONDS` | `300` | `300` |
+| `AXIS_PARCEL_TRACKING_RATE`, `AXIS_PUBLIC_TICKET_RATE` | `20/min`, `60/min` | idem |
+| `AXIS_PAYMENT_RECONCILE_ENABLED`, `_WINDOW_MINUTES`, `_BATCH`, `_INTERVAL_SECONDS` | `true`, `1440`, `20`, `60` | idem |
+
+Variables du code volontairement absentes du serveur : `AXIS_PAYMENT_SIMULATION` (sans effet hors debug), `USE_SQLITE` (tests), `AXIS_FRONTEND_ORIGINS` (propre à `compose.yaml` de développement : sur le VPS, les origines se mettent directement dans `DJANGO_CORS_ALLOWED_ORIGINS`), `AXIS_CACHE_DIR` et `ACTIVE_PAYMENT_PROVIDER` (fixées dans `compose.vps.yaml`).
+
+Que FedaPay accepte de déclarer un webhook en HTTP sur une adresse IP (variante A) est **non vérifié**. Si ce n'est pas le cas, le paiement reste testable en A : le client vérifie lui-même au retour, et le service `payments` rattrape en une minute.
+
+### 5.5 Redémarrage automatique
+
+Chaque service de `compose.vps.yaml` porte `restart: unless-stopped`, et Docker démarre avec le serveur (`systemctl enable docker`, point 5.3). À vérifier une fois, sur le serveur :
+
+```bash
+sudo reboot
+# puis, après reconnexion :
+docker compose --env-file .env.vps -f compose.vps.yaml ps      # tous les services doivent être « Up »
+```
+
+### 5.6 Sauvegardes
+
+Sauvegarde quotidienne de la base, à 3 h, gardée 14 jours (ces deux valeurs sont des propositions). Créer `~/axis/backup.sh` sur le serveur :
+
+```bash
+#!/bin/sh
+set -eu
+cd "$HOME/axis"
+mkdir -p "$HOME/sauvegardes"
+docker compose --env-file .env.vps -f compose.vps.yaml exec -T db pg_dump -U axis -Fc axis > "$HOME/sauvegardes/axis-$(date +%F).dump"
+find "$HOME/sauvegardes" -name 'axis-*.dump' -mtime +14 -delete
+```
+
+Puis `chmod +x ~/axis/backup.sh` et, dans `crontab -e` : `0 3 * * * $HOME/axis/backup.sh`.
+
+**Test de restauration**, à faire au moins une fois, dans une base à part (la base réelle n'est pas touchée) :
+
+```bash
+cd ~/axis && C="docker compose --env-file .env.vps -f compose.vps.yaml"
+$C exec -T db createdb -U axis axis_essai_restauration
+$C exec -T db pg_restore -U axis -d axis_essai_restauration < ~/sauvegardes/axis-AAAA-MM-JJ.dump
+$C exec -T db psql -U axis -d axis_essai_restauration -c "select count(*) from core_ticket;"
+$C exec -T db dropdb -U axis axis_essai_restauration
+```
+
+Limites : la sauvegarde reste sur le même serveur (une copie hors du serveur est à décider : où, par qui) ; les fichiers envoyés (volume `vps_media`) ne sont pas sauvegardés par ce script.
+
+### 5.7 Aucune donnée de démonstration ; compte administrateur réel
+
+- Ne jamais lancer `seed_demo` sur le serveur. La commande refuse de tourner quand le debug est coupé, et `compose.vps.yaml` le fixe à `false`.
+- Au premier démarrage, `bootstrap_axis` crée seulement : les lieux Cotonou et Parakou, leurs deux itinéraires, le véhicule « Yutong » sans capacité, le moyen de paiement FedaPay, des réglages vides. Aucun compte de démonstration, aucun tarif, aucun départ.
+- Le compte administrateur est créé au premier démarrage à partir de `AXIS_ADMIN_USERNAME` et `AXIS_ADMIN_PASSWORD`, saisis dans `.env.vps` sur le serveur. Une fois connecté une première fois, vider `AXIS_ADMIN_PASSWORD` du fichier (le compte existe déjà, la variable ne sert plus).
+- À saisir ensuite dans le portail `/admin` avant toute vente : capacité du véhicule, départs, tarifs, durée de blocage d'un siège (`ticket_hold_minutes`), téléphone et WhatsApp de contact.
+
+### 5.8 Le site est servi par le VPS ; et le site Vercel de démonstration ?
+
+Le site officiel est le service `frontend` du VPS. Pour que le site Vercel puisse aussi appeler cette API (variante B uniquement : un site en HTTPS ne peut pas appeler une API en HTTP) :
+
+1. Ajouter l'adresse du site Vercel à `DJANGO_CORS_ALLOWED_ORIGINS` (séparée par une virgule), puis `docker compose --env-file .env.vps -f compose.vps.yaml up -d backend`.
+2. Sur Vercel : `NEXT_PUBLIC_API_URL` = `https://api.<DOMAINE>/api/v1`, puis redéployer.
+
+Limite connue : `FEDAPAY_CALLBACK_URL` n'a qu'une valeur. Un paiement lancé depuis le site Vercel renverra donc l'acheteur sur le site du VPS, qui ne connaît pas sa réservation (elle est gardée dans le navigateur, par site). Le billet est quand même émis par le serveur, mais l'acheteur sans compte ne le retrouve pas à l'écran. Le site Vercel convient donc pour montrer, pas pour vendre.
+
+### 5.9 Passer de A à B
+
+Prérequis : le domaine est acheté, et les enregistrements DNS de `<DOMAINE>` et de `api.<DOMAINE>` pointent vers `<IP>` (à vérifier avec `dig +short <DOMAINE>` et `dig +short api.<DOMAINE>`).
+
+1. `sudo ufw allow 443/tcp` (déjà fait au point 5.2 si la liste complète a été appliquée).
+2. Sauvegarde : `~/axis/backup.sh`.
+3. Dans `.env.vps`, changer exactement ces lignes :
+
+   | Variable | Nouvelle valeur |
+   |---|---|
+   | `AXIS_CADDYFILE` | `Caddyfile.https` |
+   | `AXIS_DOMAIN` | `<DOMAINE>` |
+   | `DJANGO_ALLOWED_HOSTS` | `api.<DOMAINE>` |
+   | `DJANGO_CORS_ALLOWED_ORIGINS` | `https://<DOMAINE>` |
+   | `DJANGO_CSRF_TRUSTED_ORIGINS` | `https://api.<DOMAINE>` |
+   | `PUBLIC_WEB_URL` | `https://<DOMAINE>` |
+   | `NEXT_PUBLIC_API_URL` | `https://api.<DOMAINE>/api/v1` |
+   | `FEDAPAY_CALLBACK_URL` | `https://<DOMAINE>/paiement/retour` |
+   | `FEDAPAY_WEBHOOK_SECRET` | secret du nouveau webhook (étape 5) |
+   | `DJANGO_SECRET_KEY` | nouvelle valeur (toutes les sessions ouvertes sont déconnectées) |
+
+4. Changer aussi tout ce qui a circulé en clair pendant la variante A : le mot de passe du compte administrateur (dans `/django-admin/`, une fois en HTTPS) et la clé secrète ci-dessus. `POSTGRES_PASSWORD` n'a pas circulé sur le réseau ; le changer demande une commande dans la base (`ALTER USER`), ce n'est pas indispensable.
+5. Chez FedaPay : déclarer le webhook `https://api.<DOMAINE>/api/v1/client/webhooks/fedapay/`, retirer l'ancien.
+6. Appliquer (le site doit être reconstruit, son adresse d'API est fixée au build) :
+   ```bash
+   docker compose --env-file .env.vps -f compose.vps.yaml up -d --build
+   ```
+7. Vérifier : section 4 de ce document, avec les nouvelles adresses.
+
+Si les données de la variante A étaient fictives, repartir d'une base vide est plus propre : avant l'étape 6, `docker compose --env-file .env.vps -f compose.vps.yaml down` puis `docker volume rm axis_vps_postgres_data` (**efface la base** ; le nom exact du volume est à lire avec `docker volume ls`).
+
+### 5.10 Reconstruire les applications mobiles
+
+Sur le PC, une fois l'API en HTTPS :
+
+```bash
+cd mobile-flutter && flutter build apk --release --dart-define=AXIS_API_URL=https://api.<DOMAINE>/api/v1
+cd ../mobile-staff && flutter build apk --release --dart-define=AXIS_API_URL=https://api.<DOMAINE>/api/v1
+```
+
+Les APK sont dans `build/app/outputs/flutter-apk/app-release.apk` de chaque dossier.
+
+**Avant toute publication**, deux points non traités :
+- Les deux apps autorisent encore le HTTP non chiffré (`android:usesCleartextTraffic="true"` dans `android/app/src/main/AndroidManifest.xml` de `mobile-flutter` et de `mobile-staff`). À passer à `false` : c'est une modification du code, non faite.
+- Les APK release sont signés avec la clé de débogage (`signingConfig = signingConfigs.getByName("debug")`). Une publication demande une vraie clé de signature.
+
+Pour un essai sur la variante A seulement : `--dart-define=AXIS_API_URL=http://<IP>/api/v1` (fonctionne parce que le HTTP non chiffré est encore autorisé).
+
+### 5.11 Retour arrière
+
+- **Le premier déploiement échoue** : `docker compose --env-file .env.vps -f compose.vps.yaml down`. Rien d'autre n'a été touché sur le serveur ; les volumes restent. Les journaux se lisent avec `... logs backend` (ou `frontend`, `caddy`).
+- **Une mise à jour casse le site** : revenir au code précédent et reconstruire.
+  ```bash
+  cd ~/axis && git log --oneline -5        # repérer le commit précédent
+  git checkout <COMMIT>
+  docker compose --env-file .env.vps -f compose.vps.yaml up -d --build
+  ```
+  Avec la copie par archive (5.3), garder l'archive précédente et la redéployer dans un dossier à part.
+- **Une migration a modifié la base** : restaurer la sauvegarde faite juste avant (toujours lancer `~/axis/backup.sh` avant une mise à jour) :
+  ```bash
+  C="docker compose --env-file .env.vps -f compose.vps.yaml"
+  $C stop backend holds payments
+  $C exec -T db pg_restore -U axis -d axis --clean --if-exists < ~/sauvegardes/axis-AAAA-MM-JJ.dump
+  $C up -d
+  ```
+  Tout ce qui a été vendu ou payé depuis la sauvegarde est alors perdu en base : à ne faire qu'en dernier recours, et à rapprocher ensuite des paiements visibles chez FedaPay.
+- **Le passage de A à B échoue** (certificat refusé, DNS pas encore propagé) : remettre les anciennes valeurs dans `.env.vps` et relancer la commande de l'étape 6 ; le site revient en HTTP sur l'IP.
+
+### 5.12 Non vérifiable sans le serveur réel
+
+- Les caractéristiques du VPS (mémoire, processeurs, disque) et donc sa capacité à construire et faire tourner le projet.
+- La construction des images sur le serveur, en particulier celle du site.
+- Le démarrage complet de `compose.vps.yaml` : les services n'ont jamais tourné ensemble derrière Caddy.
+- Le routage par chemin de la variante A (`/api/`, `/django-admin/`, `/static/` vers l'API, le reste vers le site) et l'affichage de l'administration Django à travers le proxy.
+- L'obtention des certificats par Caddy en variante B, et la redirection automatique du port 80.
+- La lecture de la vraie adresse IP des visiteurs (`AXIS_NUM_PROXIES=1`) pour les limites de requêtes.
+- La réception réelle d'un webhook FedaPay : jamais vue de bout en bout, sur aucun environnement.
+- L'acceptation par FedaPay d'un webhook en HTTP sur une IP (variante A) ou d'un nom `sslip.io`.
+- Les commandes de sécurisation SSH sur l'image Ubuntu 24.04 de Contabo (nom du service, fichiers de configuration déjà présents).
+- Les sauvegardes, la restauration et le redémarrage automatique après `reboot`.
+- Le comportement des apps mobiles en release contre une API distante.

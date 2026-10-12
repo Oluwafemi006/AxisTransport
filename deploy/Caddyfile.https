@@ -1,0 +1,10 @@
+# Variante B — nom de domaine et HTTPS. Le domaine vient de la variable AXIS_DOMAIN (jamais écrit ici).
+# Caddy obtient et renouvelle les certificats tout seul ; il redirige aussi le port 80 vers le 443.
+# Prérequis : les enregistrements DNS de AXIS_DOMAIN et de api.AXIS_DOMAIN pointent vers ce serveur.
+{$AXIS_DOMAIN} {
+	reverse_proxy frontend:3000
+}
+
+api.{$AXIS_DOMAIN} {
+	reverse_proxy backend:8000
+}

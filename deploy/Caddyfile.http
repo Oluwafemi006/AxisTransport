@@ -1,0 +1,12 @@
+# Variante A — test technique en HTTP sur l'adresse IP, sans nom de domaine ni certificat.
+# Un seul point d'entrée (port 80) : l'API et l'administration Django sous leurs chemins, le site pour le reste.
+# Données fictives et FedaPay sandbox uniquement : rien n'est chiffré.
+:80 {
+	@backend path /api/* /django-admin/* /static/*
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
