@@ -209,11 +209,28 @@ header {
   overflow: hidden;
 }
 
+/* Photo du bus AXIS : à droite, montrée en entier sur la hauteur du bandeau ; son bord gauche se fond
+   dans le bleu de la marque, où reste le texte. Pas d'animation de zoom : elle rognerait le bus. */
 .hero.has-bg {
-  background: linear-gradient(100deg, rgba(8, 43, 84, .92) 0%, rgba(11, 60, 116, .82) 55%, rgba(22, 74, 158, .65) 100%), url('/images/hero-bus.jpg');
-  background-size: cover;
-  background-position: center;
-  animation: kenburns 35s ease-in-out infinite alternate;
+  background: linear-gradient(90deg, var(--navy-d) 0%, var(--navy) 100%);
+}
+
+.hero.has-bg::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  aspect-ratio: 941 / 820;
+  max-width: 100%;
+  background: url('/images/hero-bus-axis.jpg') right center / cover no-repeat;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 22%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 22%);
+}
+
+.hero.has-bg > .wrap {
+  position: relative;
+  z-index: 1;
 }
 
 .hero small, .hero h1, .hero p, .hero .axe {
@@ -588,6 +605,14 @@ footer {
   .menu{display:none}
   .grid3,.svc{grid-template-columns:1fr}
   .hero h1{font-size:34px}
+  /* Écran étroit : le texte recouvre la photo ; elle passe en fond atténué pour qu'il reste lisible. */
+  .hero.has-bg::before{
+    width:100%;
+    aspect-ratio:auto;
+    opacity:.26;
+    -webkit-mask-image:none;
+    mask-image:none;
+  }
 }
 
 @media(max-width:560px){
