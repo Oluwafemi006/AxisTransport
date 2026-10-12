@@ -267,6 +267,12 @@ class Booking(TimeStampedModel):
     contact_email = models.EmailField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.HELD, db_index=True)
     guest_token_hash = models.CharField(max_length=64, blank=True, editable=False)
+    # Vente par un agent (guichet ou contrôleur) : qui a vendu. Vide pour un achat fait par le client lui-même.
+    sold_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="sold_bookings", null=True, blank=True
+    )
+    # Clé envoyée par l'application de l'agent : un nouvel essai de la même vente ne crée pas de seconde réservation.
+    idempotency_key = models.CharField(max_length=64, blank=True, editable=False)
     reservation_expires_at = models.DateTimeField(null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     currency = models.CharField(max_length=3, default="XOF")
@@ -274,6 +280,13 @@ class Booking(TimeStampedModel):
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["customer", "status"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sold_by", "idempotency_key"],
+                condition=~Q(idempotency_key=""),
+                name="unique_agent_sale_key",
+            ),
+        ]
 
     def save(self, *args, **kwargs):
         if not self.reference:

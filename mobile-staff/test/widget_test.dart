@@ -108,6 +108,7 @@ void main() {
       expect(find.text('Se connecter'), findsOneWidget);
       expect(find.text('Ouvrir le Scanner QR'), findsNothing);
       expect(find.text('Scanner'), findsNothing);
+      expect(find.text('Vendre'), findsNothing);
       expect(find.textContaining('Créer un compte'), findsNothing);
     },
   );
@@ -120,6 +121,9 @@ void main() {
       expect(find.text('Ouvrir le Scanner QR'), findsOneWidget);
       expect(find.text('Accueil'), findsOneWidget);
       expect(find.text('Scanner'), findsOneWidget);
+      // L'onglet de vente et son raccourci sont proposés au personnel connecté.
+      expect(find.text('Vendre'), findsOneWidget);
+      expect(find.text('Vendre un billet'), findsOneWidget);
       expect(find.text('Profil'), findsOneWidget);
       expect(find.text('Où souhaitez-vous aller ?'), findsNothing);
     },

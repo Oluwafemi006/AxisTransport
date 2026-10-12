@@ -215,6 +215,8 @@ def reserve_booking(
     contact_phone="",
     contact_email="",
     channel=Ticket.Channel.ONLINE,
+    sold_by=None,
+    idempotency_key="",
 ):
     """Reserve all seats for a group or none of them."""
     if not 1 <= len(passengers) <= 8:
@@ -256,6 +258,8 @@ def reserve_booking(
         contact_phone=contact_phone,
         contact_email=contact_email,
         guest_token_hash=hash_guest_token(guest_token) if guest_token else "",
+        sold_by=sold_by,
+        idempotency_key=idempotency_key,
         reservation_expires_at=expires_at,
         amount=fare.amount * Decimal(len(passengers)),
         currency=fare.currency,

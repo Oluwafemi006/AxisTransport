@@ -21,7 +21,8 @@ class HomeScreen extends ConsumerWidget {
             const SizedBox(height: 24),
             Text(
               'Bonjour ${user?.firstName ?? "Contrôleur"} !',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -34,8 +35,17 @@ class HomeScreen extends ConsumerWidget {
               icon: const Icon(Icons.qr_code_scanner),
               label: const Text('Ouvrir le Scanner QR'),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
+                ),
               ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => context.go('/vendre'),
+              icon: const Icon(Icons.confirmation_number_outlined),
+              label: const Text('Vendre un billet'),
             ),
           ],
         ),

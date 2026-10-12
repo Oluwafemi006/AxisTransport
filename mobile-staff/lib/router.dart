@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_screen.dart';
 import 'features/profile/profile_screen.dart';
+import 'features/sales/sell_ticket_screen.dart';
 import 'features/staff/presentation/controller_scanner_screen.dart';
 import 'shared/shell.dart';
 
@@ -32,6 +33,14 @@ final axisRouter = GoRouter(
             GoRoute(
               path: '/scanner',
               builder: (context, state) => const ControllerScannerScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/vendre',
+              builder: (context, state) => const SellTicketScreen(),
             ),
           ],
         ),

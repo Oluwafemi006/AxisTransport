@@ -40,7 +40,8 @@ KKIAPAY = "KKIAPAY"
 SIMULATION = "SIMULATION"
 # Moyens de paiement dont la preuve doit être vérifiée par le serveur auprès d'un prestataire.
 ONLINE_PROVIDERS = {FEDAPAY, KKIAPAY, SIMULATION}
-COUNTER_ROLES = {User.Role.COUNTER, User.Role.ADMIN}
+# Agents habilités à attester un encaissement en espèces : guichet, contrôleur (vente à l'arrêt), administrateur.
+COUNTER_ROLES = {User.Role.COUNTER, User.Role.CONTROLLER, User.Role.ADMIN}
 
 _REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 

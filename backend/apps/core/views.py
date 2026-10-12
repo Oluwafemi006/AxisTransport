@@ -1,12 +1,14 @@
 import hmac
 import json
+import re
 from decimal import Decimal, InvalidOperation
 from datetime import datetime
+from types import SimpleNamespace
 
 from django.conf import settings
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
-from django.db import DatabaseError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -36,6 +38,7 @@ from .models import (
     User,
     Vehicle,
     PaymentIncident,
+    PaymentReceipt,
 )
 from .permissions import (
     IsAxisAdmin,
@@ -71,10 +74,13 @@ from .serializers import (
     VehicleSerializer,
 )
 from .payments import (
+    ONLINE_PROVIDERS,
     REFUND_DUE_MESSAGE,
+    SIMULATION,
     PaymentNotApproved,
     ProviderUnavailable,
     create_checkout,
+    payment_quote,
     record_payment_incident,
     settle_booking_payment,
     settle_from_fedapay_webhook,
@@ -82,11 +88,13 @@ from .payments import (
     verify_fedapay_signature,
 )
 from .services import (
+    cancel_held_booking,
     generate_trip_seats,
     hash_guest_token,
     release_expired_holds,
     reserve_booking,
     reserve_ticket,
+    resolve_fare,
     transition_parcel,
     transition_ticket,
     validate_ticket,
@@ -1016,6 +1024,186 @@ class StaffTicketViewSet(viewsets.GenericViewSet):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+_SALE_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
+
+class StaffSaleViewSet(viewsets.GenericViewSet):
+    """
+    Vente d'un billet par un agent (guichet, contrôleur, administrateur) depuis l'application staff.
+    Surface API : /api/v1/staff/sales/
+
+    Le serveur décide de tout : tarif lu en base, place tenue sous verrou, billet émis seulement après
+    encaissement attesté (espèces) ou paiement vérifié auprès du prestataire (Mobile Money).
+    Chaque vente porte une clé envoyée par l'application : un nouvel essai ne crée jamais de seconde réservation.
+    """
+
+    permission_classes = [IsOperationsStaff]
+    queryset = Booking.objects.select_related("trip__route__origin", "trip__route__destination", "trip__vehicle")
+
+    def _payload(self, booking, **extra):
+        booking = Booking.objects.prefetch_related("passengers", "tickets__seat", "tickets__trip__route").get(pk=booking.pk)
+        return {"booking": BookingSerializer(booking, context={"request": self.request}).data, **extra}
+
+    def _own_sale(self, pk):
+        """Une vente n'est accessible qu'à l'agent qui l'a faite (ou à un administrateur)."""
+        booking = get_object_or_404(Booking, pk=pk, sold_by__isnull=False)
+        if booking.sold_by_id != self.request.user.id and self.request.user.role != User.Role.ADMIN:
+            raise PermissionDenied("Cette vente a été faite par un autre agent.")
+        return booking
+
+    def _payment_method(self, value):
+        payment_method = PaymentMethod.objects.filter(pk=value, active=True).first()
+        if not payment_method:
+            raise ValidationError({"payment_method": "Moyen de paiement introuvable ou inactif."})
+        return payment_method
+
+    def _sellable_trips(self):
+        release_expired_holds()
+        trips = Trip.objects.select_related("route__origin", "route__destination", "vehicle").filter(
+            route__active=True, status__in=[Trip.Status.SCHEDULED, Trip.Status.BOARDING]
+        )
+        today = timezone.localdate()
+        if self.request.user.role == User.Role.CONTROLLER:
+            # Le contrôleur vend sur les départs du jour (vente à l'arrêt, y compris après l'heure de départ).
+            return trips.filter(departure_at__date=today)
+        return trips.filter(departure_at__gte=timezone.now())
+
+    @action(detail=False, methods=["get"])
+    def options(self, request):
+        """Départs vendables par cet agent, avec places restantes et montant à encaisser par moyen de paiement."""
+        methods = list(PaymentMethod.objects.filter(active=True).order_by("id"))
+        methods = [
+            method
+            for method in methods
+            if method.code.upper() != SIMULATION or (settings.DEBUG and settings.AXIS_PAYMENT_SIMULATION)
+        ]
+        trips = []
+        for trip in self._sellable_trips().order_by("departure_at"):
+            item = TripSerializer(trip, context={"request": request}).data
+            try:
+                fare = resolve_fare(trip)
+            except ImproperlyConfigured:
+                # Aucun tarif en base : le départ est affiché mais non vendable, sans prix de repli.
+                item["quotes"] = []
+            else:
+                target = SimpleNamespace(amount=fare.amount, currency=fare.currency)
+                item["quotes"] = [
+                    {**payment_quote(target, method), "online": method.code.upper() in ONLINE_PROVIDERS}
+                    for method in methods
+                ]
+            trips.append(item)
+        return Response({"trips": trips})
+
+    @action(detail=False, methods=["post"])
+    def sell(self, request):
+        """
+        Vend un billet. Espèces : l'agent atteste avoir reçu l'argent, le billet est émis tout de suite.
+        Mobile Money : la place est tenue, la transaction est créée chez le prestataire ; le billet n'est émis
+        qu'après vérification (action « verify »).
+        Rejouer la même demande avec la même clé reprend la vente en cours au lieu d'en créer une autre.
+        """
+        key = str(request.data.get("idempotency_key") or "").strip()
+        if not _SALE_KEY_PATTERN.match(key):
+            raise ValidationError({"idempotency_key": "Clé de vente absente ou invalide."})
+        payment_method = self._payment_method(request.data.get("payment_method"))
+        online = payment_method.code.upper() in ONLINE_PROVIDERS
+
+        booking = Booking.objects.filter(sold_by=request.user, idempotency_key=key).first()
+        created = booking is None
+        try:
+            with transaction.atomic():
+                if booking is None:
+                    passenger_name = str(request.data.get("passenger_name") or "").strip()
+                    if not passenger_name:
+                        raise ValidationError({"passenger_name": "Le nom du passager est requis."})
+                    trip_id, seat_id = request.data.get("trip"), request.data.get("seat")
+                    if not str(trip_id).isdigit() or not str(seat_id).isdigit():
+                        raise ValidationError("Le départ et le siège sont requis.")
+                    trip = self._sellable_trips().filter(pk=trip_id).first()
+                    if not trip:
+                        raise ValidationError({"trip": "Ce départ n'est pas vendable par cet agent."})
+                    seat = Seat.objects.filter(pk=seat_id, trip=trip).first()
+                    if not seat:
+                        raise ValidationError({"seat": "Siège introuvable pour ce départ."})
+                    booking, _ = reserve_booking(
+                        trip=trip,
+                        passengers=[
+                            {
+                                "full_name": passenger_name,
+                                "phone": str(request.data.get("passenger_phone") or "").strip(),
+                                "seat": seat,
+                            }
+                        ],
+                        contact_phone=str(request.data.get("passenger_phone") or "").strip(),
+                        channel=Ticket.Channel.COUNTER,
+                        sold_by=request.user,
+                        idempotency_key=key,
+                    )
+                # Espèces : réservation et émission dans la même transaction, donc jamais de billet à moitié créé.
+                if not online and booking.status == Booking.Status.HELD:
+                    settle_booking_payment(booking, payment_method=payment_method, actor=request.user)
+        except IntegrityError:
+            # Deux envois simultanés de la même clé : le second reprend la vente créée par le premier.
+            booking = Booking.objects.filter(sold_by=request.user, idempotency_key=key).first()
+            if booking is None:
+                raise ValidationError("Vente impossible, réessayez.")
+            created = False
+        except (DjangoValidationError, ImproperlyConfigured) as exc:
+            raise service_validation_error(exc)
+
+        booking.refresh_from_db()
+        checkout = None
+        if online and booking.status == Booking.Status.HELD:
+            try:
+                checkout = create_checkout(booking, payment_method=payment_method)
+            except DjangoValidationError as exc:
+                # La place reste tenue : l'application réessaie avec la même clé, sans seconde réservation.
+                return Response(
+                    self._payload(booking, checkout=None, created=created, payment_error=" ".join(exc.messages)),
+                    status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+                )
+        return Response(
+            self._payload(booking, checkout=checkout, created=created),
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"])
+    def verify(self, request, pk=None):
+        """Mobile Money : demande au serveur de vérifier le paiement auprès du prestataire et d'émettre le billet."""
+        booking = self._own_sale(pk)
+        payment_method = self._payment_method(request.data.get("payment_method"))
+        if payment_method.code.upper() not in ONLINE_PROVIDERS:
+            raise ValidationError({"payment_method": "La vérification ne concerne que les paiements en ligne."})
+        try:
+            settlement = settle_booking_payment(
+                booking,
+                payment_method=payment_method,
+                actor=request.user,
+                external_reference=request.data.get("external_reference", ""),
+                source=PaymentReceipt.Source.COUNTER,
+            )
+        except DjangoValidationError as exc:
+            raise service_validation_error(exc)
+        if settlement.refund_due:
+            return refund_due_response()
+        return Response(self._payload(booking))
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        """Annule une vente non payée et libère la place."""
+        booking = self._own_sale(pk)
+        try:
+            booking, cancelled = cancel_held_booking(booking, actor=request.user)
+        except DjangoValidationError as exc:
+            raise service_validation_error(exc)
+        return Response(self._payload(booking, cancelled=cancelled))
+
+    def retrieve(self, request, pk=None):
+        """État d'une vente (place tenue, payée, expirée)."""
+        release_expired_holds()
+        return Response(self._payload(self._own_sale(pk)))
 
 
 class PublicTicketDetailView(APIView):

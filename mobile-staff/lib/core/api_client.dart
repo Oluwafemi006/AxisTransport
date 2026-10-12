@@ -8,8 +8,14 @@ import 'session_store.dart';
 import '../features/trips/domain/trip_search.dart';
 
 class ApiException implements Exception {
-  ApiException(this.message);
+  ApiException(this.message, {this.isNetwork = false, this.data});
   final String message;
+
+  /// Vrai quand le serveur n'a pas répondu : on ne sait pas si la demande a été prise en compte.
+  final bool isNetwork;
+
+  /// Corps de la réponse d'erreur du serveur, quand il y en a un.
+  final Object? data;
   @override
   String toString() => message;
 }
@@ -301,6 +307,58 @@ class ApiClient {
     return payload;
   }
 
+  // ─── Vente par un agent (/api/v1/staff/sales/) ───────────────────────────
+
+  /// Départs vendables par cet agent, avec places restantes et montants calculés par le serveur.
+  Future<Map<String, dynamic>> saleOptions() {
+    return _request<Map<String, dynamic>>('/staff/sales/options/', auth: true);
+  }
+
+  /// Vend un billet. La même clé rejouée reprend la vente en cours : jamais de double vente.
+  Future<Map<String, dynamic>> sellTicket({
+    required String idempotencyKey,
+    required int trip,
+    required int seat,
+    required String passengerName,
+    required String passengerPhone,
+    required int paymentMethod,
+  }) {
+    return _request<Map<String, dynamic>>(
+      '/staff/sales/sell/',
+      data: {
+        'idempotency_key': idempotencyKey,
+        'trip': trip,
+        'seat': seat,
+        'passenger_name': passengerName,
+        'passenger_phone': passengerPhone,
+        'payment_method': paymentMethod,
+      },
+      auth: true,
+    );
+  }
+
+  /// Mobile Money : demande au serveur de vérifier le paiement et d'émettre le billet.
+  Future<Map<String, dynamic>> verifySale({
+    required int bookingId,
+    required int paymentMethod,
+    required String externalReference,
+  }) {
+    return _request<Map<String, dynamic>>(
+      '/staff/sales/$bookingId/verify/',
+      data: {'payment_method': paymentMethod, 'external_reference': externalReference},
+      auth: true,
+    );
+  }
+
+  /// Annule une vente non payée : le serveur libère la place.
+  Future<Map<String, dynamic>> cancelSale(int bookingId) {
+    return _request<Map<String, dynamic>>(
+      '/staff/sales/$bookingId/cancel/',
+      data: const <String, dynamic>{},
+      auth: true,
+    );
+  }
+
   // ─── Internals ────────────────────────────────────────────────────────────
 
   Future<bool> _refreshSession() async {
@@ -374,7 +432,11 @@ class ApiClient {
       );
       return response.data as T;
     } on DioException catch (error) {
-      throw ApiException(_messageFrom(error));
+      throw ApiException(
+        _messageFrom(error),
+        isNetwork: error.response == null,
+        data: error.response?.data,
+      );
     }
   }
 
