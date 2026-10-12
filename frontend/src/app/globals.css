@@ -209,28 +209,41 @@ header {
   overflow: hidden;
 }
 
-/* Photo du bus AXIS : à droite, montrée en entier sur la hauteur du bandeau ; son bord gauche se fond
-   dans le bleu de la marque, où reste le texte. Pas d'animation de zoom : elle rognerait le bus. */
+/* Photo du bus AXIS en fond de tout le bandeau, sous le voile bleu de la marque, avec un zoom lent.
+   Le zoom agrandit une couche à part (transform) : la photo couvre toujours le bandeau, à toute largeur d'écran. */
 .hero.has-bg {
-  background: linear-gradient(90deg, var(--navy-d) 0%, var(--navy) 100%);
+  background: var(--navy-d);
 }
 
 .hero.has-bg::before {
   content: "";
   position: absolute;
-  top: 0;
-  right: 0;
-  height: 100%;
-  aspect-ratio: 1672 / 941;
-  max-width: 100%;
-  background: url('/images/hero-bus-axis.jpg') right center / cover no-repeat;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 28%);
-  mask-image: linear-gradient(90deg, transparent 0%, #000 28%);
+  inset: 0;
+  background: url('/images/hero-bus-axis.jpg') center 62% / cover no-repeat;
+  animation: heroSlowZoom 35s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.hero.has-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, rgba(8, 43, 84, .92) 0%, rgba(11, 60, 116, .82) 55%, rgba(22, 74, 158, .65) 100%);
 }
 
 .hero.has-bg > .wrap {
   position: relative;
   z-index: 1;
+}
+
+@keyframes heroSlowZoom {
+  0% { transform: scale(1) translate3d(0, 0, 0); }
+  50% { transform: scale(1.1) translate3d(0, -1.5%, 0); }
+  100% { transform: scale(1.06) translate3d(0, 1.5%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero.has-bg::before { animation: none; }
 }
 
 .hero small, .hero h1, .hero p, .hero .axe {
@@ -605,14 +618,6 @@ footer {
   .menu{display:none}
   .grid3,.svc{grid-template-columns:1fr}
   .hero h1{font-size:34px}
-  /* Écran étroit : le texte recouvre la photo ; elle passe en fond atténué pour qu'il reste lisible. */
-  .hero.has-bg::before{
-    width:100%;
-    aspect-ratio:auto;
-    opacity:.26;
-    -webkit-mask-image:none;
-    mask-image:none;
-  }
 }
 
 @media(max-width:560px){
