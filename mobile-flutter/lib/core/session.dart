@@ -30,20 +30,26 @@ class SessionNotifier extends Notifier<SessionState> {
 
   Future<void> restore() async {
     try {
+      // L'interface affichée dépend uniquement du rôle renvoyé par le serveur.
       final user = await _api.me();
-      if (!user.isClient) {
+      if (!user.isClient && !user.isStaff) {
         await _api.logout();
         state = const SessionState(ready: true);
         return;
       }
-      await _api.store.setActiveClient(user.id);
+      if (user.isStaff) {
+        await _api.store.setActiveStaff(user.id);
+      } else {
+        await _api.store.setActiveClient(user.id);
+      }
       await _api.store.cacheUser(user);
       state = SessionState(user: user, ready: true);
     } on ApiException catch (error) {
-      // Sans réseau, le client déjà connecté garde l'accès à ses billets enregistrés.
-      // Un refus du serveur (session expirée) renvoie en revanche à la connexion.
+      // Sans réseau, le compte déjà connecté sur ce téléphone retrouve son interface (et, pour un
+      // client, ses billets enregistrés). Un refus du serveur (session expirée) renvoie à la connexion.
       final cached = error.isNetwork ? await _api.store.readCachedUser() : null;
-      state = SessionState(user: cached?.isClient == true ? cached : null, ready: true);
+      final known = cached != null && (cached.isClient || cached.isStaff);
+      state = SessionState(user: known ? cached : null, ready: true);
     } catch (_) {
       state = const SessionState(ready: true);
     }
@@ -53,7 +59,7 @@ class SessionNotifier extends Notifier<SessionState> {
     await _api.login(username, password);
     await restore();
     if (state.user == null) {
-      throw ApiException('Cette application est réservée aux comptes clients.');
+      throw ApiException('Ce compte ne peut pas utiliser l\'application.');
     }
   }
 

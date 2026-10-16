@@ -23,6 +23,9 @@ class User {
 
   bool get isClient => role == 'CLIENT';
 
+  /// Personnel Axis : guichet, contrôleur, administrateur (rôle renvoyé par le serveur).
+  bool get isStaff => const {'COUNTER', 'CONTROLLER', 'ADMIN'}.contains(role);
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'username': username,
