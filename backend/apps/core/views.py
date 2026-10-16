@@ -37,6 +37,7 @@ from .models import (
     Seat,
     SystemSetting,
     Ticket,
+    TicketStatusHistory,
     Transaction,
     Trip,
     User,
@@ -56,6 +57,7 @@ from .permissions import (
 )
 from .serializers import (
     PaymentIncidentSerializer,
+    ManualTicketChangeSerializer,
     SegmentFareChangeSerializer,
     SegmentFareSerializer,
     BookingCreateSerializer,
@@ -280,50 +282,99 @@ class RegisterAddressThrottle(_AddressThrottle):
 
 class LoginAccountThrottle(_LiveRateThrottle):
     """
-    Par identifiant saisi, quelle que soit l'adresse : freine l'essai de mots de passe sur un compte.
-    Seules les tentatives ÉCHOUÉES comptent (enregistrées par la vue de connexion) ; une connexion réussie
-    remet le compteur à zéro. Au-delà du seuil, le compte est bloqué temporairement, bon mot de passe compris.
+    Échecs de connexion par identifiant saisi, comptés de deux façons :
+    - par identifiant ET adresse ensemble (seuil « login_account_address ») : des échecs venus d'une autre
+      adresse ne bloquent pas le titulaire du compte ;
+    - par identifiant, toutes adresses confondues (seuil « login_account », plus haut) : plafond contre
+      une attaque répartie sur de nombreuses adresses.
+    Seules les tentatives ÉCHOUÉES comptent (enregistrées par la vue de connexion). Une connexion réussie
+    efface les échecs de son adresse, pas ceux des autres. Au-delà d'un seuil, le blocage est temporaire et
+    s'applique aussi au bon mot de passe. Une seule entrée de cache par identifiant : {adresse: [instants]}.
     """
 
-    scope = "login_account"
+    scope = "login_account_address"
+    total_scope = "login_account"
 
     @staticmethod
     def key_for(username):
         ident = hashlib.sha256(str(username or "").strip().lower().encode()).hexdigest()
-        return LoginAccountThrottle.cache_format % {"scope": LoginAccountThrottle.scope, "ident": ident}
+        return LoginAccountThrottle.cache_format % {"scope": LoginAccountThrottle.total_scope, "ident": ident}
 
     def get_cache_key(self, request, view):
         username = str(request.data.get("username") or "").strip() if hasattr(request, "data") else ""
         return self.key_for(username) if username else None
 
+    def _total_rate(self):
+        from rest_framework.settings import api_settings
+
+        return api_settings.DEFAULT_THROTTLE_RATES.get(self.total_scope)
+
+    def _limits(self):
+        """(seuil par identifiant + adresse, plafond par identifiant) ; un seuil absent vaut (None, None)."""
+        return self.parse_rate(self.get_rate()), self.parse_rate(self._total_rate())
+
+    def _longest(self):
+        return max((duration for _, duration in self._limits() if duration), default=0)
+
+    def _load(self, key, now):
+        data = self.cache.get(key)
+        if not isinstance(data, dict):
+            return {}
+        longest = self._longest()
+        kept = {}
+        for address, moments in data.items():
+            recent = [moment for moment in moments if moment > now - longest]
+            if recent:
+                kept[address] = recent
+        return kept
+
     def allow_request(self, request, view):
         # Lecture seule : la demande n'est pas comptée ici.
-        if self.rate is None:
+        key = self.get_cache_key(request, view)
+        if key is None or not self._longest():
             return True
-        self.key = self.get_cache_key(request, view)
-        if self.key is None:
-            return True
-        self.history = self.cache.get(self.key, [])
         self.now = self.timer()
-        while self.history and self.history[-1] <= self.now - self.duration:
-            self.history.pop()
-        return len(self.history) < self.num_requests
+        data = self._load(key, self.now)
+        pair, total = self._limits()
+        checks = [
+            (data.get(self.get_ident(request), []), pair),
+            ([moment for moments in data.values() for moment in moments], total),
+        ]
+        for moments, (num_requests, duration) in checks:
+            if num_requests is None:
+                continue
+            history = sorted((moment for moment in moments if moment > self.now - duration), reverse=True)
+            if len(history) >= num_requests:
+                # Valeurs lues par wait() pour l'en-tête Retry-After et le message.
+                self.history, self.num_requests, self.duration = history, num_requests, duration
+                return False
+        return True
 
     def record_failure(self, request):
-        if self.rate is None:
-            return
         key = self.get_cache_key(request, None)
-        if key is None:
+        if key is None or not self._longest():
             return
         now = self.timer()
-        history = [moment for moment in self.cache.get(key, []) if moment > now - self.duration]
-        history.insert(0, now)
-        self.cache.set(key, history, self.duration)
+        data = self._load(key, now)
+        data.setdefault(self.get_ident(request), []).insert(0, now)
+        self.cache.set(key, data, self._longest())
 
     def reset(self, request):
         key = self.get_cache_key(request, None)
-        if key is not None:
+        if key is None:
+            return
+        data = self._load(key, self.timer())
+        if data.pop(self.get_ident(request), None) is None:
+            return
+        if data:
+            self.cache.set(key, data, self._longest())
+        else:
             self.cache.delete(key)
+
+    @classmethod
+    def unblock(cls, username):
+        """Efface tous les échecs d'un identifiant, toutes adresses (commande unblock_login)."""
+        cls.cache.delete(cls.key_for(username))
 
 
 class FrenchThrottleMixin:
@@ -553,6 +604,16 @@ class SegmentFareChangeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     permission_classes = [IsAxisAdmin]
 
 
+class ManualTicketChangeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Journal des statuts de billet forcés à la main, en lecture seule, administrateur uniquement."""
+
+    queryset = (
+        TicketStatusHistory.objects.filter(manual=True).select_related("ticket", "changed_by").order_by("-changed_at")
+    )
+    serializer_class = ManualTicketChangeSerializer
+    permission_classes = [IsAxisAdmin]
+
+
 class PaymentIncidentViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     """Incidents de paiement : liste et case « traité », réservés à l'administrateur. Ni création ni suppression."""
 
@@ -593,7 +654,7 @@ class TicketViewSet(viewsets.ModelViewSet):
         if self.action == "validate_qr":
             return [IsControllerOrAdmin()]
         if self.action == "transition":
-            return [IsOperationsStaff()]
+            return [IsAxisAdmin()]
         # Vente et encaissement : client connecté (ses propres billets), guichet ou admin.
         if self.action in {"create", "pay"}:
             return [IsClientCounterOrAdmin()]
@@ -660,13 +721,17 @@ class TicketViewSet(viewsets.ModelViewSet):
             }
         )
 
-    @action(detail=True, methods=["post"], permission_classes=[IsOperationsStaff])
+    @action(detail=True, methods=["post"], permission_classes=[IsAxisAdmin])
     def transition(self, request, pk=None):
-        if request.user.role == User.Role.CONTROLLER and request.data.get("status") != Ticket.Status.COMPLETED:
-            raise ValidationError("Le contrôleur peut uniquement clôturer un voyage déjà contrôlé.")
+        # Changement de statut forcé à la main : administrateur uniquement, inscrit au journal
+        # (aucun écran ne s'en sert ; la vente passe par « pay » ou /staff/sales/, qui créent un paiement).
         try:
             ticket = transition_ticket(
-                self.get_object(), request.data.get("status"), actor=request.user, note=request.data.get("note", "")
+                self.get_object(),
+                request.data.get("status"),
+                actor=request.user,
+                note=request.data.get("note", ""),
+                manual=True,
             )
         except DjangoValidationError as exc:
             raise service_validation_error(exc)

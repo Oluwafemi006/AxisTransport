@@ -12,6 +12,7 @@ from .views import (
     ParcelViewSet,
     PaymentIncidentViewSet,
     SegmentFareChangeViewSet,
+    ManualTicketChangeViewSet,
     SegmentFareViewSet,
     PaymentMethodViewSet,
     RentalBookingViewSet,
@@ -45,6 +46,7 @@ router.register("payment-methods", PaymentMethodViewSet)
 router.register("payment-incidents", PaymentIncidentViewSet)
 router.register("segment-fares", SegmentFareViewSet)
 router.register("segment-fare-changes", SegmentFareChangeViewSet)
+router.register("ticket-manual-changes", ManualTicketChangeViewSet, basename="ticket-manual-change")
 router.register("transactions", TransactionViewSet)
 
 urlpatterns = [

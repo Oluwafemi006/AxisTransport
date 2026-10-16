@@ -127,7 +127,8 @@ REST_FRAMEWORK = {
         "parcel_tracking": os.environ.get("AXIS_PARCEL_TRACKING_RATE", "20/min"),
         "public_ticket": os.environ.get("AXIS_PUBLIC_TICKET_RATE", "60/min"),
         # Connexion et inscription : blocage temporaire au-delà de ces seuils (propositions, réglables).
-        "login_account": os.environ.get("AXIS_LOGIN_RATE_ACCOUNT", "10/hour"),
+        "login_account_address": os.environ.get("AXIS_LOGIN_RATE_ACCOUNT_ADDRESS", "10/hour"),
+        "login_account": os.environ.get("AXIS_LOGIN_RATE_ACCOUNT", "50/hour"),
         "login_address": os.environ.get("AXIS_LOGIN_RATE_ADDRESS", "30/min"),
         "register_address": os.environ.get("AXIS_REGISTER_RATE_ADDRESS", "10/hour"),
     },

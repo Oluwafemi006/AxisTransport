@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone } from "./ui";
 import { LoginCard } from "./login-card";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import type { FareRule, FeatureFlag, Location, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle } from "@/lib/types";
+import type { FareRule, FeatureFlag, Location, ManualTicketChange, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle } from "@/lib/types";
 
 type AdminTab = "dashboard" | "planning" | "guichet" | "colis" | "flotte" | "tarifs" | "troncons" | "paiements" | "equipe";
 type Dashboard = {
@@ -94,7 +94,7 @@ export function AdminPortal() {
           {tab === "flotte" && <FleetPanel locations={locations} vehicles={vehicles} onChanged={load} />}
           {tab === "tarifs" && <PricingPanel routes={routes} fares={fares} flags={flags} payments={payments} settings={settings} onChanged={load} />}
           {tab === "troncons" && <SegmentFarePanel />}
-          {tab === "paiements" && <IncidentPanel incidents={incidents} onChanged={load} />}
+          {tab === "paiements" && <div className="space-y-5"><IncidentPanel incidents={incidents} onChanged={load} /><ManualTicketChangeLog /></div>}
           {tab === "equipe" && <TeamPanel users={users} onChanged={load} />}
         </>
       )}
@@ -722,6 +722,45 @@ function SegmentFarePanel() {
 }
 
 // Paiements signalés par le prestataire que le serveur a refusé de transformer en billet : lecture seule, sauf « traité ».
+// Statuts de billet forcés à la main par un administrateur (action « transition ») : journal en lecture seule.
+function ManualTicketChangeLog() {
+  const [changes, setChanges] = useState<ManualTicketChange[] | null>(null);
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  useEffect(() => {
+    apiList<ManualTicketChange>("/ticket-manual-changes/")
+      .then(setChanges)
+      .catch((reason) => { setChanges([]); setNotice(failure(reason, "Le journal n’a pas pu être chargé. Réessayez.")); });
+  }, []);
+
+  return (
+    <section className="card">
+      <SectionHeading eyebrow="Lecture seule" title="Statuts de billets changés à la main" />
+      <p className="mb-4 text-sm text-slate-500">Changements faits par un administrateur hors paiement, scan ou annulation par le client.</p>
+      {changes === null ? <Loading /> : changes.length === 0 ? <EmptyState title="Aucun changement manuel" text="Chaque statut forcé à la main apparaîtra ici." /> : (
+        <div className="table-scroll">
+          <table className="staff-table min-w-[620px]">
+            <thead><tr><th>Date</th><th>Billet</th><th>Ancien statut</th><th>Nouveau statut</th><th>Par</th><th>Note</th></tr></thead>
+            <tbody>
+              {changes.map((change) => (
+                <tr key={change.id}>
+                  <td className="whitespace-nowrap">{formatDate(change.changed_at)}</td>
+                  <td className="strong">{change.reference}</td>
+                  <td>{change.from_status_display || "—"}</td>
+                  <td>{change.to_status_display}</td>
+                  <td>{change.changed_by_name}</td>
+                  <td>{change.note || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <Notice notice={notice} />
+    </section>
+  );
+}
+
 function IncidentPanel({ incidents, onChanged }: { incidents: PaymentIncident[]; onChanged: () => Promise<void> }) {
   const [notice, setNotice] = useState<NoticeState>(null);
 

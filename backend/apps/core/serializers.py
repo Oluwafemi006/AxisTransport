@@ -613,6 +613,32 @@ class SegmentFareSerializer(serializers.ModelSerializer):
         return (user.get_full_name() or user.username) if user else ""
 
 
+class ManualTicketChangeSerializer(serializers.ModelSerializer):
+    """Journal des statuts de billet forcés à la main, en lecture seule."""
+
+    reference = serializers.CharField(source="ticket.reference", read_only=True)
+    from_status_display = serializers.SerializerMethodField()
+    to_status_display = serializers.CharField(source="get_to_status_display", read_only=True)
+    changed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TicketStatusHistory
+        fields = [
+            "id", "changed_at", "reference", "from_status", "from_status_display", "to_status", "to_status_display",
+            "changed_by_name", "note",
+        ]
+        read_only_fields = fields
+
+    def get_from_status_display(self, obj):
+        return dict(Ticket.Status.choices).get(obj.from_status, obj.from_status)
+
+    def get_changed_by_name(self, obj):
+        user = obj.changed_by
+        if user is None:
+            return "—"
+        return user.get_full_name() or user.username
+
+
 class SegmentFareChangeSerializer(serializers.ModelSerializer):
     """Journal des prix de tronçon, en lecture seule."""
 
