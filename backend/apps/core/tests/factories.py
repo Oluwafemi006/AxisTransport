@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.utils import timezone
 
-from apps.core.models import FareRule, Location, PaymentMethod, Route, SystemSetting, Trip, User, Vehicle
+from apps.core.models import FareRule, LineStop, Location, PaymentMethod, Route, SegmentFare, SystemSetting, Trip, User, Vehicle
 from apps.core.services import generate_trip_seats
 
 
@@ -17,6 +17,12 @@ def build_operational_context(*, trip_date=None):
     arrival = departure + timedelta(hours=4)
     trip = Trip.objects.create(route=route, vehicle=vehicle, departure_at=departure, arrival_at=arrival)
     generate_trip_seats(trip)
+    # Prix du billet : grille par tronçon (trajet complet). La règle du parcours, gardée, ne fixe plus le prix.
+    segment_fare = SegmentFare.objects.create(
+        start=LineStop.objects.create(location=origin, position=1),
+        end=LineStop.objects.create(location=destination, position=2),
+        amount=1000,
+    )
     FareRule.objects.create(
         route=route,
         name="Tarif test configuré",
@@ -35,6 +41,7 @@ def build_operational_context(*, trip_date=None):
         "vehicle": vehicle,
         "trip": trip,
         "payment_method": payment_method,
+        "segment_fare": segment_fare,
         "client": client,
         "controller": controller,
         "admin": admin,

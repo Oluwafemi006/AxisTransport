@@ -104,7 +104,7 @@ from .services import (
     release_expired_holds,
     reserve_booking,
     reserve_ticket,
-    resolve_fare,
+    trip_fare,
     transition_parcel,
     update_segment_fare,
     transition_ticket,
@@ -1309,7 +1309,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
         for trip in self._sellable_trips().order_by("departure_at"):
             item = TripSerializer(trip, context={"request": request}).data
             try:
-                fare = resolve_fare(trip)
+                fare = trip_fare(trip)
             except ImproperlyConfigured:
                 # Aucun tarif en base : le départ est affiché mais non vendable, sans prix de repli.
                 item["quotes"] = []

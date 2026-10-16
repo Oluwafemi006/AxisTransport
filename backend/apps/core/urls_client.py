@@ -64,7 +64,7 @@ from .services import (
     is_plausible_phone,
     release_expired_holds,
     reserve_booking,
-    resolve_fare,
+    trip_fare,
     reserve_ticket,
     transition_parcel,
 )
@@ -137,7 +137,7 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
     def payment_quotes(self, request, pk=None):
         """
         Montant à payer AVANT toute réservation, par moyen de paiement en ligne actif :
-        tarif du trajet × nombre de passagers, plus les frais. Calculé ici, jamais dans le navigateur.
+        prix du billet (grille par tronçon) × nombre de passagers, plus les frais client (0 par défaut). Calculé ici, jamais dans le navigateur.
         """
         trip = self.get_object()
         try:
@@ -147,7 +147,7 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
         if not 1 <= passengers <= 8:
             raise ValidationError({"passengers": "Nombre de passagers invalide."})
         try:
-            fare = resolve_fare(trip)
+            fare = trip_fare(trip)
         except ImproperlyConfigured as exc:
             raise ValidationError({"detail": str(exc)}) from exc
         target = SimpleNamespace(amount=fare.amount * passengers, currency=fare.currency)

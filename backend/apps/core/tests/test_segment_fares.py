@@ -161,14 +161,14 @@ class SegmentFareAdminApiTests(APITestCase):
         self.assertEqual(SegmentFare.objects.count(), 10)
 
 
-class FullTripUnchangedTests(APITestCase):
-    """Le trajet entier se vend comme avant : prix du départ (tarif du parcours), grille non utilisée pour la vente."""
+class FullTripPricedByGridTests(APITestCase):
+    """Le trajet entier se vend au prix du tronçon de la grille ; la règle du parcours (gardée) ne fixe plus le prix."""
 
     def setUp(self):
         load()
         parakou, cotonou = place("Parakou"), place("Cotonou")
         route = Route.objects.create(origin=parakou, destination=cotonou)
-        FareRule.objects.create(route=route, name="Standard", amount=Decimal("7500"))
+        FareRule.objects.create(route=route, name="Standard", amount=Decimal("5000"))  # ignorée pour le prix
         vehicle = Vehicle.objects.create(category=Vehicle.Category.BUS, name="Yutong", capacity=4)
         departure = timezone.make_aware(datetime.combine(timezone.localdate() + timedelta(days=1), time(8)))
         self.trip = Trip.objects.create(route=route, vehicle=vehicle, departure_at=departure)
@@ -176,8 +176,8 @@ class FullTripUnchangedTests(APITestCase):
         SystemSetting.objects.create(key="ticket_hold_minutes", value=10)
         PaymentMethod.objects.create(code="FEDAPAY", label="FedaPay", active=True)
 
-    def test_full_trip_still_sells_at_its_route_price(self):
-        self.assertEqual(resolve_fare(self.trip).amount, Decimal("7500"))
+    def test_full_trip_sells_at_its_grid_price(self):
+        self.assertEqual(resolve_fare(self.trip).amount, Decimal("5000"))  # code de la règle gardé, non utilisé
         quote = self.client.get(f"/api/v1/client/trips/{self.trip.pk}/payment-quotes/").json()[0]
         self.assertEqual(Decimal(str(quote["amount"])), Decimal("7500"))
 

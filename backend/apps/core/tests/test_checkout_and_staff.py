@@ -16,6 +16,7 @@ from apps.core.models import (
     PaymentMethod,
     PaymentReceipt,
     Seat,
+    SegmentFare,
     Ticket,
     Transaction,
     Trip,
@@ -143,11 +144,11 @@ class FeesAndCheckoutTests(APITestCase):
 
 @override_settings(**FEDAPAY_SETTINGS)
 class TicketShowsFareOnlyTests(APITestCase):
-    """Le billet porte le prix du billet (tarif), jamais le total payé avec les frais."""
+    """Avec un taux de frais client configuré (0 par défaut), le billet porte toujours le prix du billet seul."""
 
     def setUp(self):
         self.context = build_operational_context()
-        FareRule.objects.filter(route=self.context["route"]).update(amount=Decimal("7500.00"))
+        SegmentFare.objects.filter(pk=self.context["segment_fare"].pk).update(amount=7500)
         self.fedapay = PaymentMethod.objects.create(
             code="FEDAPAY", label="FedaPay", active=True, fee_percentage=Decimal("1.80")
         )
@@ -327,7 +328,7 @@ class StaffSurfaceTests(APITestCase):
         response = self.client.post(self.SELL, self.payload, format="json")
         self.assertEqual(response.status_code, 201, response.data)
         ticket = Ticket.objects.get(reference=response.data["ticket_reference"])
-        fare = FareRule.objects.get(route=self.context["route"])
+        fare = self.context["segment_fare"]
         self.assertEqual((ticket.status, ticket.channel, ticket.amount), (Ticket.Status.ISSUED, "COUNTER", fare.amount))
         payment = Transaction.objects.get(ticket=ticket)
         self.assertEqual((payment.status, payment.amount), (Transaction.Status.SUCCEEDED, fare.amount))

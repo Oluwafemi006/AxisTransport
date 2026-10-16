@@ -44,7 +44,8 @@ class Command(BaseCommand):
             defaults={
                 "label": "FedaPay Mobile Money / Carte",
                 "active": (active_provider == "fedapay"),
-                "fee_percentage": Decimal("1.80"),
+                # Frais FedaPay supportés par l'agence (décision de la direction) : aucun frais client par défaut.
+                "fee_percentage": Decimal("0.00"),
             },
         )
         PaymentMethod.objects.get_or_create(
