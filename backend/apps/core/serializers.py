@@ -24,6 +24,8 @@ from .models import (
     User,
     Vehicle,
     PaymentIncident,
+    SegmentFare,
+    SegmentFareChange,
 )
 from .payments import ONLINE_PROVIDERS, payment_quote
 from .services import boarding_lead_minutes, boarding_time, rental_is_available, resolve_fare
@@ -586,3 +588,44 @@ class PaymentIncidentSerializer(serializers.ModelSerializer):
             "handled", "handled_note",
         ]
         read_only_fields = [field for field in fields if field not in ("handled", "handled_note")]
+
+
+class SegmentFareSerializer(serializers.ModelSerializer):
+    """Prix d'un tronçon de la ligne, pour l'administrateur. Seul le prix se modifie."""
+
+    start_name = serializers.CharField(source="start.location.name", read_only=True)
+    end_name = serializers.CharField(source="end.location.name", read_only=True)
+    start_position = serializers.IntegerField(source="start.position", read_only=True)
+    end_position = serializers.IntegerField(source="end.position", read_only=True)
+    label = serializers.CharField(read_only=True)
+    updated_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SegmentFare
+        fields = [
+            "id", "start_name", "end_name", "start_position", "end_position", "label",
+            "amount", "currency", "updated_at", "updated_by_name",
+        ]
+        read_only_fields = [field for field in fields if field != "amount"]
+
+    def get_updated_by_name(self, obj):
+        user = obj.updated_by
+        return (user.get_full_name() or user.username) if user else ""
+
+
+class SegmentFareChangeSerializer(serializers.ModelSerializer):
+    """Journal des prix de tronçon, en lecture seule."""
+
+    label = serializers.CharField(source="fare.label", read_only=True)
+    changed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SegmentFareChange
+        fields = ["id", "created_at", "label", "old_amount", "new_amount", "changed_by_name"]
+        read_only_fields = fields
+
+    def get_changed_by_name(self, obj):
+        user = obj.changed_by
+        if user is None:
+            return "Chargement initial"
+        return user.get_full_name() or user.username

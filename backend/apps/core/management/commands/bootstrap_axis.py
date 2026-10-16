@@ -68,6 +68,15 @@ class Command(BaseCommand):
             )
             self.stdout.write(self.style.SUCCESS(f"Administrateur {username} créé."))
 
+        # Arrêts de la ligne et grille des prix par tronçon : seulement ce qui manque, rien n'est écrasé.
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+
+        try:
+            call_command("load_segment_fares", stdout=self.stdout)
+        except CommandError as exc:
+            self.stdout.write(self.style.WARNING(f"Grille des tronçons non chargée : {exc}"))
+
         self.stdout.write(self.style.SUCCESS("Données Axis confirmées initialisées."))
         self.stdout.write(
             self.style.WARNING(

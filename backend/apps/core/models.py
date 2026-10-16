@@ -194,6 +194,69 @@ class FareRule(TimeStampedModel):
         return f"{self.route} — {self.name}"
 
 
+class LineStop(TimeStampedModel):
+    """Arrêt de la ligne, avec son rang dans l'ordre de parcours (1 = première ville du trajet aller)."""
+
+    location = models.OneToOneField(Location, on_delete=models.PROTECT, related_name="line_stop")
+    position = models.PositiveSmallIntegerField(unique=True)
+
+    class Meta:
+        ordering = ["position"]
+
+    def __str__(self):
+        return f"{self.position}. {self.location}"
+
+
+class SegmentFare(TimeStampedModel):
+    """
+    Prix d'un tronçon entre deux arrêts de la ligne, le même dans les deux sens.
+    Le tronçon est toujours rangé dans l'ordre de la ligne : `start` avant `end`.
+    Une paire d'arrêts sans ligne ici n'a pas de prix, donc n'est pas vendable.
+    """
+
+    start = models.ForeignKey(LineStop, on_delete=models.PROTECT, related_name="fares_from")
+    end = models.ForeignKey(LineStop, on_delete=models.PROTECT, related_name="fares_to")
+    amount = models.PositiveIntegerField(help_text="Prix du billet en francs CFA, nombre entier.")
+    currency = models.CharField(max_length=3, default="XOF")
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+
+    class Meta:
+        ordering = ["start__position", "end__position"]
+        constraints = [
+            models.UniqueConstraint(fields=["start", "end"], name="unique_segment_fare"),
+            models.CheckConstraint(condition=~Q(start=models.F("end")), name="segment_fare_distinct_stops"),
+            models.CheckConstraint(condition=Q(amount__gt=0), name="segment_fare_positive_amount"),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.start_id and self.end_id and self.start.position >= self.end.position:
+            raise ValidationError("Le premier arrêt du tronçon doit précéder le second dans l'ordre de la ligne.")
+
+    @property
+    def label(self):
+        return f"{self.start.location.name} ↔ {self.end.location.name}"
+
+    def __str__(self):
+        return f"{self.label} : {self.amount} {self.currency}"
+
+
+class SegmentFareChange(TimeStampedModel):
+    """Journal des prix de tronçon : chaque modification, avec son auteur. Jamais modifié ni effacé."""
+
+    fare = models.ForeignKey(SegmentFare, on_delete=models.PROTECT, related_name="changes")
+    changed_by = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+    # Vide pour le chargement initial de la grille.
+    old_amount = models.PositiveIntegerField(null=True, blank=True)
+    new_amount = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.fare.label} : {self.old_amount} → {self.new_amount}"
+
+
 class FeatureFlag(TimeStampedModel):
     class Key(models.TextChoices):
         TEMPORAL_PRICING = "TEMPORAL_PRICING", "Tarification temporelle"

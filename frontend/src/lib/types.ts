@@ -182,6 +182,26 @@ export interface FeatureFlag {
   configuration: Record<string, unknown>;
 }
 
+export interface SegmentFare {
+  id: number;
+  label: string;
+  start_name: string;
+  end_name: string;
+  amount: number;
+  currency: string;
+  updated_at: string;
+  updated_by_name: string;
+}
+
+export interface SegmentFareChange {
+  id: number;
+  created_at: string;
+  label: string;
+  old_amount: number | null;
+  new_amount: number;
+  changed_by_name: string;
+}
+
 export interface PaymentIncident {
   id: number;
   created_at: string;

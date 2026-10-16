@@ -4,9 +4,9 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone } from "./ui";
 import { LoginCard } from "./login-card";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import type { FareRule, FeatureFlag, Location, Parcel, PaymentIncident, PaymentMethod, Route, Seat, SystemSetting, Ticket, Trip, User, Vehicle } from "@/lib/types";
+import type { FareRule, FeatureFlag, Location, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle } from "@/lib/types";
 
-type AdminTab = "dashboard" | "planning" | "guichet" | "colis" | "flotte" | "tarifs" | "paiements" | "equipe";
+type AdminTab = "dashboard" | "planning" | "guichet" | "colis" | "flotte" | "tarifs" | "troncons" | "paiements" | "equipe";
 type Dashboard = {
   tickets: { sold: number; online: number; counter: number; checked: number; cancelled_or_refunded: number };
   revenue: { total: number; by_payment_method: Array<{ payment_method__label: string; total: number }> };
@@ -21,7 +21,7 @@ const nextParcelStatus: Record<string, string> = {
 
 const tabs: Array<[AdminTab, string]> = [
   ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["colis", "Colis"],
-  ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
+  ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["troncons", "Tarifs par tronçon"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
 ];
 
 function failure(reason: unknown, fallback: string): NoticeState {
@@ -93,6 +93,7 @@ export function AdminPortal() {
           {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
           {tab === "flotte" && <FleetPanel locations={locations} vehicles={vehicles} onChanged={load} />}
           {tab === "tarifs" && <PricingPanel routes={routes} fares={fares} flags={flags} payments={payments} settings={settings} onChanged={load} />}
+          {tab === "troncons" && <SegmentFarePanel />}
           {tab === "paiements" && <IncidentPanel incidents={incidents} onChanged={load} />}
           {tab === "equipe" && <TeamPanel users={users} onChanged={load} />}
         </>
@@ -625,6 +626,96 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
             </div>
           ))}
         </div>
+      </section>
+    </div>
+  );
+}
+
+// Prix des tronçons de la ligne (mêmes prix dans les deux sens), relus au serveur à l'ouverture et après chaque modification.
+function SegmentFarePanel() {
+  const [fares, setFares] = useState<SegmentFare[] | null>(null);
+  const [changes, setChanges] = useState<SegmentFareChange[]>([]);
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState<number | null>(null);
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [rows, log] = await Promise.all([apiList<SegmentFare>("/segment-fares/"), apiList<SegmentFareChange>("/segment-fare-changes/")]);
+      setFares(rows);
+      setChanges(log);
+      setDrafts(Object.fromEntries(rows.map((row) => [row.id, String(row.amount)])));
+    } catch (reason) { setNotice(failure(reason, "Les tarifs n’ont pas pu être chargés. Réessayez.")); }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function save(fare: SegmentFare) {
+    const typed = (drafts[fare.id] ?? "").replace(/[\s\u202f\u00a0]/g, "");
+    if (!/^\d+$/.test(typed) || Number(typed) <= 0) {
+      setNotice({ text: `Prix invalide pour ${fare.label} : saisissez un nombre entier de francs CFA, supérieur à zéro.`, tone: "error" });
+      return;
+    }
+    const amount = Number(typed);
+    if (amount === fare.amount) { setNotice({ text: `Le prix de ${fare.label} est déjà de ${money(amount, fare.currency)}.`, tone: "info" }); return; }
+    if (!window.confirm(`Changer le prix de ${fare.label} : ${money(fare.amount, fare.currency)} → ${money(amount, fare.currency)} ?`)) return;
+    setBusy(fare.id);
+    try {
+      await apiFetch(`/segment-fares/${fare.id}/`, { method: "PATCH", body: JSON.stringify({ amount }) });
+      setNotice({ text: `Prix enregistré : ${fare.label} à ${money(amount, fare.currency)}.`, tone: "ok" });
+      await load();
+    } catch (reason) {
+      const network = !(reason as { status?: number }).status;
+      setNotice(network ? { text: "Le serveur ne répond pas : le prix n’a pas été enregistré. Réessayez.", tone: "error" } : failure(reason, "Le prix n’a pas été enregistré."));
+    } finally { setBusy(null); }
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="card">
+        <SectionHeading eyebrow="Mêmes prix dans les deux sens" title="Tarifs par tronçon" />
+        <p className="mb-4 text-sm text-slate-500">Prix en francs CFA. Un billet déjà vendu ou une réservation en cours garde le prix du moment de la vente.</p>
+        {fares === null ? <Loading /> : fares.length === 0 ? <EmptyState title="Aucun tronçon" text="La grille des prix n’est pas encore chargée." /> : (
+          <div className="table-scroll">
+            <table className="staff-table min-w-[620px]">
+              <thead><tr><th>Tronçon</th><th>Prix actuel</th><th>Nouveau prix</th><th /></tr></thead>
+              <tbody>
+                {fares.map((fare) => (
+                  <tr key={fare.id}>
+                    <td className="strong">{fare.label}</td>
+                    <td className="whitespace-nowrap">{money(fare.amount, fare.currency)}</td>
+                    <td>
+                      <input className="field max-w-40" inputMode="numeric" aria-label={`Nouveau prix ${fare.label}`} value={drafts[fare.id] ?? ""} onChange={(e) => setDrafts({ ...drafts, [fare.id]: e.target.value })} />
+                    </td>
+                    <td className="text-right"><button className="secondary-button" disabled={busy !== null} onClick={() => void save(fare)}>{busy === fare.id ? "Enregistrement…" : "Enregistrer"}</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <Notice notice={notice} />
+      </section>
+      <section className="card">
+        <SectionHeading eyebrow="Lecture seule" title="Historique des prix" />
+        {changes.length === 0 ? <EmptyState title="Aucune modification" text="Chaque changement de prix apparaîtra ici." /> : (
+          <div className="table-scroll">
+            <table className="staff-table min-w-[620px]">
+              <thead><tr><th>Date</th><th>Tronçon</th><th>Ancien prix</th><th>Nouveau prix</th><th>Par</th></tr></thead>
+              <tbody>
+                {changes.map((change) => (
+                  <tr key={change.id}>
+                    <td className="whitespace-nowrap">{formatDate(change.created_at)}</td>
+                    <td className="strong">{change.label}</td>
+                    <td>{change.old_amount === null ? "—" : money(change.old_amount)}</td>
+                    <td>{money(change.new_amount)}</td>
+                    <td>{change.changed_by_name}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );

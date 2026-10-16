@@ -12,6 +12,7 @@ from .models import (
     PaymentAttempt,
     PaymentIncident,
     PaymentReceipt,
+    SegmentFareChange,
     Passenger,
     RentalBooking,
     Route,
@@ -89,6 +90,18 @@ class PaymentAttemptAdmin(admin.ModelAdmin):
     list_filter = ("outcome", "provider")
     search_fields = ("external_id", "booking__reference")
     readonly_fields = ("provider", "external_id", "booking", "ticket", "amount", "currency", "checks", "last_checked_at")
+
+
+@admin.register(SegmentFareChange)
+class SegmentFareChangeAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "fare", "old_amount", "new_amount", "changed_by")
+    readonly_fields = ("fare", "old_amount", "new_amount", "changed_by")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(PaymentIncident)
