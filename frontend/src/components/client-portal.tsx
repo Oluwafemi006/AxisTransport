@@ -640,7 +640,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
 
             {singleQuote && !held && !issued && (
               <p style={{ marginTop: '20px', fontSize: '14px', color: 'var(--mute)' }}>
-                Prix du billet : {money(singleQuote.amount, singleQuote.currency)} · Frais de paiement : {money(singleQuote.fee_amount, singleQuote.currency)}
+                Prix du billet : {money(singleQuote.amount, singleQuote.currency)}
               </p>
             )}
             {!held && !issued && (singleQuote ? (
@@ -672,7 +672,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
                 <p style={{ fontSize: '14px', margin: '8px 0 16px' }}>Temps restant : <b>{countdown}</b></p>
                 {heldQuote && (
                   <p style={{ fontSize: '14px', marginBottom: '12px' }}>
-                    Prix du billet : {money(heldQuote.amount, heldQuote.currency)} · Frais de paiement : {money(heldQuote.fee_amount, heldQuote.currency)} · <b>Total : {money(heldQuote.total, heldQuote.currency)}</b>
+                    Prix du billet : <b>{money(heldQuote.amount, heldQuote.currency)}</b>
                   </p>
                 )}
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
