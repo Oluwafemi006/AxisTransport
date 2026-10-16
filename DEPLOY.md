@@ -55,9 +55,18 @@ Points d'attention :
 | `AXIS_ADMIN_USERNAME`, `AXIS_ADMIN_PASSWORD`, `AXIS_ADMIN_EMAIL` | Compte administrateur créé au premier `bootstrap_axis`. | Mot de passe fort, unique |
 | `AXIS_PARCEL_TRACKING_RATE` | Limite du suivi de colis par adresse IP. | `20/min` |
 | `AXIS_PUBLIC_TICKET_RATE` | Limite de lecture de la page publique d'un billet par adresse IP. La page appelle l'API depuis le navigateur du visiteur, pas depuis le serveur du site. | `60/min` |
-| `AXIS_LOGIN_RATE_ACCOUNT` | Tentatives de connexion par identifiant, toutes adresses confondues. Au-delà : blocage temporaire, réponse « Trop de tentatives, réessayez dans X minutes ». | `10/hour` (proposition) |
+| `AXIS_LOGIN_RATE_ACCOUNT_ADDRESS` | Connexions **échouées** par identifiant et adresse IP ensemble. Au-delà : blocage temporaire de cet identifiant depuis cette adresse seulement, réponse « Trop de tentatives, réessayez dans X minutes ». | `10/hour` (proposition technique) |
+| `AXIS_LOGIN_RATE_ACCOUNT` | Plafond de connexions **échouées** par identifiant, toutes adresses confondues (attaque répartie). Au-delà : blocage temporaire de l'identifiant depuis toutes les adresses. | `50/hour` (proposition technique) |
 | `AXIS_LOGIN_RATE_ADDRESS` | Tentatives de connexion par adresse IP, tous identifiants confondus. Élevé à dessein : de nombreux abonnés mobiles peuvent partager une même adresse. | `30/min` (proposition) |
 | `AXIS_REGISTER_RATE_ADDRESS` | Créations de compte client par adresse IP. | `10/hour` (proposition) |
+
+**Limite de connexion : fonctionnement et seuils proposés** (propositions techniques, pas des règles de la direction ; modifiables par les variables ci-dessus) :
+
+- Seules les connexions échouées comptent. Une connexion réussie efface les échecs de son adresse, pas ceux des autres adresses.
+- `10/hour` par identifiant et adresse : une personne qui se trompe de mot de passe s'arrête bien avant 10 essais en une heure ; une seule adresse ne peut pas tester plus de 10 mots de passe par heure sur un compte. Des échecs provoqués depuis une autre adresse ne bloquent pas le titulaire (par exemple un contrôleur).
+- `50/hour` par identifiant, toutes adresses : 5 fois le seuil précédent, donc jamais atteint par un utilisateur seul ; limite une attaque répartie sur de nombreuses adresses à 50 essais par heure et par compte. Contrepartie : une attaque utilisant au moins 5 adresses peut encore bloquer un compte pendant au plus une heure.
+- `30/min` par adresse, tous identifiants : inchangé ; élevé parce que beaucoup d'abonnés mobiles partagent la même adresse.
+- Débloquer un compte (toutes adresses), sur le serveur : `docker compose --env-file .env.vps -f compose.vps.yaml exec backend python manage.py unblock_login <identifiant>` (majuscules et espaces ignorés). Il n'existe pas encore de bouton dans le portail `/admin`.
 | `AXIS_PAYMENT_RECONCILE_ENABLED` | Interrupteur du rattrapage des paiements jamais confirmés (commande `reconcile_payments`). | `true` |
 | `AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES` | Durée pendant laquelle une transaction créée est réinterrogée chez FedaPay. | `1440` (24 h, durée de validité observée du lien de paiement) |
 | `AXIS_PAYMENT_RECONCILE_BATCH` | Nombre maximal de transactions interrogées par passage. | `20` |
@@ -139,7 +148,7 @@ Pour appeler ce backend depuis le site Vercel (hors du but de cet essai) : ajout
 - **Adresse changeante** : avec un tunnel gratuit, l'adresse change à chaque lancement ; il faut refaire les étapes 1 à 3.
 - **PC allumé** : PC éteint, en veille ou sans réseau = webhook perdu. FedaPay peut le renvoyer, sans garantie de délai.
 - **API publique pendant l'essai** : toute personne connaissant l'adresse peut appeler l'API et tenter de se connecter à l'administration. D'où le mot de passe fort et la durée courte.
-- **Pas de limite de requêtes** sur la connexion, l'inscription et la réservation.
+- **Pas de limite de requêtes** sur la réservation (la connexion et l'inscription sont limitées, voir section 2).
 
 ### Paiements : webhook, rattrapage, incidents
 
@@ -252,7 +261,7 @@ Fichiers utilisés :
 | Cookies de session et CSRF marqués « Secure », HSTS | La redirection HTTP → HTTPS est faite par Caddy, mais Django ne l'impose pas lui-même |
 | `SECURE_PROXY_SSL_HEADER` | Django se croit en HTTP derrière Caddy. L'API (jetons JWT) n'en dépend pas ; `/django-admin/` fonctionne grâce à `DJANGO_CSRF_TRUSTED_ORIGINS` |
 | Refus de démarrer sans clé secrète | Couvert sur le VPS : `compose.vps.yaml` refuse de démarrer si `DJANGO_SECRET_KEY` est vide |
-| Limite de requêtes sur la connexion, l'inscription, la réservation | Absente |
+| Limite de requêtes sur la réservation | Absente (la connexion et l'inscription sont limitées, voir section 2) |
 | Fichiers envoyés (`/media/`) | Enregistrés dans un volume, mais servis par personne hors debug : les pièces d'identité de location ne sont pas consultables |
 | HTTP non chiffré autorisé dans les deux apps mobiles | Voir 5.10 |
 
