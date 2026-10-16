@@ -93,10 +93,12 @@ class StaffSaleTests(APITestCase):
         self.assertEqual(Booking.objects.count(), 0)
 
     def test_counter_and_admin_can_also_sell(self):
+        # Départ de demain : le guichet et l'admin ne vendent que des départs à venir, quelle que soit l'heure du test.
+        trip = self.tomorrow_trip()
         for index, user in enumerate((self.counter, self.context["admin"])):
             self.client.force_authenticate(user)
-            seat = self.trip.seats.order_by("number")[index]
-            self.assertEqual(self.sell(key=f"vente-agent-{index}", seat=seat).status_code, 201)
+            seat = trip.seats.order_by("number")[index]
+            self.assertEqual(self.sell(key=f"vente-agent-{index}", trip=trip, seat=seat).status_code, 201)
 
     # ── Ce que le contrôleur ne peut pas forcer
     def test_controller_sells_only_on_today_departures(self):
