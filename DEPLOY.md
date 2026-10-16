@@ -547,3 +547,9 @@ Pour un essai sur la variante A seulement : `--dart-define=AXIS_API_URL=http://<
 - Les commandes de sécurisation SSH sur l'image Ubuntu 24.04 de Contabo (nom du service, fichiers de configuration déjà présents).
 - Les sauvegardes, la restauration et le redémarrage automatique après `reboot`.
 - Le comportement des apps mobiles en release contre une API distante.
+
+## 6. À construire en étape 5 (notes, rien n'est codé)
+
+- **Bouton « Débloquer un compte » dans le portail `/admin`.** Aujourd'hui, débloquer un identifiant bloqué après trop de connexions échouées demande une commande sur le serveur : `python manage.py unblock_login <identifiant>` (voir section 2). Le bouton appellerait le même code, réservé à l'administrateur, et resterait journalisé.
+- **Supprimer les routes en double avant l'ouverture au public.** Les mêmes points d'accès répondent sous `/api/` et sous `/api/v1/` (`backend/config/urls.py`). Vérifier qu'aucun écran ni aucune app n'utilise plus `/api/` seul, puis retirer ce préfixe : une seule adresse par point d'accès, une seule surface à surveiller.
+- **Réservations client ouvertes, protégées dans le code.** `/api/v1/client/bookings/` accepte toute demande (`AllowAny`, pour l'achat sans compte sur le web) ; l'accès à une réservation existante n'est protégé que par une vérification écrite dans la vue (propriétaire connecté ou jeton invité, `_assert_can_access` dans `backend/apps/core/urls_client.py`). Cette protection fonctionne et elle est testée, mais elle est fragile : une nouvelle action ajoutée sans cette vérification serait ouverte à tous. Garder les tests existants et en ajouter un pour chaque nouvelle action.
