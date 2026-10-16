@@ -149,6 +149,28 @@ Pour appeler ce backend depuis le site Vercel (hors du but de cet essai) : ajout
 - **Incidents dans le portail** : onglet « Incidents de paiement » de `/admin` (administrateur seulement), en lecture seule avec une case « traité ».
 - La documentation FedaPay ne publie aucune limite de débit pour son API. Le rattrapage se borne lui-même : au plus `AXIS_PAYMENT_RECONCILE_BATCH` appels par passage, relectures espacées (chaque passage pendant 30 min, puis toutes les 10 min jusqu'à 2 h, puis chaque heure), arrêt du passage dès une réponse 429 ou 5xx.
 
+## 2 ter. Tarifs par tronçon (À CONFIRMER par la direction)
+
+Ligne, dans l'ordre : Parakou, Savè, Kétou, Porto-Novo, Cotonou. Un prix par paire d'arrêts, le même dans les deux sens.
+Ces dix prix ont été fournis par l'équipe et **restent à confirmer par la direction** :
+
+| Tronçon | Prix (FCFA) |
+|---|---|
+| Parakou ↔ Cotonou | 7 500 |
+| Parakou ↔ Porto-Novo | 7 500 |
+| Parakou ↔ Kétou | 6 500 |
+| Parakou ↔ Savè | 4 500 |
+| Savè ↔ Cotonou | 6 500 |
+| Savè ↔ Porto-Novo | 6 500 |
+| Savè ↔ Kétou | 2 500 |
+| Kétou ↔ Porto-Novo | 4 000 |
+| Kétou ↔ Cotonou | 4 000 |
+| Porto-Novo ↔ Cotonou | 1 500 |
+
+- Chargement : commande `python manage.py load_segment_fares`, aussi lancée par `bootstrap_axis` à chaque démarrage. Elle n'ajoute que ce qui manque : un prix déjà présent (modifié par l'administrateur) n'est jamais écrasé. Les arrêts Savè, Kétou et Porto-Novo, s'ils n'existent pas, sont créés **inactifs** (invisibles des clients). Aucun compte n'est créé.
+- Modification : portail `/admin`, onglet « Tarifs par tronçon » (administrateur uniquement), avec confirmation et historique (qui, quand, ancien et nouveau prix).
+- **Pas encore utilisé pour la vente** : tant que les places par tronçon n'existent pas (étape 3), les billets se vendent sur le trajet entier, au tarif du parcours (« Tarifs & règles »).
+
 ## 3. À ne jamais faire en production
 
 - **Ne jamais lancer `seed_demo`.** Elle crée des comptes au mot de passe connu, un tarif et des voyages fictifs. Elle refuse de tourner quand `DJANGO_DEBUG` est faux : ne pas activer le debug pour la contourner.

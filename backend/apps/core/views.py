@@ -39,6 +39,8 @@ from .models import (
     Vehicle,
     PaymentIncident,
     PaymentReceipt,
+    SegmentFare,
+    SegmentFareChange,
 )
 from .permissions import (
     IsAxisAdmin,
@@ -50,6 +52,8 @@ from .permissions import (
 )
 from .serializers import (
     PaymentIncidentSerializer,
+    SegmentFareChangeSerializer,
+    SegmentFareSerializer,
     BookingCreateSerializer,
     BookingSerializer,
     FareRuleSerializer,
@@ -96,6 +100,7 @@ from .services import (
     reserve_ticket,
     resolve_fare,
     transition_parcel,
+    update_segment_fare,
     transition_ticket,
     validate_ticket,
 )
@@ -395,6 +400,44 @@ class FeatureFlagViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
 class SystemSettingViewSet(viewsets.ModelViewSet):
     queryset = SystemSetting.objects.all()
     serializer_class = SystemSettingSerializer
+    permission_classes = [IsAxisAdmin]
+
+
+class SegmentFareViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    """
+    Grille des prix par tronçon : lecture et modification du prix, administrateur uniquement.
+    Ni création ni suppression ici : les tronçons sont chargés par « load_segment_fares ».
+    """
+
+    queryset = SegmentFare.objects.select_related("start__location", "end__location", "updated_by")
+    serializer_class = SegmentFareSerializer
+    permission_classes = [IsAxisAdmin]
+    http_method_names = ["get", "patch", "head", "options"]
+    pagination_class = None
+
+    def partial_update(self, request, *args, **kwargs):
+        if set(request.data.keys()) - {"amount"}:
+            raise ValidationError({"detail": "Seul le prix d'un tronçon peut être modifié."})
+        if "amount" not in request.data:
+            raise ValidationError({"amount": "Indiquez le nouveau prix."})
+        try:
+            fare, changed = update_segment_fare(self.get_object(), request.data["amount"], actor=request.user)
+        except DjangoValidationError as exc:
+            raise ValidationError({"amount": exc.messages})
+        data = self.get_serializer(self.get_queryset().get(pk=fare.pk)).data
+        return Response({**data, "changed": changed})
+
+    def update(self, request, *args, **kwargs):
+        if not kwargs.get("partial"):
+            raise ValidationError({"detail": "Utilisez une modification partielle du prix."})
+        return super().update(request, *args, **kwargs)
+
+
+class SegmentFareChangeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Journal des modifications de prix de tronçon, en lecture seule, administrateur uniquement."""
+
+    queryset = SegmentFareChange.objects.select_related("fare__start__location", "fare__end__location", "changed_by")
+    serializer_class = SegmentFareChangeSerializer
     permission_classes = [IsAxisAdmin]
 
 

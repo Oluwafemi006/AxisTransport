@@ -27,6 +27,9 @@ from .models import (
     Transaction,
     Trip,
     PaymentAttempt,
+    LineStop,
+    SegmentFare,
+    SegmentFareChange,
 )
 
 
@@ -147,6 +150,56 @@ def resolve_fare(trip, at=None):
     if not standard:
         raise ImproperlyConfigured(f"Aucun tarif standard actif n'est configuré pour le trajet {trip.route}.")
     return standard
+
+
+def _segment_bounds(origin, destination):
+    """Les deux arrêts de la ligne correspondant à deux lieux, rangés dans l'ordre de la ligne."""
+    stops = {stop.location_id: stop for stop in LineStop.objects.filter(location__in=[origin, destination])}
+    if origin == destination or len(stops) != 2:
+        return None
+    first, second = stops[origin.pk], stops[destination.pk]
+    return (first, second) if first.position < second.position else (second, first)
+
+
+def resolve_segment_fare(origin, destination):
+    """
+    Prix du tronçon entre deux lieux, identique dans les deux sens.
+    Aucun tarif enregistré : le tronçon n'est pas vendable, sans prix de repli.
+    (Lu nulle part pour la vente tant que les places par tronçon n'existent pas.)
+    """
+    bounds = _segment_bounds(origin, destination)
+    fare = SegmentFare.objects.filter(start=bounds[0], end=bounds[1]).first() if bounds else None
+    if fare is None:
+        raise ImproperlyConfigured(f"Aucun prix n'est défini entre {origin} et {destination} : tronçon non vendable.")
+    return fare
+
+
+def parse_fcfa_amount(value):
+    """Prix saisi par l'administrateur : nombre entier de francs CFA, strictement positif."""
+    text = str(value).strip().replace(" ", "").replace("\u202f", "").replace("\xa0", "") if value is not None else ""
+    if isinstance(value, bool) or not text.isdigit():
+        raise ValidationError("Le prix doit être un nombre entier de francs CFA, sans virgule ni lettre.")
+    amount = int(text)
+    if amount <= 0:
+        raise ValidationError("Le prix doit être supérieur à zéro.")
+    if amount > 2_147_483_647:
+        raise ValidationError("Ce prix est trop grand pour être enregistré.")
+    return amount
+
+
+@transaction.atomic
+def update_segment_fare(fare, amount, *, actor):
+    """Change le prix d'un tronçon et l'inscrit au journal. Même prix : rien n'est modifié ni journalisé."""
+    amount = parse_fcfa_amount(amount)
+    locked = SegmentFare.objects.select_for_update().get(pk=fare.pk)
+    if locked.amount == amount:
+        return locked, False
+    old = locked.amount
+    locked.amount = amount
+    locked.updated_by = actor
+    locked.save(update_fields=["amount", "updated_by", "updated_at"])
+    SegmentFareChange.objects.create(fare=locked, changed_by=actor, old_amount=old, new_amount=amount)
+    return locked, True
 
 
 def release_expired_holds(at=None):
