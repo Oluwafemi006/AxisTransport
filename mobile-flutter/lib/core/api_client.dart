@@ -35,11 +35,10 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-/// Client HTTP de l'application cliente AXIS.
+/// Client HTTP de l'application AXIS (clients et personnel).
 ///
-/// Toutes les routes pointent vers /api/v1/client/ ou /api/v1/auth/.
-/// Cette surface est strictement réservée aux clients finaux.
-/// Le personnel interne (COUNTER, CONTROLLER, ADMIN) utilisera des surfaces séparées.
+/// Les clients utilisent /api/v1/client/ ; le personnel (COUNTER, CONTROLLER, ADMIN) /api/v1/staff/.
+/// Le serveur décide des droits : un appel du personnel fait par un client est refusé (403).
 class ApiClient {
   ApiClient({SessionStore? store, Dio? dio})
     : _store = store ?? SessionStore() {
@@ -360,6 +359,71 @@ class ApiClient {
       auth: true,
     );
     return Ticket.fromJson(payload['ticket'] as Map<String, dynamic>);
+  }
+
+  // ─── Surface du personnel (/api/v1/staff/) ───────────────────────────────
+  // Réservée aux rôles COUNTER, CONTROLLER et ADMIN : le serveur refuse tout autre compte (403).
+
+  /// Contrôle d'un billet par son QR code.
+  Future<Map<String, dynamic>> validateTicket(String qrToken, {int? expectedTripId}) {
+    return _request<Map<String, dynamic>>(
+      '/staff/tickets/validate/',
+      data: {
+        'qr_token': qrToken,
+        if (expectedTripId != null) 'expected_trip_id': expectedTripId,
+      },
+      auth: true,
+    );
+  }
+
+  /// Départs vendables par cet agent, avec places restantes et montants calculés par le serveur.
+  Future<Map<String, dynamic>> saleOptions() {
+    return _request<Map<String, dynamic>>('/staff/sales/options/', auth: true);
+  }
+
+  /// Vend un billet. La même clé rejouée reprend la vente en cours : jamais de double vente.
+  Future<Map<String, dynamic>> sellTicket({
+    required String idempotencyKey,
+    required int trip,
+    required int seat,
+    required String passengerName,
+    required String passengerPhone,
+    required int paymentMethod,
+  }) {
+    return _request<Map<String, dynamic>>(
+      '/staff/sales/sell/',
+      data: {
+        'idempotency_key': idempotencyKey,
+        'trip': trip,
+        'seat': seat,
+        'passenger_name': passengerName,
+        'passenger_phone': passengerPhone,
+        'payment_method': paymentMethod,
+      },
+      auth: true,
+    );
+  }
+
+  /// Mobile Money : demande au serveur de vérifier le paiement et d'émettre le billet.
+  Future<Map<String, dynamic>> verifySale({
+    required int bookingId,
+    required int paymentMethod,
+    required String externalReference,
+  }) {
+    return _request<Map<String, dynamic>>(
+      '/staff/sales/$bookingId/verify/',
+      data: {'payment_method': paymentMethod, 'external_reference': externalReference},
+      auth: true,
+    );
+  }
+
+  /// Annule une vente non payée : le serveur libère la place.
+  Future<Map<String, dynamic>> cancelSale(int bookingId) {
+    return _request<Map<String, dynamic>>(
+      '/staff/sales/$bookingId/cancel/',
+      data: const <String, dynamic>{},
+      auth: true,
+    );
   }
 
   // ─── Internals ────────────────────────────────────────────────────────────
