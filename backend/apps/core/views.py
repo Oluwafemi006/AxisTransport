@@ -16,11 +16,12 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import PermissionDenied, Throttled, ValidationError
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied, Throttled, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import (
@@ -273,15 +274,51 @@ class RegisterAddressThrottle(_AddressThrottle):
 
 
 class LoginAccountThrottle(_LiveRateThrottle):
-    """Par identifiant saisi, quelle que soit l'adresse : freine l'essai de mots de passe sur un compte."""
+    """
+    Par identifiant saisi, quelle que soit l'adresse : freine l'essai de mots de passe sur un compte.
+    Seules les tentatives ÉCHOUÉES comptent (enregistrées par la vue de connexion) ; une connexion réussie
+    remet le compteur à zéro. Au-delà du seuil, le compte est bloqué temporairement, bon mot de passe compris.
+    """
 
     scope = "login_account"
 
+    @staticmethod
+    def key_for(username):
+        ident = hashlib.sha256(str(username or "").strip().lower().encode()).hexdigest()
+        return LoginAccountThrottle.cache_format % {"scope": LoginAccountThrottle.scope, "ident": ident}
+
     def get_cache_key(self, request, view):
-        username = str(request.data.get("username") or "").strip().lower() if hasattr(request, "data") else ""
-        if not username:
-            return None
-        return self.cache_format % {"scope": self.scope, "ident": hashlib.sha256(username.encode()).hexdigest()}
+        username = str(request.data.get("username") or "").strip() if hasattr(request, "data") else ""
+        return self.key_for(username) if username else None
+
+    def allow_request(self, request, view):
+        # Lecture seule : la demande n'est pas comptée ici.
+        if self.rate is None:
+            return True
+        self.key = self.get_cache_key(request, view)
+        if self.key is None:
+            return True
+        self.history = self.cache.get(self.key, [])
+        self.now = self.timer()
+        while self.history and self.history[-1] <= self.now - self.duration:
+            self.history.pop()
+        return len(self.history) < self.num_requests
+
+    def record_failure(self, request):
+        if self.rate is None:
+            return
+        key = self.get_cache_key(request, None)
+        if key is None:
+            return
+        now = self.timer()
+        history = [moment for moment in self.cache.get(key, []) if moment > now - self.duration]
+        history.insert(0, now)
+        self.cache.set(key, history, self.duration)
+
+    def reset(self, request):
+        key = self.get_cache_key(request, None)
+        if key is not None:
+            self.cache.delete(key)
 
 
 class FrenchThrottleMixin:
@@ -293,6 +330,18 @@ class AxisTokenObtainPairView(FrenchThrottleMixin, TokenObtainPairView):
     """Connexion (jetons JWT). Réponse inchangée, sauf au-delà des seuils : 429 et message clair."""
 
     throttle_classes = [LoginAddressThrottle, LoginAccountThrottle]
+
+    def post(self, request, *args, **kwargs):
+        account = LoginAccountThrottle()
+        try:
+            response = super().post(request, *args, **kwargs)
+        except (AuthenticationFailed, InvalidToken):
+            # Identifiant ou mot de passe faux : seule cette tentative compte pour le blocage du compte.
+            account.record_failure(request)
+            raise
+        if response.status_code == status.HTTP_200_OK:
+            account.reset(request)
+        return response
 
 
 class RegisterView(FrenchThrottleMixin, APIView):

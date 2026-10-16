@@ -50,6 +50,34 @@ class LoginThrottlingTests(APITestCase):
             self.login(username=" awa ")
             self.assertEqual(self.login(username="AWA").status_code, 429)
 
+    def test_successful_logins_never_count_nor_block(self):
+        with rates(login_account="3/hour", login_address="100/min"):
+            for _ in range(6):
+                self.assertEqual(self.login(password="bon-mot-de-passe").status_code, 200)
+
+    def test_success_resets_the_failure_count(self):
+        with rates(login_account="3/hour", login_address="100/min"):
+            self.login()
+            self.login()
+            self.assertEqual(self.login(password="bon-mot-de-passe").status_code, 200)
+            self.login()
+            self.login()
+            self.assertEqual(self.login(password="bon-mot-de-passe").status_code, 200)
+
+    def test_admin_can_unblock_an_account(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        with rates(login_account="2/hour", login_address="100/min"):
+            self.login()
+            self.login()
+            self.assertEqual(self.login(password="bon-mot-de-passe").status_code, 429)
+            output = StringIO()
+            call_command("unblock_login", " AWA ", stdout=output)
+            self.assertIn("débloquée", output.getvalue())
+            self.assertEqual(self.login(password="bon-mot-de-passe").status_code, 200)
+
     def test_block_is_temporary(self):
         with rates(login_account="2/min", login_address="100/min"):
             self.login()
