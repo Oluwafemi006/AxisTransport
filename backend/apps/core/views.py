@@ -37,6 +37,7 @@ from .models import (
     Seat,
     SystemSetting,
     Ticket,
+    TicketStatusHistory,
     Transaction,
     Trip,
     User,
@@ -56,6 +57,7 @@ from .permissions import (
 )
 from .serializers import (
     PaymentIncidentSerializer,
+    ManualTicketChangeSerializer,
     SegmentFareChangeSerializer,
     SegmentFareSerializer,
     BookingCreateSerializer,
@@ -602,6 +604,16 @@ class SegmentFareChangeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     permission_classes = [IsAxisAdmin]
 
 
+class ManualTicketChangeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Journal des statuts de billet forcés à la main, en lecture seule, administrateur uniquement."""
+
+    queryset = (
+        TicketStatusHistory.objects.filter(manual=True).select_related("ticket", "changed_by").order_by("-changed_at")
+    )
+    serializer_class = ManualTicketChangeSerializer
+    permission_classes = [IsAxisAdmin]
+
+
 class PaymentIncidentViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     """Incidents de paiement : liste et case « traité », réservés à l'administrateur. Ni création ni suppression."""
 
@@ -642,7 +654,7 @@ class TicketViewSet(viewsets.ModelViewSet):
         if self.action == "validate_qr":
             return [IsControllerOrAdmin()]
         if self.action == "transition":
-            return [IsOperationsStaff()]
+            return [IsAxisAdmin()]
         # Vente et encaissement : client connecté (ses propres billets), guichet ou admin.
         if self.action in {"create", "pay"}:
             return [IsClientCounterOrAdmin()]
@@ -709,13 +721,17 @@ class TicketViewSet(viewsets.ModelViewSet):
             }
         )
 
-    @action(detail=True, methods=["post"], permission_classes=[IsOperationsStaff])
+    @action(detail=True, methods=["post"], permission_classes=[IsAxisAdmin])
     def transition(self, request, pk=None):
-        if request.user.role == User.Role.CONTROLLER and request.data.get("status") != Ticket.Status.COMPLETED:
-            raise ValidationError("Le contrôleur peut uniquement clôturer un voyage déjà contrôlé.")
+        # Changement de statut forcé à la main : administrateur uniquement, inscrit au journal
+        # (aucun écran ne s'en sert ; la vente passe par « pay » ou /staff/sales/, qui créent un paiement).
         try:
             ticket = transition_ticket(
-                self.get_object(), request.data.get("status"), actor=request.user, note=request.data.get("note", "")
+                self.get_object(),
+                request.data.get("status"),
+                actor=request.user,
+                note=request.data.get("note", ""),
+                manual=True,
             )
         except DjangoValidationError as exc:
             raise service_validation_error(exc)

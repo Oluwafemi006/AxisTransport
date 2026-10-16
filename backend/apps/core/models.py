@@ -431,6 +431,9 @@ class TicketStatusHistory(models.Model):
     changed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     changed_at = models.DateTimeField(auto_now_add=True)
     note = models.CharField(max_length=255, blank=True)
+    # Vrai si le statut a été forcé à la main par un administrateur (action « transition »),
+    # et non par un paiement, un scan ou une annulation.
+    manual = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["changed_at"]

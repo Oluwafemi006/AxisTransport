@@ -425,7 +425,7 @@ def reserve_ticket(*, trip, seat, customer, passenger_name, passenger_phone="", 
 
 
 @transaction.atomic
-def transition_ticket(ticket, to_status, *, actor=None, note=""):
+def transition_ticket(ticket, to_status, *, actor=None, note="", manual=False):
     locked = Ticket.objects.select_for_update().select_related("seat").get(pk=ticket.pk)
     if to_status not in TICKET_TRANSITIONS.get(locked.status, set()):
         raise ValidationError(f"Transition de billet interdite : {locked.status} → {to_status}.")
@@ -433,7 +433,7 @@ def transition_ticket(ticket, to_status, *, actor=None, note=""):
     locked.status = to_status
     locked.save(update_fields=["status", "updated_at"])
     TicketStatusHistory.objects.create(
-        ticket=locked, from_status=from_status, to_status=to_status, changed_by=actor, note=note
+        ticket=locked, from_status=from_status, to_status=to_status, changed_by=actor, note=note, manual=manual
     )
     if to_status in {Ticket.Status.CANCELLED, Ticket.Status.REFUNDED, Ticket.Status.EXPIRED}:
         locked.seat.status = Seat.Status.AVAILABLE

@@ -202,6 +202,18 @@ export interface SegmentFareChange {
   changed_by_name: string;
 }
 
+export interface ManualTicketChange {
+  id: number;
+  changed_at: string;
+  reference: string;
+  from_status: string;
+  from_status_display: string;
+  to_status: string;
+  to_status_display: string;
+  changed_by_name: string;
+  note: string;
+}
+
 export interface PaymentIncident {
   id: number;
   created_at: string;
