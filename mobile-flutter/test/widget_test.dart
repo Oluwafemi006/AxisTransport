@@ -170,12 +170,11 @@ class _BookingApi extends ApiClient {
       code: 'FEDAPAY',
       label: 'FedaPay',
       active: true,
-      feePercentage: 1.8,
       online: true,
     ),
   ];
 
-  // Total donné par le serveur avant toute réservation : 2 × 5 000 + 1,8 % de frais.
+  // Montant donné par le serveur avant toute réservation : 2 × 5 000, sans frais client (supportés par l'agence).
   @override
   Future<List<PaymentQuote>> tripPaymentQuotes({
     required int tripId,
@@ -184,8 +183,8 @@ class _BookingApi extends ApiClient {
     PaymentQuote(
       paymentMethod: 2,
       amount: 5000 * passengers,
-      feeAmount: 90 * passengers,
-      total: 5090 * passengers,
+      feeAmount: 0,
+      total: 5000 * passengers,
       currency: 'XOF',
     ),
   ];
@@ -404,10 +403,12 @@ void main() {
 
     expect(find.text('Siège 3A'), findsOneWidget);
     expect(find.text('Siège 3B'), findsOneWidget);
-    // Une seule action, avec le total (tarif + frais) donné par le serveur avant tout appui.
-    expect(find.textContaining(RegExp(r'^Payer 10\s180 XOF$')), findsOneWidget);
+    // Une seule action : le montant affiché est celui payé, donné par le serveur avant tout appui.
+    expect(find.text('Prix des billets'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^Payer 10\s000 XOF$')), findsOneWidget);
     expect(find.text('Valider et Bloquer les sièges'), findsNothing);
-    expect(find.text('Total à payer'), findsOneWidget);
+    expect(find.text('Total à payer'), findsNothing);
+    expect(find.textContaining('Frais'), findsNothing);
     expect(find.textContaining('réservation atomique'), findsNothing);
   });
 }

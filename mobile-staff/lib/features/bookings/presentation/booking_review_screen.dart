@@ -166,7 +166,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen> {
               children: [
                 const Expanded(
                   child: Text(
-                    'Total',
+                    'Prix des billets',
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
                   ),
                 ),

@@ -2,6 +2,7 @@ import re
 import hashlib
 import secrets
 from datetime import timedelta
+from types import SimpleNamespace
 from decimal import Decimal
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError
@@ -165,13 +166,22 @@ def resolve_segment_fare(origin, destination):
     """
     Prix du tronçon entre deux lieux, identique dans les deux sens.
     Aucun tarif enregistré : le tronçon n'est pas vendable, sans prix de repli.
-    (Lu nulle part pour la vente tant que les places par tronçon n'existent pas.)
     """
     bounds = _segment_bounds(origin, destination)
     fare = SegmentFare.objects.filter(start=bounds[0], end=bounds[1]).first() if bounds else None
     if fare is None:
         raise ImproperlyConfigured(f"Aucun prix n'est défini entre {origin} et {destination} : tronçon non vendable.")
     return fare
+
+
+def trip_fare(trip):
+    """
+    Prix du billet pour un départ : celui du tronçon de la grille entre le départ et l'arrivée du parcours
+    (trajet complet). La règle tarifaire du parcours (resolve_fare) ne fixe plus le prix ; son code est gardé.
+    Pas de prix dans la grille : départ non vendable (ImproperlyConfigured), sans prix de repli.
+    """
+    fare = resolve_segment_fare(trip.route.origin, trip.route.destination)
+    return SimpleNamespace(id=fare.id, name=fare.label, amount=Decimal(fare.amount), currency=fare.currency)
 
 
 def parse_fcfa_amount(value):
@@ -302,7 +312,7 @@ def reserve_booking(
                 f"Le siège {item['seat'].number} n'autorise pas ce type de passager."
             )
 
-    fare = resolve_fare(locked_trip)
+    fare = trip_fare(locked_trip)
     expires_at = timezone.now() + configured_hold_duration()
     guest_token = secrets.token_urlsafe(32) if customer is None else None
     booking = Booking.objects.create(
@@ -404,7 +414,7 @@ def reserve_ticket(*, trip, seat, customer, passenger_name, passenger_phone="", 
         locked_seat.refresh_from_db()
     if locked_seat.status != Seat.Status.AVAILABLE:
         raise ValidationError("Ce siège n'est plus disponible.")
-    fare = resolve_fare(trip)
+    fare = trip_fare(trip)
     expires_at = timezone.now() + configured_hold_duration()
     ticket = Ticket.objects.create(
         trip=trip,

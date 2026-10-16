@@ -5,7 +5,19 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from apps.core.models import FareRule, Location, PaymentMethod, Route, Seat, SystemSetting, Trip, User, Vehicle
+from apps.core.models import (
+    FareRule,
+    LineStop,
+    Location,
+    PaymentMethod,
+    Route,
+    Seat,
+    SegmentFare,
+    SystemSetting,
+    Trip,
+    User,
+    Vehicle,
+)
 from apps.core.payments import settle_booking_payment
 from apps.core.services import generate_trip_seats, reserve_booking
 
@@ -60,6 +72,10 @@ class Command(BaseCommand):
             name="Tarif DÉMO",
             defaults={"rule_type": FareRule.RuleType.STANDARD, "amount": Decimal("1000.00")},
         )
+        # Le prix du billet vient de la grille par tronçon : arrêts DÉMO rangés loin après ceux de la vraie ligne.
+        demo_start, _ = LineStop.objects.get_or_create(location=origin, defaults={"position": 901})
+        demo_end, _ = LineStop.objects.get_or_create(location=destination, defaults={"position": 902})
+        SegmentFare.objects.get_or_create(start=demo_start, end=demo_end, defaults={"amount": 1000})
         SystemSetting.objects.get_or_create(
             key="ticket_hold_minutes", defaults={"value": 15, "description": "Valeur de DÉMO"}
         )

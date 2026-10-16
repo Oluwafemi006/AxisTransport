@@ -218,8 +218,9 @@ def _is_bound_to(proof, target):
 
 def payment_quote(target, payment_method):
     """
-    Montant à payer, calculé uniquement ici : prix + frais du moyen de paiement
-    (fee_percentage, à la charge du client), total arrondi au franc.
+    Montant à payer, calculé uniquement ici : prix + frais client du moyen de paiement
+    (fee_percentage, 0 par défaut : les frais FedaPay sont supportés par l'agence), total arrondi au franc.
+    Avec un taux à 0 : fee_amount = 0 et total = prix ; FedaPay reçoit exactement le prix du billet.
     """
     base = target.amount
     total = (base * (Decimal(100) + payment_method.fee_percentage) / Decimal(100)).quantize(

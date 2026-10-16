@@ -182,7 +182,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
       _selectedMethod = methods.first;
     }
 
-    // Frais et total viennent du serveur (jamais calculés dans l'application).
+    // Montant à payer donné par le serveur (jamais calculé dans l'application) ; sans frais client, égal au prix.
     final tripQuotes = stateData?.tripQuotes ?? const <PaymentQuote>[];
     PaymentQuote? tripQuoteFor(int methodId) {
       for (final item in tripQuotes) {
@@ -200,8 +200,6 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
     final paymentFailed = stateData?.paymentFailed ?? false;
     final currency = trip!.currentFare?.currency ?? 'XOF';
     final baseAmount = pending?.amount ?? draft.totalAmount;
-    final feePercent = _selectedMethod?.feePercentage ?? 0.0;
-    final feeAmount = quote?.feeAmount ?? 0;
     final totalToPay = quote?.total ?? baseAmount;
 
     return Scaffold(
@@ -296,53 +294,6 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                     ),
                   ],
                 ),
-                if (quote != null && feeAmount > 0) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Frais de paiement (${feePercent.toStringAsFixed(1)}%)',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: AxisColors.muted,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        '+ ${formatMoney(feeAmount, currency)}',
-                        style: const TextStyle(
-                          color: AxisColors.navy,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                const Divider(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        quote == null
-                            ? 'Total hors frais de paiement'
-                            : 'Total à payer',
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      formatMoney(totalToPay, currency),
-                      style: const TextStyle(
-                        color: AxisColors.navyDark,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
               ],
             ),
           ),
@@ -368,11 +319,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
               runSpacing: 8,
               children: methods.map((method) {
                 return ChoiceChip(
-                  label: Text(
-                    method.feePercentage > 0
-                        ? '${method.label} (+${method.feePercentage.toStringAsFixed(1)}%)'
-                        : method.label,
-                  ),
+                  label: Text(method.label),
                   selected: _selectedMethod?.id == method.id,
                   onSelected: (selected) {
                     if (selected) setState(() => _selectedMethod = method);

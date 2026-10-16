@@ -291,8 +291,7 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
             if (_sale.quote != null) ...[
               const SizedBox(height: 10),
               Text(
-                'Prix du billet : ${formatMoney(_sale.quote!.amount, _sale.quote!.currency)}'
-                '${_sale.quote!.feeAmount > 0 ? ' · Frais de paiement : ${formatMoney(_sale.quote!.feeAmount, _sale.quote!.currency)}' : ''}',
+                'Prix du billet : ${formatMoney(_sale.quote!.amount, _sale.quote!.currency)}',
                 style: const TextStyle(color: AxisColors.muted),
               ),
             ],

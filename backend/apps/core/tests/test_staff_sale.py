@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.core import payments
-from apps.core.models import Booking, FareRule, PaymentAttempt, PaymentMethod, PaymentReceipt, Seat, Ticket, Trip, User
+from apps.core.models import Booking, PaymentAttempt, PaymentMethod, PaymentReceipt, Seat, SegmentFare, Ticket, Trip, User
 from apps.core.services import generate_trip_seats, release_expired_holds
 
 from .factories import build_operational_context
@@ -111,7 +111,7 @@ class StaffSaleTests(APITestCase):
         self.assertEqual(self.sell(key="vente-guichet-1", trip=trip, seat=trip.seats.first()).status_code, 201)
 
     def test_no_fare_means_no_sale_and_no_fallback_price(self):
-        FareRule.objects.all().delete()
+        SegmentFare.objects.all().delete()  # le prix vient de la grille par tronçon
         self.assertEqual(self.sell().status_code, 400)
         self.assertEqual(Booking.objects.count(), 0)
         (trip,) = self.client.get(f"{SALES}options/").json()["trips"]

@@ -28,7 +28,7 @@ from .models import (
     SegmentFareChange,
 )
 from .payments import ONLINE_PROVIDERS, payment_quote
-from .services import boarding_lead_minutes, boarding_time, rental_is_available, resolve_fare
+from .services import boarding_lead_minutes, boarding_time, rental_is_available, trip_fare
 
 
 def public_ticket_url(ticket):
@@ -216,7 +216,7 @@ class TripSerializer(serializers.ModelSerializer):
 
     def get_current_fare(self, obj):
         try:
-            fare = resolve_fare(obj)
+            fare = trip_fare(obj)
         except ImproperlyConfigured:
             return None
         return {"id": fare.id, "name": fare.name, "amount": fare.amount, "currency": fare.currency}

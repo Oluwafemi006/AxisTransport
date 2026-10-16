@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.core import payments
-from apps.core.models import Booking, FareRule, PaymentAttempt, PaymentMethod, Seat
+from apps.core.models import Booking, PaymentAttempt, PaymentMethod, Seat, SegmentFare
 
 from .factories import build_operational_context
 from .test_payment_security import FEDAPAY_SETTINGS
@@ -70,7 +70,7 @@ class SinglePayButtonTests(APITestCase):
             self.assertEqual(self.client.get(self.quotes_url, {"passengers": value}).status_code, 400)
 
     def test_trip_without_fare_has_no_quote_and_no_fallback(self):
-        FareRule.objects.all().delete()
+        SegmentFare.objects.all().delete()  # le prix vient de la grille par tronçon
         self.assertEqual(self.client.get(self.quotes_url).status_code, 400)
 
     # ── Double clic

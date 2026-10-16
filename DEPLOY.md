@@ -181,7 +181,16 @@ Ces dix prix ont été fournis par l'équipe et **restent à confirmer par la di
 
 - Chargement : commande `python manage.py load_segment_fares`, aussi lancée par `bootstrap_axis` à chaque démarrage. Elle n'ajoute que ce qui manque : un prix déjà présent (modifié par l'administrateur) n'est jamais écrasé. Les arrêts Savè, Kétou et Porto-Novo, s'ils n'existent pas, sont créés **inactifs** (invisibles des clients). Aucun compte n'est créé.
 - Modification : portail `/admin`, onglet « Tarifs par tronçon » (administrateur uniquement), avec confirmation et historique (qui, quand, ancien et nouveau prix).
-- **Pas encore utilisé pour la vente** : tant que les places par tronçon n'existent pas (étape 3), les billets se vendent sur le trajet entier, au tarif du parcours (« Tarifs & règles »).
+- **Prix de vente du trajet complet** (lot 2) : un départ se vend au prix du tronçon entre le départ et l'arrivée de son parcours (Parakou ↔ Cotonou : 7 500). La règle tarifaire du parcours (« Tarifs & règles ») ne fixe plus le prix ; elle reste enregistrée. Un parcours sans prix dans la grille n'est pas vendable. La vente d'un tronçon intermédiaire n'est pas ouverte (places par tronçon : étape 3).
+- Les arrêts Savè, Kétou et Porto-Novo restent **inactifs** : absents des listes de villes lues par le site et les apps, jusqu'à ce que l'administrateur les active.
+- Une réservation ou un billet garde le prix enregistré au moment de la vente, même si la grille change ensuite.
+
+### Montant payé par le client (décision de la direction, lot 2)
+
+- Le montant affiché au client est celui qu'il paie. Axis envoie à FedaPay exactement le prix du billet ; les frais FedaPay sont supportés par l'agence.
+- Le taux de frais client de chaque moyen de paiement vaut 0 par défaut (migration `0012_client_fee_zero`, puis `bootstrap_axis`). Il reste modifiable par l'administrateur (`/django-admin/`, moyens de paiement) ; s'il est relevé, le bouton « Payer » affiche le montant réellement débité.
+- Le web, les apps et le billet n'affichent plus de ligne « Frais de paiement » ni « Total ». L'API garde ses champs : `fee_amount` = 0 et `total` = prix.
+- Une transaction FedaPay créée avant cette migration avec l'ancien total (prix + frais) ne correspond plus au montant dû : son paiement est refusé et inscrit dans les incidents de paiement, à rembourser à la main.
 
 ## 2 quater. Une seule application mobile (clients et personnel)
 
@@ -453,9 +462,9 @@ Limites : la sauvegarde reste sur le même serveur (une copie hors du serveur es
 ### 5.7 Aucune donnée de démonstration ; compte administrateur réel
 
 - Ne jamais lancer `seed_demo` sur le serveur. La commande refuse de tourner quand le debug est coupé, et `compose.vps.yaml` le fixe à `false`.
-- Au premier démarrage, `bootstrap_axis` crée seulement : les lieux Cotonou et Parakou, leurs deux itinéraires, le véhicule « Yutong » sans capacité, le moyen de paiement FedaPay, des réglages vides. Aucun compte de démonstration, aucun tarif, aucun départ.
+- Au premier démarrage, `bootstrap_axis` crée seulement : les lieux Cotonou et Parakou, leurs deux itinéraires, le véhicule « Yutong » sans capacité, le moyen de paiement FedaPay sans frais client, des réglages vides, les arrêts de la ligne et la grille des 10 prix par tronçon (section 2 ter ; Savè, Kétou et Porto-Novo créés inactifs). Aucun compte de démonstration, aucun départ.
 - Le compte administrateur est créé au premier démarrage à partir de `AXIS_ADMIN_USERNAME` et `AXIS_ADMIN_PASSWORD`, saisis dans `.env.vps` sur le serveur. Une fois connecté une première fois, vider `AXIS_ADMIN_PASSWORD` du fichier (le compte existe déjà, la variable ne sert plus).
-- À saisir ensuite dans le portail `/admin` avant toute vente : capacité du véhicule, départs, tarifs, durée de blocage d'un siège (`ticket_hold_minutes`), téléphone et WhatsApp de contact.
+- À saisir ensuite dans le portail `/admin` avant toute vente : capacité du véhicule, départs, durée de blocage d'un siège (`ticket_hold_minutes`), téléphone et WhatsApp de contact.
 
 ### 5.8 Le site est servi par le VPS ; et le site Vercel de démonstration ?
 
