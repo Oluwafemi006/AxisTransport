@@ -433,6 +433,12 @@ class TicketViewSet(viewsets.ModelViewSet):
         return queryset
 
     def get_permissions(self):
+        # Les actions ayant leurs propres règles d'accès les gardent : cette méthode remplace
+        # sinon celles déclarées sur l'action (défaut corrigé : scan et changement d'état ouverts à tout compte).
+        if self.action == "validate_qr":
+            return [IsControllerOrAdmin()]
+        if self.action == "transition":
+            return [IsOperationsStaff()]
         # Vente et encaissement : client connecté (ses propres billets), guichet ou admin.
         if self.action in {"create", "pay"}:
             return [IsClientCounterOrAdmin()]
