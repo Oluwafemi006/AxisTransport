@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/formatters.dart';
 import '../../../core/theme.dart';
 import '../../../core/models.dart';
+import '../../../shared/payment_link.dart';
 import '../../../shared/widgets.dart';
 import '../../passengers/domain/passenger.dart';
 import '../application/booking_draft.dart';
@@ -60,10 +60,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
   }
 
   Future<void> _openPaymentPage(String url) async {
-    final opened = await launchUrl(
-      Uri.parse(url),
-      mode: LaunchMode.externalApplication,
-    );
+    final opened = await openPaymentPage(Uri.parse(url));
     if (!opened && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
