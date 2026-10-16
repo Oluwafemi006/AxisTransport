@@ -126,6 +126,10 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "parcel_tracking": os.environ.get("AXIS_PARCEL_TRACKING_RATE", "20/min"),
         "public_ticket": os.environ.get("AXIS_PUBLIC_TICKET_RATE", "60/min"),
+        # Connexion et inscription : blocage temporaire au-delà de ces seuils (propositions, réglables).
+        "login_account": os.environ.get("AXIS_LOGIN_RATE_ACCOUNT", "10/hour"),
+        "login_address": os.environ.get("AXIS_LOGIN_RATE_ADDRESS", "30/min"),
+        "register_address": os.environ.get("AXIS_REGISTER_RATE_ADDRESS", "10/hour"),
     },
     # Nombre de proxys de confiance devant l'API (pour lire la vraie adresse IP du client).
     "NUM_PROXIES": int(os.environ["AXIS_NUM_PROXIES"]) if os.environ.get("AXIS_NUM_PROXIES") else None,

@@ -55,6 +55,9 @@ Points d'attention :
 | `AXIS_ADMIN_USERNAME`, `AXIS_ADMIN_PASSWORD`, `AXIS_ADMIN_EMAIL` | Compte administrateur créé au premier `bootstrap_axis`. | Mot de passe fort, unique |
 | `AXIS_PARCEL_TRACKING_RATE` | Limite du suivi de colis par adresse IP. | `20/min` |
 | `AXIS_PUBLIC_TICKET_RATE` | Limite de lecture de la page publique d'un billet par adresse IP. La page appelle l'API depuis le navigateur du visiteur, pas depuis le serveur du site. | `60/min` |
+| `AXIS_LOGIN_RATE_ACCOUNT` | Tentatives de connexion par identifiant, toutes adresses confondues. Au-delà : blocage temporaire, réponse « Trop de tentatives, réessayez dans X minutes ». | `10/hour` (proposition) |
+| `AXIS_LOGIN_RATE_ADDRESS` | Tentatives de connexion par adresse IP, tous identifiants confondus. Élevé à dessein : de nombreux abonnés mobiles peuvent partager une même adresse. | `30/min` (proposition) |
+| `AXIS_REGISTER_RATE_ADDRESS` | Créations de compte client par adresse IP. | `10/hour` (proposition) |
 | `AXIS_PAYMENT_RECONCILE_ENABLED` | Interrupteur du rattrapage des paiements jamais confirmés (commande `reconcile_payments`). | `true` |
 | `AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES` | Durée pendant laquelle une transaction créée est réinterrogée chez FedaPay. | `1440` (24 h, durée de validité observée du lien de paiement) |
 | `AXIS_PAYMENT_RECONCILE_BATCH` | Nombre maximal de transactions interrogées par passage. | `20` |
@@ -76,7 +79,7 @@ Ces points ne sont pas implémentés. Ils sont à traiter avant d'ouvrir le back
 | Réglages HTTPS (`SECURE_PROXY_SSL_HEADER`, redirection HTTPS, HSTS, cookies `Secure`) | Aucun n'est défini. |
 | Fichiers envoyés (`/media/`) | Servis uniquement en debug. Les pièces d'identité de location demandent un stockage privé. |
 | Cache partagé entre machines | Le cache est un dossier local (`AXIS_CACHE_DIR`), commun aux processus d'une même machine. Si l'API tourne sur plusieurs machines, chaque machine compte la limite du suivi de colis séparément : il faudra alors un cache commun (Redis). |
-| Limite de requêtes sur la connexion, l'inscription et la réservation | Absente : seul le suivi de colis est limité. |
+| Limite de requêtes sur la réservation | Absente. La connexion, l'inscription, le suivi de colis et la page publique du billet sont limités. |
 | Expiration des sièges | La commande `expire_ticket_holds` doit être planifiée chaque minute. |
 | Rattrapage des paiements | La commande `reconcile_payments` doit être planifiée (chaque minute). Sans elle, un paiement dont le webhook est perdu n'est confirmé que si le client revient. |
 | Configuration de lancement | `compose.yaml` est une configuration de développement (`DEBUG=true`, `ALLOWED_HOSTS` contenant `*`, mot de passe PostgreSQL `axis`). Ne pas l'utiliser telle quelle. |
@@ -170,6 +173,29 @@ Ces dix prix ont été fournis par l'équipe et **restent à confirmer par la di
 - Chargement : commande `python manage.py load_segment_fares`, aussi lancée par `bootstrap_axis` à chaque démarrage. Elle n'ajoute que ce qui manque : un prix déjà présent (modifié par l'administrateur) n'est jamais écrasé. Les arrêts Savè, Kétou et Porto-Novo, s'ils n'existent pas, sont créés **inactifs** (invisibles des clients). Aucun compte n'est créé.
 - Modification : portail `/admin`, onglet « Tarifs par tronçon » (administrateur uniquement), avec confirmation et historique (qui, quand, ancien et nouveau prix).
 - **Pas encore utilisé pour la vente** : tant que les places par tronçon n'existent pas (étape 3), les billets se vendent sur le trajet entier, au tarif du parcours (« Tarifs & règles »).
+
+## 2 quater. Une seule application mobile (clients et personnel)
+
+L'application « Axis Transport » (`mobile-flutter`, identifiant Android `com.axistransport.axis_transport_flutter`) sert désormais aux clients et au personnel. Après connexion, l'interface dépend uniquement du rôle renvoyé par le serveur : client → billets, colis, location ; guichet, contrôleur ou administrateur → Accueil, Scanner, Vendre, Profil. L'inscription ne crée que des comptes clients.
+
+**APK déjà installés**
+
+- Les clients mettent à jour « Axis Transport » à la place de l'ancienne version.
+- L'ancienne application « Axis Staff » (`com.axistransport.staff`) reste installée et continue de fonctionner : l'API n'a pas changé. Le personnel installe « Axis Transport », s'y connecte, puis **désinstalle « Axis Staff » à la main**.
+- Le dossier `mobile-staff` est conservé tant que l'application unique n'a pas été essayée sur téléphone.
+
+**Invitation du personnel**
+
+- Un seul lien de téléchargement pour tout le monde.
+- Le serveur n'envoie aujourd'hui **aucun e-mail**. L'administrateur crée le compte (portail `/admin`, « Équipe & rôles ») et transmet lui-même l'identifiant et le mot de passe.
+
+**À corriger avant publication sur le Play Store**
+
+| Point | État |
+|---|---|
+| HTTP non chiffré autorisé (`android:usesCleartextTraffic="true"` dans `mobile-flutter/android/app/src/main/AndroidManifest.xml`) | À passer à `false` une fois l'API en HTTPS |
+| Signature avec la clé de débogage (`signingConfig = signingConfigs.getByName("debug")` dans `mobile-flutter/android/app/build.gradle.kts`) | Une vraie clé de signature est nécessaire |
+| Permission caméra déclarée pour tous les utilisateurs | Demandée seulement à l'ouverture du scanner (personnel) ; visible sur la fiche Play Store |
 
 ## 3. À ne jamais faire en production
 

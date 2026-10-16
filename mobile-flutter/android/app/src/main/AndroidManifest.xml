@@ -1,5 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Scanner des billets (personnel). Demandée à l'ouverture du scanner, jamais au lancement. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <application
         android:label="Axis Transport"
         android:name="${applicationName}"

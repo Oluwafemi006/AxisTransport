@@ -26,6 +26,10 @@ class SessionStore {
   Future<void> setActiveClient(int userId) =>
       _storage.write(key: _activeOwner, value: 'client:$userId');
 
+  /// Espace local d'un membre du personnel : distinct de celui de tout client du même téléphone.
+  Future<void> setActiveStaff(int userId) =>
+      _storage.write(key: _activeOwner, value: 'staff:$userId');
+
   Future<String?> readAccess() => _storage.read(key: _access);
   Future<String?> readRefresh() => _storage.read(key: _refresh);
 

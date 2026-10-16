@@ -46,6 +46,8 @@ dependencies:
   path: ^1.9.1
   share_plus: ^13.3.1
   url_launcher: ^6.3.3
+  # Lecture des QR codes des billets (personnel uniquement ; la caméra n'est ouverte qu'à l'écran Scanner).
+  mobile_scanner: ^7.4.2
   pdf: ^3.13.1
 
 dev_dependencies:
