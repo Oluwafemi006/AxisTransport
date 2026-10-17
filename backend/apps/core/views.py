@@ -38,6 +38,9 @@ from .models import (
     SystemSetting,
     Ticket,
     TicketStatusHistory,
+    AgencyProfile,
+    AgencySettingChange,
+    Tax,
     Transaction,
     Trip,
     User,
@@ -58,6 +61,9 @@ from .permissions import (
 from .serializers import (
     PaymentIncidentSerializer,
     ManualTicketChangeSerializer,
+    AgencyProfileSerializer,
+    AgencySettingChangeSerializer,
+    TaxSerializer,
     SegmentFareChangeSerializer,
     SegmentFareSerializer,
     BookingCreateSerializer,
@@ -604,6 +610,77 @@ class SegmentFareChangeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     permission_classes = [IsAxisAdmin]
 
 
+class AgencyProfileView(APIView):
+    """Page « Agence et taxes » : informations de l'agence, administrateur uniquement, chaque modification journalisée."""
+
+    permission_classes = [IsAxisAdmin]
+
+    def get(self, request):
+        return Response(AgencyProfileSerializer(AgencyProfile.current()).data)
+
+    @transaction.atomic
+    def patch(self, request):
+        profile = AgencyProfile.objects.select_for_update().get(pk=AgencyProfile.current().pk)
+        before = {field: getattr(profile, field) for field in AgencyProfile.EDITABLE_FIELDS}
+        serializer = AgencyProfileSerializer(profile, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        after = {**before, **serializer.validated_data}
+        if after != before:
+            serializer.save(updated_by=request.user)
+            AgencySettingChange.objects.create(
+                kind=AgencySettingChange.Kind.AGENCY,
+                label="Informations de l'agence",
+                old_value=before,
+                new_value=after,
+                changed_by=request.user,
+            )
+        return Response(AgencyProfileSerializer(profile).data)
+
+
+class TaxViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    """Taxes des billets : administrateur uniquement, sans suppression (désactiver à la place), journalisées."""
+
+    queryset = Tax.objects.all()
+    serializer_class = TaxSerializer
+    permission_classes = [IsAxisAdmin]
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    @staticmethod
+    def _snapshot(tax):
+        return {"name": tax.name, "rate": str(tax.rate), "active": tax.active, "included": tax.included}
+
+    def perform_create(self, serializer):
+        tax = serializer.save(updated_by=self.request.user)
+        AgencySettingChange.objects.create(
+            kind=AgencySettingChange.Kind.TAX,
+            label=f"Taxe {tax.name}",
+            old_value=None,
+            new_value=self._snapshot(tax),
+            changed_by=self.request.user,
+        )
+
+    def perform_update(self, serializer):
+        before = self._snapshot(serializer.instance)
+        tax = serializer.save(updated_by=self.request.user)
+        after = self._snapshot(tax)
+        if after != before:
+            AgencySettingChange.objects.create(
+                kind=AgencySettingChange.Kind.TAX,
+                label=f"Taxe {tax.name}",
+                old_value=before,
+                new_value=after,
+                changed_by=self.request.user,
+            )
+
+
+class AgencySettingChangeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Journal de la page « Agence et taxes », en lecture seule, administrateur uniquement."""
+
+    queryset = AgencySettingChange.objects.select_related("changed_by")
+    serializer_class = AgencySettingChangeSerializer
+    permission_classes = [IsAxisAdmin]
+
+
 class ManualTicketChangeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     """Journal des statuts de billet forcés à la main, en lecture seule, administrateur uniquement."""
 
@@ -843,6 +920,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                 customer=customer,
                 contact_phone=data.get("contact_phone", ""),
                 contact_email=data.get("contact_email", ""),
+                buyer_ifu=data.get("buyer_ifu", ""),
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc)
@@ -1366,6 +1444,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                         channel=Ticket.Channel.COUNTER,
                         sold_by=request.user,
                         idempotency_key=key,
+                        buyer_ifu=str(request.data.get("buyer_ifu") or ""),
                     )
                 # Espèces : réservation et émission dans la même transaction, donc jamais de billet à moitié créé.
                 if not online and booking.status == Booking.Status.HELD:

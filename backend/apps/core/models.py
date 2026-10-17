@@ -339,6 +339,8 @@ class Booking(TimeStampedModel):
     reservation_expires_at = models.DateTimeField(null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     currency = models.CharField(max_length=3, default="XOF")
+    # IFU de l'acheteur, facultatif, saisi à la réservation ; imprimé sur le billet s'il est rempli.
+    buyer_ifu = models.CharField(max_length=30, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -410,6 +412,10 @@ class Ticket(TimeStampedModel):
     reservation_expires_at = models.DateTimeField(null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     currency = models.CharField(max_length=3, default="XOF")
+    # Taxes comprises dans le prix (TTC), figées à la vente : un changement de taux ne touche pas ce billet.
+    # Vide pour un billet vendu avant l'enregistrement des taxes.
+    price_excl_tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    tax_lines = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -755,3 +761,71 @@ class PaymentIncident(TimeStampedModel):
     def __str__(self):
         return f"{self.provider}:{self.external_id or '?'} – {self.reason[:60]}"
 
+
+class AgencyProfile(TimeStampedModel):
+    """
+    Informations légales de l'agence, imprimées en bas du billet. Une seule fiche (pk = 1).
+    Toutes vides par défaut : saisies uniquement par l'administrateur, jamais dans le code.
+    Les comptes bancaires ne sont jamais imprimés ni exposés publiquement.
+    """
+
+    legal_name = models.CharField("Raison sociale", max_length=200, blank=True)
+    ifu = models.CharField("IFU", max_length=40, blank=True)
+    rccm = models.CharField("RCCM", max_length=80, blank=True)
+    capital = models.CharField("Capital", max_length=80, blank=True)
+    address = models.CharField("Adresse", max_length=255, blank=True)
+    phones = models.CharField("Téléphones", max_length=200, blank=True)
+    email = models.CharField("E-mail", max_length=200, blank=True)
+    bank_accounts = models.TextField("Comptes bancaires", blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+
+    PUBLIC_FIELDS = ["legal_name", "ifu", "rccm", "capital", "address", "phones", "email"]
+    EDITABLE_FIELDS = PUBLIC_FIELDS + ["bank_accounts"]
+
+    @classmethod
+    def current(cls):
+        profile, _ = cls.objects.get_or_create(pk=1)
+        return profile
+
+    def __str__(self):
+        return self.legal_name or "Agence (à renseigner)"
+
+
+class Tax(TimeStampedModel):
+    """Taxe applicable aux billets. « Incluse » : comprise dans le prix affiché (TTC), rien ne s'ajoute."""
+
+    name = models.CharField(max_length=60)
+    rate = models.DecimalField(max_digits=5, decimal_places=2, help_text="Taux en pourcentage, ex. 18.00")
+    active = models.BooleanField(default=True)
+    included = models.BooleanField(default=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.CheckConstraint(condition=Q(rate__gte=0) & Q(rate__lt=100), name="tax_rate_range"),
+        ]
+
+    def __str__(self):
+        return f"{self.name} {self.rate} %"
+
+
+class AgencySettingChange(models.Model):
+    """Journal des modifications de la page « Agence et taxes » : qui, quand, ancien et nouveau contenu."""
+
+    class Kind(models.TextChoices):
+        AGENCY = "AGENCY", "Informations de l'agence"
+        TAX = "TAX", "Taxe"
+
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    label = models.CharField(max_length=120)
+    old_value = models.JSONField(null=True, blank=True)
+    new_value = models.JSONField()
+    changed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    changed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-changed_at", "-id"]
+
+    def __str__(self):
+        return f"{self.changed_at:%Y-%m-%d %H:%M} {self.label}"

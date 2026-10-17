@@ -83,6 +83,7 @@ export interface Seat {
 export interface Ticket {
   id: number;
   reference: string;
+  print_info?: TicketPrintInfo;
   trip: number;
   trip_detail: Trip;
   seat: number;
@@ -200,6 +201,56 @@ export interface SegmentFareChange {
   old_amount: number | null;
   new_amount: number;
   changed_by_name: string;
+}
+
+export interface AgencyInfo {
+  legal_name: string;
+  ifu: string;
+  rccm: string;
+  capital: string;
+  address: string;
+  phones: string;
+  email: string;
+}
+
+export interface AgencyProfile extends AgencyInfo {
+  bank_accounts: string;
+  updated_at: string;
+  updated_by_name: string;
+}
+
+export interface Tax {
+  id: number;
+  name: string;
+  rate: string;
+  active: boolean;
+  included: boolean;
+  updated_at: string;
+}
+
+export interface AgencySettingChange {
+  id: number;
+  changed_at: string;
+  kind: "AGENCY" | "TAX";
+  kind_display: string;
+  label: string;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown>;
+  changed_by_name: string;
+}
+
+export interface TicketPrintInfo {
+  title: string;
+  paid: boolean;
+  sale: string;
+  payment_mode: string;
+  buyer_ifu: string;
+  boarding_place: string;
+  price_incl_tax: number;
+  price_excl_tax: number | null;
+  tax_lines: Array<{ name: string; rate: string; amount: number }>;
+  agency: AgencyInfo;
+  conditions: string;
 }
 
 export interface ManualTicketChange {
