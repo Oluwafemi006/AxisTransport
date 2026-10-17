@@ -67,6 +67,8 @@ class VerifiedPayment:
     amount: Decimal
     currency: str = ""
     metadata: dict = field(default_factory=dict)
+    # Moyen de paiement réellement utilisé, lu chez le prestataire (FedaPay : « mode ») ; vide s'il est absent.
+    mode: str = ""
 
 
 @dataclass
@@ -155,6 +157,7 @@ def verify_fedapay_transaction(transaction_id):
         amount=amount,
         currency=currency_iso,
         metadata=metadata if isinstance(metadata, dict) else {},
+        mode=str(data.get("mode") or "").strip()[:40],
     )
 
 
@@ -394,6 +397,7 @@ def _settle(target, *, payment_method, external_reference, actor, source, proof=
                 receipt = PaymentReceipt.objects.create(
                     provider=proof.provider,
                     external_id=proof.external_id,
+                    provider_mode=proof.mode,
                     amount=proof.amount,
                     currency=locked.currency,
                     source=source,
