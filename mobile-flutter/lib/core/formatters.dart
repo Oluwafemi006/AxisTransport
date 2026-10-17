@@ -8,6 +8,8 @@ String formatDateTime(DateTime value) => _dateTime.format(value);
 
 String formatFullDateTime(DateTime value) => _fullDateTime.format(value);
 
+/// Le franc CFA s'affiche « FCFA », jamais avec son code « XOF ».
 String formatMoney(num amount, [String currency = 'XOF']) {
-  return '${_money.format(amount)} $currency';
+  final unit = currency == 'XOF' ? 'FCFA' : currency;
+  return '${_money.format(amount)} $unit';
 }

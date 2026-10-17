@@ -405,7 +405,10 @@ void main() {
     expect(find.text('Siège 3B'), findsOneWidget);
     // Une seule action : le montant affiché est celui payé, donné par le serveur avant tout appui.
     expect(find.text('Prix des billets'), findsOneWidget);
-    expect(find.textContaining(RegExp(r'^Payer 10\s000 XOF$')), findsOneWidget);
+    expect(
+      find.textContaining(RegExp(r'^Payer 10\s000 FCFA$')),
+      findsOneWidget,
+    );
     expect(find.text('Valider et Bloquer les sièges'), findsNothing);
     expect(find.text('Total à payer'), findsNothing);
     expect(find.textContaining('Frais'), findsNothing);

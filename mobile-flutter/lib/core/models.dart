@@ -331,6 +331,126 @@ class PaymentCheckout {
   }
 }
 
+/// Informations de l'agence imprimées sur le billet. Vide = « À renseigner ». Jamais de comptes bancaires.
+class AgencyInfo {
+  const AgencyInfo({
+    this.legalName = '',
+    this.ifu = '',
+    this.rccm = '',
+    this.address = '',
+    this.phones = '',
+    this.email = '',
+  });
+
+  final String legalName;
+  final String ifu;
+  final String rccm;
+  final String address;
+  final String phones;
+  final String email;
+
+  factory AgencyInfo.fromJson(Map<String, dynamic> json) => AgencyInfo(
+    legalName: json['legal_name'] as String? ?? '',
+    ifu: json['ifu'] as String? ?? '',
+    rccm: json['rccm'] as String? ?? '',
+    address: json['address'] as String? ?? '',
+    phones: json['phones'] as String? ?? '',
+    email: json['email'] as String? ?? '',
+  );
+
+  Map<String, dynamic> toJson() => {
+    'legal_name': legalName,
+    'ifu': ifu,
+    'rccm': rccm,
+    'address': address,
+    'phones': phones,
+    'email': email,
+  };
+}
+
+class TaxLine {
+  const TaxLine({required this.name, required this.rate, required this.amount});
+
+  final String name;
+  final String rate;
+  final num amount;
+
+  factory TaxLine.fromJson(Map<String, dynamic> json) => TaxLine(
+    name: json['name'] as String? ?? '',
+    rate: json['rate']?.toString() ?? '',
+    amount: asNum(json['amount']),
+  );
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'rate': rate,
+    'amount': amount,
+  };
+}
+
+/// Données imprimées sur le billet, préparées par le serveur ; l'application ne calcule rien.
+class TicketPrintInfo {
+  const TicketPrintInfo({
+    this.paid = false,
+    this.sale = '',
+    this.paymentMode = '',
+    this.buyerIfu = '',
+    this.boardingPlace = '',
+    this.priceInclTax = 0,
+    this.priceExclTax,
+    this.taxLines = const [],
+    this.agency = const AgencyInfo(),
+    this.conditions = '',
+  });
+
+  final bool paid;
+  final String sale;
+  final String paymentMode;
+  final String buyerIfu;
+  final String boardingPlace;
+  final num priceInclTax;
+
+  /// Prix HT : fourni seulement si l'IFU de l'agence est renseigné.
+  final num? priceExclTax;
+  final List<TaxLine> taxLines;
+  final AgencyInfo agency;
+  final String conditions;
+
+  factory TicketPrintInfo.fromJson(Map<String, dynamic> json) =>
+      TicketPrintInfo(
+        paid: json['paid'] as bool? ?? false,
+        sale: json['sale'] as String? ?? '',
+        paymentMode: json['payment_mode'] as String? ?? '',
+        buyerIfu: json['buyer_ifu'] as String? ?? '',
+        boardingPlace: json['boarding_place'] as String? ?? '',
+        priceInclTax: asNum(json['price_incl_tax']),
+        priceExclTax: json['price_excl_tax'] == null
+            ? null
+            : asNum(json['price_excl_tax']),
+        taxLines: [
+          for (final item in (json['tax_lines'] as List<dynamic>? ?? const []))
+            TaxLine.fromJson(item as Map<String, dynamic>),
+        ],
+        agency: json['agency'] is Map<String, dynamic>
+            ? AgencyInfo.fromJson(json['agency'] as Map<String, dynamic>)
+            : const AgencyInfo(),
+        conditions: json['conditions'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+    'paid': paid,
+    'sale': sale,
+    'payment_mode': paymentMode,
+    'buyer_ifu': buyerIfu,
+    'boarding_place': boardingPlace,
+    'price_incl_tax': priceInclTax,
+    'price_excl_tax': priceExclTax,
+    'tax_lines': [for (final line in taxLines) line.toJson()],
+    'agency': agency.toJson(),
+    'conditions': conditions,
+  };
+}
+
 class Ticket {
   const Ticket({
     required this.id,
@@ -346,6 +466,7 @@ class Ticket {
     required this.currency,
     this.reservationExpiresAt,
     this.publicUrl = '',
+    this.printInfo,
   });
 
   final int id;
@@ -364,6 +485,9 @@ class Ticket {
   /// Adresse publique du billet, fournie par le serveur (vide si absente).
   final String publicUrl;
 
+  /// Données d'impression (vendeur, mode de paiement, agence, taxes) ; absentes sur un ancien billet en cache.
+  final TicketPrintInfo? printInfo;
+
   bool get isConfirmed =>
       status == 'ISSUED' || status == 'CHECKED' || status == 'COMPLETED';
 
@@ -372,6 +496,9 @@ class Ticket {
       id: json['id'] as int,
       reference: json['reference'] as String? ?? '',
       publicUrl: json['public_url'] as String? ?? '',
+      printInfo: json['print_info'] is Map<String, dynamic>
+          ? TicketPrintInfo.fromJson(json['print_info'] as Map<String, dynamic>)
+          : null,
       trip: Trip.fromJson(json['trip_detail'] as Map<String, dynamic>),
       seat: Seat.fromJson(json['seat_detail'] as Map<String, dynamic>),
       passengerName: json['passenger_name'] as String? ?? '',
@@ -391,6 +518,7 @@ class Ticket {
     'id': id,
     'reference': reference,
     'public_url': publicUrl,
+    if (printInfo != null) 'print_info': printInfo!.toJson(),
     'trip_detail': trip.toJson(),
     'seat_detail': seat.toJson(),
     'passenger_name': passengerName,
