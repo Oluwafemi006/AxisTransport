@@ -104,6 +104,7 @@ from .payments import (
     verify_fedapay_signature,
 )
 from .services import (
+    ReservationsClosed,
     cancel_held_booking,
     generate_trip_seats,
     hash_guest_token,
@@ -118,7 +119,10 @@ from .services import (
 )
 
 
-def service_validation_error(exc):
+def service_validation_error(exc, *, staff=False):
+    # Réservations fermées (durée de blocage non saisie) : message sans texte technique, adapté au public.
+    if isinstance(exc, ReservationsClosed):
+        return ValidationError({"detail": ReservationsClosed.STAFF_MESSAGE if staff else ReservationsClosed.CLIENT_MESSAGE})
     # Statut du prestataire transmis tel quel, pour que les clients distinguent « en attente » d'un échec.
     if isinstance(exc, PaymentNotApproved):
         return ValidationError({"detail": exc.messages[0], "payment_status": exc.provider_status})
@@ -776,7 +780,7 @@ class TicketViewSet(viewsets.ModelViewSet):
                 channel=channel,
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
-            raise service_validation_error(exc)
+            raise service_validation_error(exc, staff=request.user.role in {User.Role.COUNTER, User.Role.ADMIN})
         return Response(TicketSerializer(ticket, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -929,7 +933,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                 buyer_ifu=data.get("buyer_ifu", ""),
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
-            raise service_validation_error(exc)
+            raise service_validation_error(exc, staff=request.user.is_authenticated and request.user.role != User.Role.CLIENT)
         booking = self.queryset.get(pk=booking.pk)
         extra = {"guest_access_token": guest_token} if guest_token else {}
         return Response(
@@ -1321,7 +1325,7 @@ class StaffTicketViewSet(viewsets.GenericViewSet):
                     external_reference=request.data.get("external_reference", ""),
                 )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
-            raise service_validation_error(exc)
+            raise service_validation_error(exc, staff=True)
         ticket, payment = settlement.tickets[0], settlement.transactions[0]
         return Response(
             {
@@ -1462,7 +1466,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                 raise ValidationError("Vente impossible, réessayez.")
             created = False
         except (DjangoValidationError, ImproperlyConfigured) as exc:
-            raise service_validation_error(exc)
+            raise service_validation_error(exc, staff=True)
 
         booking.refresh_from_db()
         checkout = None

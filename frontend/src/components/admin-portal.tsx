@@ -1,9 +1,10 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone } from "./ui";
+import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone, useActionFeedback } from "./ui";
 import { LoginCard } from "./login-card";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
+import { actionErrorText, counterTripLabel, holdMinutesConfigured } from "@/lib/portal-rules";
 import type { AgencyProfile, AgencySettingChange, FareRule, FeatureFlag, Location, ManualTicketChange, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle } from "@/lib/types";
 
 type AdminTab = "dashboard" | "planning" | "guichet" | "colis" | "flotte" | "tarifs" | "troncons" | "agence" | "paiements" | "equipe";
@@ -24,8 +25,9 @@ const tabs: Array<[AdminTab, string]> = [
   ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["troncons", "Tarifs par tronçon"], ["agence", "Agence et taxes"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
 ];
 
+// Erreur de chargement affichée dans un panneau (les actions d'écriture passent par useActionFeedback).
 function failure(reason: unknown, fallback: string): NoticeState {
-  return { text: reason instanceof Error ? reason.message : fallback, tone: "error" };
+  return { text: actionErrorText(reason, fallback), tone: "error" };
 }
 
 export function AdminPortal() {
@@ -85,6 +87,7 @@ export function AdminPortal() {
         action={<button onClick={() => void load()} className="secondary-button" disabled={loading}>{loading ? "Actualisation…" : "Actualiser"}</button>}
       />
       {error && <Notice notice={{ text: error, tone: "error" }} className="mb-5" />}
+      {dashboard && !holdMinutesConfigured(settings) && <Notice notice={{ text: "Aucune réservation possible : la durée de blocage d’un siège n’est pas saisie. Renseignez-la dans l’onglet « Tarifs & règles », bloc « Blocage d’un siège ».", tone: "error" }} className="mb-5" />}
       {!dashboard ? <Loading /> : (
         <>
           {tab === "dashboard" && <DashboardPanel data={dashboard} trips={trips} />}
@@ -157,23 +160,24 @@ function Metric({ label, value }: { label: string; value: number }) {
 }
 
 function PlanningPanel({ routes, vehicles, trips, onChanged }: { routes: Route[]; vehicles: Vehicle[]; trips: Trip[]; onChanged: () => Promise<void> }) {
+  const feedback = useActionFeedback();
   const [form, setForm] = useState({ route: "", vehicle: "", departure_at: "", arrival_at: "", status: "SCHEDULED", note: "" });
-  const [notice, setNotice] = useState<NoticeState>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     try {
       await apiFetch<Trip>("/trips/", { method: "POST", body: JSON.stringify({ ...form, route: Number(form.route), vehicle: Number(form.vehicle), arrival_at: form.arrival_at || null }) });
-      setNotice({ text: "Trajet ajouté au planning.", tone: "ok" });
+      feedback.success("Trajet ajouté au planning.");
       await onChanged();
-    } catch (reason) { setNotice(failure(reason, "Création impossible.")); }
+    } catch (reason) { feedback.failure(reason, "Le trajet n’a pas été ajouté."); }
   }
 
   async function cancel(trip: Trip) {
     try {
       await apiFetch(`/trips/${trip.id}/`, { method: "PATCH", body: JSON.stringify({ status: "CANCELLED" }) });
+      feedback.success(`Trajet du ${formatDate(trip.departure_at)} annulé.`);
       await onChanged();
-    } catch (reason) { setNotice(failure(reason, "Annulation impossible.")); }
+    } catch (reason) { feedback.failure(reason, "Le trajet n’a pas été annulé."); }
   }
 
   return (
@@ -214,13 +218,13 @@ function PlanningPanel({ routes, vehicles, trips, onChanged }: { routes: Route[]
           <Input label="Arrivée (même jour)" type="datetime-local" value={form.arrival_at} onChange={(value) => setForm({ ...form, arrival_at: value })} required={false} />
           <button className="primary-button w-full">Ajouter au planning</button>
         </form>
-        <Notice notice={notice} />
       </section>
     </div>
   );
 }
 
 export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; payments: PaymentMethod[]; onChanged: () => Promise<void> }) {
+  const feedback = useActionFeedback();
   const [tripId, setTripId] = useState("");
   const [seats, setSeats] = useState<Seat[]>([]);
   const [seat, setSeat] = useState("");
@@ -243,10 +247,10 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
     try {
       const created = await apiFetch<Ticket>("/tickets/", { method: "POST", body: JSON.stringify({ trip: Number(tripId), seat: Number(seat), passenger_name: name, passenger_phone: phone, channel: "COUNTER" }) });
       setTicket(created);
-      setNotice({ text: "Siège bloqué. Enregistrez l’encaissement guichet.", tone: "info" });
+      feedback.success("Siège bloqué. Enregistrez maintenant l’encaissement.");
       setSeat("");
       await Promise.all([onChanged(), loadSeats(tripId)]);
-    } catch (reason) { setNotice(failure(reason, "Vente impossible.")); }
+    } catch (reason) { feedback.failure(reason, "La vente n’a pas été enregistrée."); }
     finally { setBusy(false); }
   }
 
@@ -256,9 +260,9 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
     try {
       const result = await apiFetch<{ ticket: Ticket }>(`/tickets/${ticket.id}/pay/`, { method: "POST", body: JSON.stringify({ payment_method: method.id }) });
       setTicket(result.ticket);
-      setNotice({ text: `Ticket ${result.ticket.reference} émis.`, tone: "ok" });
+      feedback.success(`Billet ${result.ticket.reference} émis.`);
       await Promise.all([onChanged(), loadSeats(tripId)]);
-    } catch (reason) { setNotice(failure(reason, "Encaissement impossible.")); }
+    } catch (reason) { feedback.failure(reason, "L’encaissement n’a pas été enregistré."); }
     finally { setBusy(false); }
   }
 
@@ -276,7 +280,7 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
       <section className="card">
         <SectionHeading eyebrow="Base commune" title="Vendre un billet" />
         <form onSubmit={sell} className="space-y-4">
-          <Select label="Voyage" value={tripId} onChange={(value) => { setTripId(value); setSeat(""); }} options={sellable.map((trip) => [String(trip.id), `${trip.route_detail.label} · ${formatDate(trip.departure_at)}`])} />
+          <Select label="Voyage" value={tripId} onChange={(value) => { setTripId(value); setSeat(""); }} options={sellable.map((trip) => [String(trip.id), counterTripLabel(trip.route_detail.label, formatDate(trip.departure_at), trip.current_fare ? money(trip.current_fare.amount, trip.current_fare.currency) : null)])} />
           <Select label="Siège libre" value={seat} onChange={setSeat} options={seats.filter((item) => item.status === "AVAILABLE").map((item) => [String(item.id), item.number])} />
           <Input label="Nom du passager" value={name} onChange={setName} />
           <Input label="Téléphone" value={phone} onChange={setPhone} required={false} />
@@ -320,9 +324,9 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
 }
 
 function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: Trip[]; onChanged: () => Promise<void> }) {
+  const feedback = useActionFeedback();
   const [assignments, setAssignments] = useState<Record<number, string>>({});
   const [proofs, setProofs] = useState<Record<number, string>>({});
-  const [notice, setNotice] = useState<NoticeState>(null);
 
   async function advance(parcel: Parcel) {
     const next = nextParcelStatus[parcel.status];
@@ -332,9 +336,9 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
     if (next === "PICKED_UP") body.pickup_recipient_identity = proofs[parcel.id];
     try {
       await apiFetch(`/parcels/${parcel.id}/transition/`, { method: "POST", body: JSON.stringify(body) });
-      setNotice(null);
+      feedback.success(`Colis ${parcel.tracking_number} : statut mis à jour.`);
       await onChanged();
-    } catch (reason) { setNotice(failure(reason, "Changement de statut impossible.")); }
+    } catch (reason) { feedback.failure(reason, "Le statut du colis n’a pas été changé."); }
   }
 
   return (
@@ -369,23 +373,22 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
           </table>
         </div>
       )}
-      <Notice notice={notice} />
     </section>
   );
 }
 
 function FleetPanel({ locations, vehicles, onChanged }: { locations: Location[]; vehicles: Vehicle[]; onChanged: () => Promise<void> }) {
+  const feedback = useActionFeedback();
   const [form, setForm] = useState({ category: "BUS", name: "", registration_number: "", capacity: "", base_location: "", rental_daily_rate: "", driver_available: false, state: "ACTIVE", seat_configuration: "" });
-  const [notice, setNotice] = useState<NoticeState>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     try {
       const seatConfiguration = form.seat_configuration.trim() ? JSON.parse(form.seat_configuration) : [];
       await apiFetch("/vehicles/", { method: "POST", body: JSON.stringify({ ...form, seat_configuration: seatConfiguration, capacity: form.capacity ? Number(form.capacity) : null, base_location: form.base_location ? Number(form.base_location) : null, rental_daily_rate: form.rental_daily_rate || null, registration_number: form.registration_number || null }) });
-      setNotice({ text: "Véhicule ajouté.", tone: "ok" });
+      feedback.success("Véhicule ajouté.");
       await onChanged();
-    } catch (reason) { setNotice(failure(reason, "Ajout impossible. Vérifiez notamment le JSON du plan de sièges.")); }
+    } catch (reason) { feedback.failure(reason, "Le véhicule n’a pas été ajouté (vérifiez notamment le plan de sièges)."); }
   }
 
   return (
@@ -410,15 +413,14 @@ function FleetPanel({ locations, vehicles, onChanged }: { locations: Location[];
           {form.category === "RENTAL" && <Input label="Tarif journalier" type="number" value={form.rental_daily_rate} onChange={(value) => setForm({ ...form, rental_daily_rate: value })} required={false} />}
           <button className="primary-button w-full">Ajouter</button>
         </form>
-        <Notice notice={notice} />
       </section>
     </div>
   );
 }
 
 function VehicleEditor({ vehicle, locations, onChanged }: { vehicle: Vehicle; locations: Location[]; onChanged: () => Promise<void> }) {
+  const feedback = useActionFeedback();
   const [editing, setEditing] = useState(false);
-  const [notice, setNotice] = useState<NoticeState>(null);
   const [form, setForm] = useState({ registration_number: vehicle.registration_number || "", capacity: vehicle.capacity ? String(vehicle.capacity) : "", base_location: vehicle.base_location ? String(vehicle.base_location) : "", rental_daily_rate: vehicle.rental_daily_rate || "", state: vehicle.state, seat_configuration: JSON.stringify(vehicle.seat_configuration || [], null, 2) });
 
   useEffect(() => { setForm({ registration_number: vehicle.registration_number || "", capacity: vehicle.capacity ? String(vehicle.capacity) : "", base_location: vehicle.base_location ? String(vehicle.base_location) : "", rental_daily_rate: vehicle.rental_daily_rate || "", state: vehicle.state, seat_configuration: JSON.stringify(vehicle.seat_configuration || [], null, 2) }); }, [vehicle]);
@@ -427,16 +429,17 @@ function VehicleEditor({ vehicle, locations, onChanged }: { vehicle: Vehicle; lo
     try {
       await apiFetch(`/vehicles/${vehicle.id}/`, { method: "PATCH", body: JSON.stringify({ registration_number: form.registration_number || null, capacity: form.capacity ? Number(form.capacity) : null, base_location: form.base_location ? Number(form.base_location) : null, rental_daily_rate: form.rental_daily_rate || null, state: form.state, seat_configuration: form.seat_configuration.trim() ? JSON.parse(form.seat_configuration) : [] }) });
       setEditing(false);
+      feedback.success(`Véhicule ${vehicle.name} enregistré.`);
       await onChanged();
-    } catch (reason) { setNotice(failure(reason, "Mise à jour impossible.")); }
+    } catch (reason) { feedback.failure(reason, `Le véhicule ${vehicle.name} n’a pas été enregistré (vérifiez notamment le plan de sièges).`); }
   }
 
   async function syncSeats() {
     try {
       const result = await apiFetch<{ synced_trips: number }>(`/vehicles/${vehicle.id}/sync-future-seats/`, { method: "POST" });
-      setNotice({ text: `${result.synced_trips} trajet(s) futur(s) sans billet synchronisé(s).`, tone: "ok" });
+      feedback.success(`${result.synced_trips} trajet(s) futur(s) sans billet synchronisé(s).`);
       await onChanged();
-    } catch (reason) { setNotice(failure(reason, "Synchronisation impossible.")); }
+    } catch (reason) { feedback.failure(reason, "Les places n’ont pas été synchronisées."); }
   }
 
   return (
@@ -465,7 +468,6 @@ function VehicleEditor({ vehicle, locations, onChanged }: { vehicle: Vehicle; lo
             <button className="primary-button flex-1" onClick={() => void save()}>Enregistrer</button>
             <button className="secondary-button" onClick={() => setEditing(false)}>Annuler</button>
           </div>
-          <Notice notice={notice} />
         </div>
       ) : (
         <>
@@ -479,7 +481,6 @@ function VehicleEditor({ vehicle, locations, onChanged }: { vehicle: Vehicle; lo
             <button className="secondary-button w-full" onClick={() => setEditing(true)}>Configurer</button>
             {vehicle.category === "BUS" && vehicle.capacity && <button className="text-button" onClick={() => void syncSeats()}>Synchroniser les sièges des trajets futurs</button>}
           </div>
-          <Notice notice={notice} />
         </>
       )}
     </article>
@@ -487,11 +488,11 @@ function VehicleEditor({ vehicle, locations, onChanged }: { vehicle: Vehicle; lo
 }
 
 function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: { routes: Route[]; fares: FareRule[]; flags: FeatureFlag[]; payments: PaymentMethod[]; settings: SystemSetting[]; onChanged: () => Promise<void> }) {
+  const feedback = useActionFeedback();
   const [fare, setFare] = useState({ route: "", name: "", rule_type: "STANDARD", amount: "", advance_days: "" });
   const [setting, setSetting] = useState("");
   const [boardingLead, setBoardingLead] = useState("");
   const [method, setMethod] = useState("");
-  const [notice, setNotice] = useState<NoticeState>(null);
   const [policies, setPolicies] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -506,44 +507,60 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
     event.preventDefault();
     try {
       await apiFetch("/fare-rules/", { method: "POST", body: JSON.stringify({ ...fare, route: Number(fare.route), amount: fare.amount, advance_days: fare.advance_days ? Number(fare.advance_days) : null, currency: "XOF", active: true }) });
-      setNotice({ text: "Tarif enregistré.", tone: "ok" });
+      feedback.success("Règle tarifaire enregistrée.");
       await onChanged();
-    } catch (reason) { setNotice(failure(reason, "Configuration impossible.")); }
+    } catch (reason) { feedback.failure(reason, "La règle tarifaire n’a pas été enregistrée."); }
   }
 
   async function toggle(flag: FeatureFlag) {
     try {
       await apiFetch(`/feature-flags/${flag.id}/`, { method: "PATCH", body: JSON.stringify({ enabled: !flag.enabled }) });
+      feedback.success(`« ${flag.label} » ${flag.enabled ? "désactivée" : "activée"}.`);
       await onChanged();
-    } catch (reason) { setNotice(failure(reason, "Configuration impossible.")); }
+    } catch (reason) { feedback.failure(reason, `« ${flag.label} » n’a pas été modifiée.`); }
   }
 
-  async function saveSetting(key: string, value: unknown, description: string) {
+  // `label` : nom affiché à l'administrateur dans le message de retour.
+  async function saveSetting(key: string, value: unknown, description: string, label: string = description) {
     try {
       const current = settings.find((item) => item.key === key);
       await apiFetch(current ? `/settings/${current.id}/` : "/settings/", { method: current ? "PATCH" : "POST", body: JSON.stringify({ key, value, description }) });
-      setNotice({ text: "Règle enregistrée.", tone: "ok" });
+      feedback.success(`${label} : enregistré.`);
       await onChanged();
-    } catch (reason) { setNotice(failure(reason, "Configuration impossible.")); }
+    } catch (reason) { feedback.failure(reason, `${label} : non enregistré.`); }
   }
 
-  async function saveHold() { await saveSetting("ticket_hold_minutes", Number(setting), "Délai administrable de réservation temporaire"); }
+  async function saveHold() {
+    const minutes = Number(setting);
+    if (!setting.trim() || !Number.isInteger(minutes) || minutes <= 0) {
+      feedback.failure(null, "Blocage d’un siège : non enregistré. Saisissez un nombre entier de minutes, supérieur à zéro.");
+      return;
+    }
+    await saveSetting("ticket_hold_minutes", minutes, "Délai administrable de réservation temporaire", "Blocage d’un siège");
+  }
 
-  async function saveBoardingLead() { await saveSetting("boarding_lead_minutes", Number(boardingLead), "Minutes entre l'embarquement et le départ"); }
+  async function saveBoardingLead() {
+    const minutes = Number(boardingLead);
+    if (!boardingLead.trim() || !Number.isInteger(minutes) || minutes < 0) {
+      feedback.failure(null, "Avance sur l’heure de départ : non enregistrée. Saisissez un nombre entier de minutes.");
+      return;
+    }
+    await saveSetting("boarding_lead_minutes", minutes, "Minutes entre l'embarquement et le départ", "Avance sur l’heure de départ");
+  }
 
   async function addMethod() {
     try {
       await apiFetch("/payment-methods/", { method: "POST", body: JSON.stringify({ code: method.toLowerCase().replace(/[^a-z0-9]+/g, "-"), label: method, active: true }) });
+      feedback.success(`Moyen de paiement « ${method} » ajouté.`);
       setMethod("");
       await onChanged();
-    } catch (reason) { setNotice(failure(reason, "Configuration impossible.")); }
+    } catch (reason) { feedback.failure(reason, `Le moyen de paiement « ${method} » n’a pas été ajouté.`); }
   }
 
   const openPolicies = [["contact_phone", "Téléphone de contact (affiché aux clients)"], ["contact_whatsapp", "Numéro WhatsApp (affiché aux clients, format international)"], ["ticket_cancellation_policy", "Annulation et report"], ["baggage_policy", "Bagages et suppléments"], ["parcel_pricing_policy", "Tarification des colis"], ["rental_conditions", "Caution et conditions de location"]];
 
   return (
     <div className="space-y-5">
-      <Notice notice={notice} className="" />
       <section className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
         <div className="card">
           <SectionHeading eyebrow="Aucune valeur en dur" title="Grille tarifaire" />
@@ -563,7 +580,7 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
                 </tbody>
               </table>
             </div>
-          ) : <EmptyState title="Aucun tarif" text="Les ventes restent fermées tant qu’un tarif standard n’est pas créé." />}
+          ) : <EmptyState title="Aucune règle par parcours" text="Normal : le prix d’un billet vient uniquement de l’onglet « Tarifs par tronçon ». Les règles ajoutées ici ne changent pas le prix de vente." />}
         </div>
         <form onSubmit={addFare} className="card space-y-4">
           <SectionHeading eyebrow="Paramètre commercial" title="Ajouter un tarif" />
@@ -592,6 +609,7 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
         <div className="space-y-5">
           <div className="card">
             <SectionHeading eyebrow="Expiration" title="Blocage d’un siège" />
+            {!holdMinutesConfigured(settings) && <p className="mb-3 text-sm font-semibold text-red-700">À saisir : sans cette durée, ni les clients ni le guichet ne peuvent réserver.</p>}
             <div className="flex gap-2">
               <input className="field" type="number" min="1" placeholder="Durée en minutes" value={setting} onChange={(e) => setSetting(e.target.value)} />
               <button onClick={() => void saveHold()} className="primary-button">Enregistrer</button>
@@ -623,7 +641,7 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
             <div key={key}>
               <label className="field-label" htmlFor={`policy-${key}`}>{label}</label>
               <textarea id={`policy-${key}`} className="field min-h-24" placeholder="Non configuré" value={policies[key] || ""} onChange={(e) => setPolicies({ ...policies, [key]: e.target.value })} />
-              <button className="text-button mt-2" onClick={() => void saveSetting(key, policies[key] || "", label)}>Enregistrer cette règle</button>
+              <button className="text-button mt-2" onClick={() => void saveSetting(key, policies[key] || "", label, label)}>Enregistrer cette règle</button>
             </div>
           ))}
         </div>
@@ -645,6 +663,7 @@ function describeChange(value: Record<string, unknown> | null) {
 
 // Informations légales de l'agence (imprimées en bas du billet) et taxes comprises dans le prix. Rien n'est prérempli.
 function AgencyPanel() {
+  const feedback = useActionFeedback();
   const [profile, setProfile] = useState<AgencyProfile | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [taxes, setTaxes] = useState<Tax[]>([]);
@@ -675,9 +694,9 @@ function AgencyPanel() {
     setBusy(true);
     try {
       await apiFetch("/agency-profile/", { method: "PATCH", body: JSON.stringify(draft) });
-      setNotice({ text: "Informations de l’agence enregistrées.", tone: "ok" });
+      feedback.success("Informations de l’agence enregistrées.");
       await load();
-    } catch (reason) { setNotice(failure(reason, "Les informations n’ont pas été enregistrées.")); }
+    } catch (reason) { feedback.failure(reason, "Les informations de l’agence n’ont pas été enregistrées."); }
     finally { setBusy(false); }
   }
 
@@ -688,9 +707,9 @@ function AgencyPanel() {
     setBusy(true);
     try {
       await apiFetch(`/taxes/${tax.id}/`, { method: "PATCH", body: JSON.stringify(change) });
-      setNotice({ text: `Taxe ${tax.name} enregistrée.`, tone: "ok" });
+      feedback.success(`Taxe ${tax.name} enregistrée.`);
       await load();
-    } catch (reason) { setNotice(failure(reason, "La taxe n’a pas été enregistrée.")); }
+    } catch (reason) { feedback.failure(reason, `La taxe ${tax.name} n’a pas été enregistrée.`); }
     finally { setBusy(false); }
   }
 
@@ -701,9 +720,9 @@ function AgencyPanel() {
     try {
       await apiFetch("/taxes/", { method: "POST", body: JSON.stringify({ name: newTax.name, rate: newTax.rate, active: true, included: true }) });
       setNewTax({ name: "", rate: "" });
-      setNotice({ text: "Taxe ajoutée.", tone: "ok" });
+      feedback.success("Taxe ajoutée.");
       await load();
-    } catch (reason) { setNotice(failure(reason, "La taxe n’a pas été ajoutée.")); }
+    } catch (reason) { feedback.failure(reason, "La taxe n’a pas été ajoutée."); }
     finally { setBusy(false); }
   }
 
@@ -782,6 +801,7 @@ function AgencyPanel() {
 
 // Prix des tronçons de la ligne (mêmes prix dans les deux sens), relus au serveur à l'ouverture et après chaque modification.
 function SegmentFarePanel() {
+  const feedback = useActionFeedback();
   const [fares, setFares] = useState<SegmentFare[] | null>(null);
   const [changes, setChanges] = useState<SegmentFareChange[]>([]);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
@@ -802,20 +822,19 @@ function SegmentFarePanel() {
   async function save(fare: SegmentFare) {
     const typed = (drafts[fare.id] ?? "").replace(/[\s\u202f\u00a0]/g, "");
     if (!/^\d+$/.test(typed) || Number(typed) <= 0) {
-      setNotice({ text: `Prix invalide pour ${fare.label} : saisissez un nombre entier de francs CFA, supérieur à zéro.`, tone: "error" });
+      feedback.failure(null, `Prix de ${fare.label} : non enregistré. Saisissez un nombre entier de francs CFA, supérieur à zéro.`);
       return;
     }
     const amount = Number(typed);
-    if (amount === fare.amount) { setNotice({ text: `Le prix de ${fare.label} est déjà de ${money(amount, fare.currency)}.`, tone: "info" }); return; }
+    if (amount === fare.amount) { feedback.info(`Le prix de ${fare.label} est déjà de ${money(amount, fare.currency)} : rien à enregistrer.`); return; }
     if (!window.confirm(`Changer le prix de ${fare.label} : ${money(fare.amount, fare.currency)} → ${money(amount, fare.currency)} ?`)) return;
     setBusy(fare.id);
     try {
       await apiFetch(`/segment-fares/${fare.id}/`, { method: "PATCH", body: JSON.stringify({ amount }) });
-      setNotice({ text: `Prix enregistré : ${fare.label} à ${money(amount, fare.currency)}.`, tone: "ok" });
+      feedback.success(`Prix enregistré : ${fare.label} à ${money(amount, fare.currency)}.`);
       await load();
     } catch (reason) {
-      const network = !(reason as { status?: number }).status;
-      setNotice(network ? { text: "Le serveur ne répond pas : le prix n’a pas été enregistré. Réessayez.", tone: "error" } : failure(reason, "Le prix n’a pas été enregistré."));
+      feedback.failure(reason, `Le prix de ${fare.label} n’a pas été enregistré.`);
     } finally { setBusy(null); }
   }
 
@@ -911,14 +930,14 @@ function ManualTicketChangeLog() {
 }
 
 function IncidentPanel({ incidents, onChanged }: { incidents: PaymentIncident[]; onChanged: () => Promise<void> }) {
-  const [notice, setNotice] = useState<NoticeState>(null);
+  const feedback = useActionFeedback();
 
   async function setHandled(incident: PaymentIncident, handled: boolean) {
     try {
       await apiFetch(`/payment-incidents/${incident.id}/`, { method: "PATCH", body: JSON.stringify({ handled }) });
-      setNotice(null);
+      feedback.success(handled ? "Incident marqué comme traité." : "Incident remis à traiter.");
       await onChanged();
-    } catch (reason) { setNotice(failure(reason, "Mise à jour impossible.")); }
+    } catch (reason) { feedback.failure(reason, "L’incident n’a pas été mis à jour."); }
   }
 
   return (
@@ -951,22 +970,21 @@ function IncidentPanel({ incidents, onChanged }: { incidents: PaymentIncident[];
           </table>
         </div>
       )}
-      <Notice notice={notice} />
     </section>
   );
 }
 
 function TeamPanel({ users, onChanged }: { users: User[]; onChanged: () => Promise<void> }) {
+  const feedback = useActionFeedback();
   const [form, setForm] = useState({ username: "", password: "", first_name: "", last_name: "", phone: "", role: "COUNTER" });
-  const [notice, setNotice] = useState<NoticeState>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     try {
       await apiFetch("/users/", { method: "POST", body: JSON.stringify(form) });
-      setNotice({ text: "Membre ajouté.", tone: "ok" });
+      feedback.success(`Membre ${form.username} ajouté.`);
       await onChanged();
-    } catch (reason) { setNotice(failure(reason, "Ajout impossible.")); }
+    } catch (reason) { feedback.failure(reason, "Le membre n’a pas été ajouté."); }
   }
 
   return (
@@ -998,7 +1016,6 @@ function TeamPanel({ users, onChanged }: { users: User[]; onChanged: () => Promi
         <Input label="Téléphone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} required={false} />
         <Select label="Rôle" value={form.role} onChange={(value) => setForm({ ...form, role: value })} options={[["COUNTER", "Guichetier"], ["CONTROLLER", "Contrôleur"], ["ADMIN", "Administrateur"], ["CLIENT", "Client"]]} />
         <button className="primary-button w-full">Créer le compte</button>
-        <Notice notice={notice} />
       </form>
     </div>
   );
