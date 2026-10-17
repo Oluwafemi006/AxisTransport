@@ -70,7 +70,8 @@ Points d'attention :
 | `AXIS_PAYMENT_RECONCILE_ENABLED` | Interrupteur du rattrapage des paiements jamais confirmés (commande `reconcile_payments`). | `true` |
 | `AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES` | Durée pendant laquelle une transaction créée est réinterrogée chez FedaPay. | `1440` (24 h, durée de validité observée du lien de paiement) |
 | `AXIS_PAYMENT_RECONCILE_BATCH` | Nombre maximal de transactions interrogées par passage. | `20` |
-| `AXIS_PAYMENT_RECONCILE_INTERVAL_SECONDS` | Intervalle entre deux passages (profil de recette). | `60` |
+| `AXIS_PAYMENT_RECONCILE_INTERVAL_SECONDS` | Intervalle entre deux passages du rattrapage : service `payments` de `compose.vps.yaml` (et de `compose.yaml` en local), qui lance `reconcile_payments` en boucle. C'est le filet de sécurité si le webhook FedaPay n'arrive pas : un paiement accepté est confirmé au plus tard au passage suivant. | `60` (secondes) |
+| `AXIS_PAYMENT_REFRESH_RATE` | Bouton « Vérifier mon paiement » (site et app) : demandes par adresse IP, chacune interroge FedaPay. | `20/min` (proposition) |
 | `AXIS_CACHE_DIR` | Dossier du cache (compteurs de limite de requêtes). | Dossier accessible en écriture ; par défaut le dossier temporaire du système |
 | `AXIS_NUM_PROXIES` | Nombre de proxys devant l'API, pour lire la vraie adresse IP du client. | `1` derrière un seul proxy |
 | `AXIS_PAYMENT_SIMULATION` | Paiement simulé. Sans effet quand `DJANGO_DEBUG` est faux. | absente |
@@ -288,100 +289,126 @@ Fichiers utilisés :
 
 ### 5.0 Mise en ligne pas à pas — variante B, `axistransportlogistique.com`
 
-Procédure complète dans l'ordre, pour une première mise en ligne en HTTPS. Domaine : `axistransportlogistique.com` (site) et `api.axistransportlogistique.com` (API). `www.axistransportlogistique.com` redirige vers `axistransportlogistique.com`. Chaque commande se lance sur le serveur, dans `~/axis`, sauf mention contraire. `C` désigne :
+Procédure complète, à copier-coller **dans l'ordre**, une commande à la fois. Après chaque commande : le **résultat attendu**. Si le résultat diffère, s'arrêter et ne pas passer à la suite. Domaine : `axistransportlogistique.com` (site), `api.axistransportlogistique.com` (API), `www.` redirigé vers l'adresse sans `www`. Rien de cette procédure n'a encore été exécuté sur le serveur.
 
-```bash
-C="docker compose --env-file .env.vps -f compose.vps.yaml"
-```
-
-**Étape 0 — Avant de commencer** (une seule fois) : serveur sécurisé (5.2), Docker installé (5.3), et chez le fournisseur du domaine trois enregistrements DNS de type A vers `<IP>` :
+**Avant l'étape 1** : serveur sécurisé (5.2), Docker installé (5.3), connexion en `ssh <UTILISATEUR>@<IP>`. Chez le fournisseur du domaine, trois enregistrements DNS de type A vers `<IP>` :
 
 | Type | Nom | Valeur |
 |---|---|---|
 | A | `axistransportlogistique.com` (souvent noté `@`) | `<IP>` |
 | A | `api` | `<IP>` |
-| A | `www` | `<IP>` (Caddy le redirige vers l'adresse sans `www`) |
+| A | `www` | `<IP>` |
 
-Vérifier :
-
+**1. DNS**
 ```bash
-dig +short axistransportlogistique.com        # doit afficher <IP>
-dig +short api.axistransportlogistique.com    # doit afficher <IP>
-dig +short www.axistransportlogistique.com    # doit afficher <IP>
+dig +short axistransportlogistique.com api.axistransportlogistique.com www.axistransportlogistique.com
 ```
+Attendu : trois lignes, toutes égales à `<IP>`. Sinon : attendre la propagation DNS (jusqu'à plusieurs heures) avant de continuer.
 
-**Étape 1 — Récupérer le code** (5.3), puis noter la version déployée :
-
+**2. Mémoire de construction** (voir 5.1)
 ```bash
+free -h
+```
+Attendu : colonne « total » de la ligne « Mem » d'au moins 4 Go, ou une ligne « Swap » d'au moins 2 Go. Sinon : créer le swap de 5.1 avant l'étape 6.
+
+**3. Code** (clé de déploiement en lecture seule, 5.3)
+```bash
+GIT_SSH_COMMAND="ssh -i ~/.ssh/axis_deploy" git clone git@github.com:Oluwafemi006/AxisTransport.git ~/axis
 cd ~/axis && git log -1 --oneline | tee -a ~/versions-deployees.txt
 ```
+Attendu : le clonage se termine sans erreur, puis une ligne `<commit> <message>` : la version déployée, notée dans `~/versions-deployees.txt`.
 
-**Étape 2 — Variables** : `cp vps.env.example .env.vps && chmod 600 .env.vps && nano .env.vps`. Noms seulement ; les valeurs sont saisies par Eddy, sur le serveur, jamais dans le dépôt ni dans une discussion :
+**4. Fichier des variables**
+```bash
+cp vps.env.example .env.vps && chmod 600 .env.vps && nano .env.vps
+```
+Attendu : l'éditeur s'ouvre. Saisir les valeurs sur le serveur (noms ci-dessous ; jamais de valeur dans le dépôt ni dans une discussion), puis Ctrl+O, Entrée, Ctrl+X.
 
-| Variable | Qui la saisit | Contenu attendu (variante B) |
+| Variable | Qui la saisit | Contenu attendu |
 |---|---|---|
 | `AXIS_CADDYFILE` | Eddy | `Caddyfile.https` |
-| `AXIS_DOMAIN` | Eddy | le domaine, sans `https://` ni `www` |
-| `DJANGO_SECRET_KEY` | **Eddy (secret)** | chaîne aléatoire générée sur le serveur (commande dans `vps.env.example`) |
-| `DJANGO_ALLOWED_HOSTS` | Eddy | le sous-domaine `api.` |
-| `DJANGO_CORS_ALLOWED_ORIGINS` | Eddy | l'adresse `https://` du site |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | Eddy | l'adresse `https://` de l'API |
-| `PUBLIC_WEB_URL` | Eddy | l'adresse `https://` du site |
-| `AXIS_NUM_PROXIES` | déjà `1` | un seul proxy (Caddy) |
+| `AXIS_DOMAIN` | Eddy | `axistransportlogistique.com` (sans `https://` ni `www`) |
+| `DJANGO_SECRET_KEY` | **Eddy (secret)** | sortie de `python3 -c "import secrets; print(secrets.token_urlsafe(64))"` lancée sur le serveur |
+| `DJANGO_ALLOWED_HOSTS` | Eddy | `api.axistransportlogistique.com` |
+| `DJANGO_CORS_ALLOWED_ORIGINS` | Eddy | `https://axistransportlogistique.com` |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Eddy | `https://api.axistransportlogistique.com` |
+| `PUBLIC_WEB_URL` | Eddy | `https://axistransportlogistique.com` |
+| `AXIS_NUM_PROXIES` | déjà `1` | un seul proxy (Caddy) devant l'API |
 | `POSTGRES_PASSWORD` | **Eddy (secret)** | lettres et chiffres seulement |
-| `NEXT_PUBLIC_API_URL` | Eddy | adresse `https://` de l'API suivie de `/api/v1` |
-| `AXIS_ADMIN_USERNAME`, `AXIS_ADMIN_PASSWORD`, `AXIS_ADMIN_EMAIL` | **laisser vides** | le compte admin se crée à l'étape 5, mot de passe saisi masqué |
-| `FEDAPAY_ENVIRONMENT` | Eddy | `sandbox` d'abord, `live` à l'ouverture réelle |
+| `NEXT_PUBLIC_API_URL` | Eddy | `https://api.axistransportlogistique.com/api/v1` (avec `/api/v1` : le site y ajoute directement `/client/…`) |
+| `AXIS_ADMIN_USERNAME`, `AXIS_ADMIN_PASSWORD`, `AXIS_ADMIN_EMAIL` | **laisser vides** | l'admin se crée à l'étape 10 |
+| `FEDAPAY_ENVIRONMENT` | Eddy | `sandbox` pour le scénario de test (5 ter), `live` à l'ouverture réelle |
 | `FEDAPAY_SECRET_KEY` | **Eddy (secret)** | clé du même environnement |
-| `FEDAPAY_WEBHOOK_SECRET` | **Eddy (secret)** | secret affiché par FedaPay après l'étape 6 |
-| `FEDAPAY_CALLBACK_URL` | Eddy | adresse de retour, étape 6 |
-| les autres (`AXIS_*_RATE`, `AXIS_PAYMENT_RECONCILE_*`, `FEDAPAY_WEBHOOK_TOLERANCE_SECONDS`) | valeurs proposées déjà dans le modèle | à garder sauf décision |
+| `FEDAPAY_WEBHOOK_SECRET` | **Eddy (secret)** | laissé vide pour l'instant, rempli à l'étape 11 |
+| `FEDAPAY_CALLBACK_URL` | Eddy | `https://axistransportlogistique.com/paiement/retour` |
+| autres (`AXIS_*_RATE`, `AXIS_PAYMENT_RECONCILE_*`, `FEDAPAY_WEBHOOK_TOLERANCE_SECONDS`) | valeurs proposées dans le modèle | à garder sauf décision |
 
 Ne jamais ajouter `AXIS_ENVIRONMENT`, `AXIS_PAYMENT_SIMULATION` ni `DJANGO_DEBUG` dans `.env.vps`.
 
-**Étape 3 — Construire et démarrer** (la construction du site peut être longue) :
+**5. Vérifier la configuration**
+```bash
+C="docker compose --env-file .env.vps -f compose.vps.yaml"
+$C config --quiet && echo CONFIG-OK
+```
+Attendu : `CONFIG-OK`. Sinon le message nomme la variable manquante (« … doit être définie dans .env.vps ») : la remplir (étape 4) et recommencer. Dans tout nouveau terminal, relancer d'abord la ligne `C=…`.
 
+**6. Construire**
 ```bash
 $C build
-$C up -d
-$C ps                                   # db, backend, holds, payments, frontend, caddy : « Up »
 ```
+Attendu : plusieurs minutes, puis aucune ligne `ERROR` ; la dernière étape du site affiche une ligne `Compiled successfully` ou `✓`. Si le serveur se fige ou affiche `Killed` / `JavaScript heap out of memory` : mémoire insuffisante, voir 5.1.
 
-Au démarrage, le service `backend` applique lui-même les migrations (dont `0011`, `0012`, `0013` et les suivantes), puis lance `bootstrap_axis`.
-
-**Étape 4 — Vérifier migrations et grille de prix** :
-
+**7. Démarrer**
 ```bash
-$C exec -T backend python manage.py showmigrations core | tail -4   # toutes cochées [X]
-$C exec -T backend python manage.py load_segment_fares             # « Tarifs déjà présents, laissés tels quels : 10 »
+$C up -d && sleep 30 && $C ps --format "table {{.Service}}\t{{.Status}}"
 ```
+Attendu : six lignes `db`, `backend`, `holds`, `payments`, `frontend`, `caddy`, toutes `Up` (`db` : `Up … (healthy)`).
 
-La grille chargée est celle de la section 2 ter (10 prix). La commande ne modifie jamais un prix déjà présent. Savè, Kétou et Porto-Novo sont créés inactifs, donc invisibles pour les clients.
+**8. Migrations** (appliquées automatiquement par `backend` au démarrage, dont `0011` à `0014`)
+```bash
+$C exec -T backend python manage.py showmigrations core | tail -4
+```
+Attendu : quatre lignes commençant par `[X]`, la dernière `[X] 0014_receipt_provider_mode` (ou une migration plus récente). Aucune ligne `[ ]`.
 
-**Étape 5 — Créer le compte ADMIN réel**, sur place, de façon interactive (sans `-T`) :
+**9. Grille de prix** (chargée automatiquement par `bootstrap_axis`)
+```bash
+$C exec -T backend python manage.py load_segment_fares
+```
+Attendu : `Lieux créés (inactifs) : aucun. Tarifs créés : 0. Tarifs déjà présents, laissés tels quels : 10.` La grille est celle de la section 2 ter ; un prix déjà présent n'est jamais modifié.
 
+**10. Compte ADMIN réel** (interactif : pas de `-T`)
 ```bash
 $C exec backend python manage.py create_admin
 ```
+Attendu : questions « Identifiant », « E-mail », puis deux fois « Mot de passe (saisie masquée) » ; rien ne s'affiche pendant la frappe. Dernière ligne : `Administrateur « … » créé.` Le boss reçoit son propre compte administrateur nominatif, créé de la même façon.
 
-La commande demande l'identifiant, l'e-mail (facultatif), puis deux fois le mot de passe, en saisie masquée : il n'apparaît ni à l'écran, ni dans l'historique du shell, ni dans un fichier.
-
-**Étape 6 — FedaPay**, dans le tableau de bord, pour l'environnement choisi :
-
-- Adresse du webhook : `https://api.axistransportlogistique.com/api/v1/client/webhooks/fedapay/`. Copier le secret affiché dans `FEDAPAY_WEBHOOK_SECRET`.
-- Adresse de retour (`FEDAPAY_CALLBACK_URL`) : `https://axistransportlogistique.com/paiement/retour`.
-- Puis `$C up -d backend payments` pour relire les variables.
-
-**Étape 7 — Vérifier HTTPS** :
-
+**11. FedaPay** (tableau de bord FedaPay, environnement choisi à l'étape 4)
+- Webhook à déclarer : `https://api.axistransportlogistique.com/api/v1/client/webhooks/fedapay/` ; copier le secret affiché dans `FEDAPAY_WEBHOOK_SECRET` (`nano .env.vps`).
+- Adresse de retour : `https://axistransportlogistique.com/paiement/retour` (déjà dans `FEDAPAY_CALLBACK_URL`).
+- Vérifier qui supporte les frais (décision : l'agence) ; en sandbox le 17/10/2026, ils étaient facturés au client (section 2 quinquies).
 ```bash
-curl -sI https://axistransportlogistique.com | head -1                      # HTTP/2 200
-curl -s https://api.axistransportlogistique.com/api/v1/health/              # réponse de l'API
-curl -sI http://axistransportlogistique.com | grep -i '^location'          # redirection vers https://
-curl -sI https://www.axistransportlogistique.com | grep -i '^location'     # redirection vers https://axistransportlogistique.com/
+$C up -d backend payments holds
 ```
+Attendu : `Container … Started` (ou `Running`) pour les trois services.
 
-**Étape 8 — Sauvegardes** : installer la sauvegarde quotidienne et tester une restauration (5.6), puis faire les contrôles après déploiement (5.12).
+**12. HTTPS**
+```bash
+curl -s https://api.axistransportlogistique.com/api/v1/health/
+curl -sI https://axistransportlogistique.com | head -1
+curl -sI http://axistransportlogistique.com | grep -i '^location'
+curl -sI https://www.axistransportlogistique.com | grep -i '^location'
+```
+Attendu, dans l'ordre : `{"status":"ok","service":"axis-transport-api"}` ; `HTTP/2 200` ; `location: https://axistransportlogistique.com/` ; `location: https://axistransportlogistique.com/`. Si `curl` signale une erreur de certificat : attendre une minute (Caddy obtient le certificat au premier appel) et lire `$C logs --tail 50 caddy`.
+
+**13. Sauvegardes**
+```bash
+deploy/backup.sh && deploy/restore-test.sh
+(crontab -l 2>/dev/null; echo '0 3 * * * $HOME/axis/deploy/backup.sh >> $HOME/sauvegardes/journal.log 2>&1') | crontab -
+crontab -l
+```
+Attendu : `Sauvegarde : /home/<UTILISATEUR>/sauvegardes/axis-….dump (…)`, puis `Restauration réussie ; la base d'essai est supprimée.`, puis la ligne cron affichée par `crontab -l`.
+
+**14. Contrôles** : section 5.12, puis le scénario de test (5 ter) avec FedaPay en `sandbox`.
 
 ### 5.1 Mesurer si le VPS tient
 
@@ -394,14 +421,22 @@ Mesure faite sur le PC de développement, services au repos (`docker stats`) :
 | `db` | 36 Mo |
 | **Total mesuré** | **340 Mo** |
 
-Non mesuré : les services `holds`, `payments` et `caddy`, la charge avec des visiteurs, et surtout **la construction du site sur le serveur** (`npm run build`), qui demande nettement plus de mémoire que le fonctionnement. Les caractéristiques du VPS ne sont pas connues ici. À faire sur le serveur :
+**Construction du site** (`next build`), mesurée le 17/10/2026 sur le PC de développement (4 processeurs, Node 22) : **pic de 803 Mo** de mémoire au total (tous les processus de la construction), durée 2 min 33 s. Non mesurés : l'installation des dépendances (`npm install`) dans l'image, la construction dans Docker avec Node 20, et la construction en même temps des images de l'API (`$C build` construit plusieurs images en parallèle).
+
+**Estimation pour un VPS de 4 Go** : la construction du site (≈ 0,8 Go mesuré) plus le système et les autres constructions devraient tenir, mais sans grande marge si des services tournent déjà (≈ 340 Mo au repos, plus `holds`, `payments`, `caddy` non mesurés). Par prudence, **ajouter 2 Go de swap avant la première construction** et construire le site seul :
 
 ```bash
-free -h && nproc && df -h /        # mémoire, processeurs, disque disponibles
-docker stats --no-stream            # après le démarrage (5.4)
+free -h && nproc && df -h /                          # mémoire, processeurs, disque disponibles
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab     # garde le swap après redémarrage
+free -h                                               # attendu : ligne « Swap » d'environ 2,0Gi
+C="docker compose --env-file .env.vps -f compose.vps.yaml"
+$C build frontend && $C build                         # le site d'abord, seul, puis le reste
+docker stats --no-stream                              # après le démarrage (5.0, étape 7)
 ```
 
-Si la construction échoue faute de mémoire : ajouter un fichier d'échange (swap) ou construire les images ailleurs. Aucune des deux solutions n'est préparée.
+Si la construction échoue quand même (`Killed`, `JavaScript heap out of memory`) : construire les images sur un autre poste puis les transférer (`docker save` / `docker load`) ; cette solution n'est pas préparée.
 
 ### 5.2 Sécuriser le serveur AVANT tout déploiement
 
@@ -678,6 +713,36 @@ Pour un essai sur la variante A seulement : `--dart-define=AXIS_API_URL=http://<
 - Les sauvegardes et la restauration sur le serveur (scripts essayés seulement sur le PC), le redémarrage automatique après `reboot`.
 - L'interface du tableau de bord FedaPay (où se déclarent le webhook et l'adresse de retour) et l'acceptation de ces adresses.
 - Le comportement des apps mobiles en release contre une API distante.
+
+## 5 ter. Scénario de test pour le boss (serveur vide, FedaPay en mode test)
+
+But : sur le serveur fraîchement installé (5.0 terminé, `FEDAPAY_ENVIRONMENT=sandbox`), obtenir un départ réservable et payer un billet en mode test. **Aucune donnée de démonstration** : `seed_demo` n'est ni nécessaire ni autorisé (il refuse de tourner sur le serveur). Tout se crée dans le portail `https://axistransportlogistique.com/admin`, avec le compte administrateur de l'étape 10.
+
+**Ce qui existe déjà après le premier démarrage** : les villes Cotonou et Parakou (actives), les parcours Parakou → Cotonou et Cotonou → Parakou, le car « Yutong » sans capacité, la grille des 10 prix (Parakou ↔ Cotonou : 7 500 FCFA), le moyen de paiement FedaPay, la TVA 18 % incluse. Savè, Kétou et Porto-Novo restent **inactives** : ne pas les activer (la vente par tronçon n'est pas ouverte).
+
+**À créer dans `/admin`** (valeurs réelles décidées par l'agence ; rien n'est proposé ici) :
+
+1. **Tarifs & règles** → délai de blocage d'un siège pendant le paiement (`ticket_hold_minutes`, en minutes) : **obligatoire**, sans lui aucune réservation n'est possible.
+2. **Flotte** → car « Yutong » : saisir sa capacité réelle (et son plan de sièges s'il est connu), enregistrer.
+3. **Agence et taxes** → informations de l'agence (sinon le billet affiche « À renseigner »).
+4. **Trajets & planning** → ajouter **un départ de test** : parcours Parakou → Cotonou, car Yutong, date et heure de départ dans le futur, note « Départ de test ». Ce départ est visible des clients : faire le scénario **avant d'annoncer le site**, puis l'annuler (étape 9).
+5. Facultatif : téléphone et WhatsApp de contact (Tarifs & règles).
+
+**Réserver et payer en mode test** (téléphone ou PC, navigateur ordinaire) :
+
+6. Ouvrir `https://axistransportlogistique.com`, « Créer un compte » (compte client de test), rechercher Parakou → Cotonou à la date du départ de test, choisir un siège. Le bouton doit afficher **« Payer 7 500 FCFA »** (prix affiché = montant payé).
+7. Sur la page FedaPay de test, choisir le Mobile Money et utiliser un numéro de test. Numéros communiqués par Eddy (documentation FedaPay, non vérifiés ici) :
+
+   | Numéro | Opérateur | Résultat attendu |
+   |---|---|---|
+   | `66000001` | MTN | paiement réussi : billet émis, QR affiché |
+   | `66000000` | MTN | paiement refusé : aucun billet, siège libéré à la fin du délai |
+   | `64000001` | Moov | paiement réussi |
+   | `64000000` | Moov | paiement refusé |
+
+8. Vérifications après un paiement réussi : le billet affiche « Payé », 7 500 FCFA, la vente « Vente en ligne », le mode de paiement ; il apparaît dans « Vos billets » ; dans `/admin`, l'onglet « Incidents de paiement » reste vide (webhook bien reçu). Si le billet reste « réservé » : bouton « Vérifier mon paiement » ; le rattrapage automatique le confirme aussi en moins d'une minute. Contrôle : depuis l'app du contrôleur (compte créé par l'admin dans « Équipe & rôles »), scanner le QR le jour du départ.
+9. Fin du test : **Trajets & planning** → « Annuler » sur le départ de test ; il n'est plus proposé aux clients. Les billets et paiements de test restent en base (sandbox : aucun argent réel).
+10. Avant l'ouverture réelle : passer `FEDAPAY_ENVIRONMENT=live` avec la clé et le webhook live (étape 11 de 5.0), vérifier chez FedaPay que les frais sont supportés par l'agence, puis créer les vrais départs.
 
 ## 5 bis. À faire avant ouverture au public
 
