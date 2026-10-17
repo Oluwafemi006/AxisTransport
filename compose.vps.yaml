@@ -36,6 +36,8 @@ x-backend-environment: &backend-environment
   AXIS_PAYMENT_RECONCILE_ENABLED: ${AXIS_PAYMENT_RECONCILE_ENABLED:-true}
   AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES: ${AXIS_PAYMENT_RECONCILE_WINDOW_MINUTES:-1440}
   AXIS_PAYMENT_RECONCILE_BATCH: ${AXIS_PAYMENT_RECONCILE_BATCH:-20}
+  # « Vérifier mon paiement » : demandes par minute et par adresse IP (chacune interroge FedaPay).
+  AXIS_PAYMENT_REFRESH_RATE: ${AXIS_PAYMENT_REFRESH_RATE:-20/min}
 
 services:
   db:
