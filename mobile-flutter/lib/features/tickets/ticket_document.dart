@@ -8,19 +8,22 @@ import 'package:pdf/widgets.dart' as pw;
 import '../../core/formatters.dart';
 import '../../core/models.dart';
 
-/// Texte affiché quand le serveur n'a pas fourni la donnée. Rien n'est inventé.
-const missingValue = 'à confirmer';
+/// Texte affiché quand une information obligatoire du billet manque. Rien n'est inventé.
+const missingValue = 'À renseigner';
 
 String _orMissing(String? value) {
   final text = value?.trim() ?? '';
   return text.isEmpty ? missingValue : text;
 }
 
-/// Les informations du billet, uniquement tirées de la réponse du serveur.
+/// Les lignes du billet, uniquement tirées de la réponse du serveur.
+/// Une information facultative absente (arrivée, lieu d'embarquement, IFU…) est masquée.
 List<(String, String)> ticketFields(Ticket ticket) {
   final route = ticket.trip.route;
   final origin = route.origin?.name;
   final destination = route.destination?.name;
+  final info = ticket.printInfo;
+  final paid = info?.paid ?? ticket.isConfirmed;
   return [
     ('Référence', _orMissing(ticket.reference)),
     (
@@ -29,24 +32,49 @@ List<(String, String)> ticketFields(Ticket ticket) {
           ? '$origin → $destination'
           : _orMissing(route.label),
     ),
-    (
-      'Embarquement',
-      ticket.trip.boardingAt == null
-          ? missingValue
-          : formatFullDateTime(ticket.trip.boardingAt!),
-    ),
+    if (info != null && info.boardingPlace.trim().isNotEmpty)
+      ('Lieu d\'embarquement', info.boardingPlace.trim()),
+    if (ticket.trip.boardingAt != null)
+      ('Embarquement', formatFullDateTime(ticket.trip.boardingAt!)),
     ('Départ', formatFullDateTime(ticket.trip.departureAt)),
-    (
-      'Arrivée prévue',
-      ticket.trip.arrivalAt == null
-          ? missingValue
-          : formatFullDateTime(ticket.trip.arrivalAt!),
-    ),
+    if (ticket.trip.arrivalAt != null)
+      ('Arrivée prévue', formatFullDateTime(ticket.trip.arrivalAt!)),
     ('Siège', _orMissing(ticket.seat.number)),
     ('Passager', _orMissing(ticket.passengerName)),
-    // Prix du billet seul (tarif) : les frais de paiement n'apparaissent jamais sur le billet.
+    // Prix du billet TTC : c'est le montant payé, rien ne s'y ajoute.
     ('Prix du billet', formatMoney(ticket.amount, ticket.currency)),
-    ('Statut', _orMissing(ticket.statusDisplay)),
+    if (paid) ('Statut', 'Payé'),
+    if (info != null && info.sale.isNotEmpty) ('Vente', info.sale),
+    if (info != null && info.paymentMode.isNotEmpty)
+      ('Mode de paiement', info.paymentMode),
+    if (info != null && info.buyerIfu.trim().isNotEmpty)
+      ('IFU de l\'acheteur', info.buyerIfu.trim()),
+    // HT / taxes / TTC : seulement si l'IFU de l'agence est renseigné (le serveur ne l'envoie que dans ce cas).
+    if (info != null && info.priceExclTax != null) ...[
+      ('Prix HT', formatMoney(info.priceExclTax!, ticket.currency)),
+      for (final line in info.taxLines)
+        (
+          '${line.name} ${line.rate} % (incluse)',
+          formatMoney(line.amount, ticket.currency),
+        ),
+      ('Prix TTC', formatMoney(info.priceInclTax, ticket.currency)),
+    ],
+  ];
+}
+
+/// Bas du billet : agence (jamais les comptes bancaires) et conditions ; vide = « À renseigner ».
+List<String> ticketFooter(Ticket ticket) {
+  final agency = ticket.printInfo?.agency ?? const AgencyInfo();
+  final contacts = [
+    agency.phones,
+    agency.email,
+  ].map((item) => item.trim()).where((item) => item.isNotEmpty).join(' · ');
+  return [
+    'Raison sociale : ${_orMissing(agency.legalName)}',
+    'IFU : ${_orMissing(agency.ifu)} · RCCM : ${_orMissing(agency.rccm)}',
+    'Adresse : ${_orMissing(agency.address)}',
+    'Contacts : ${_orMissing(contacts)}',
+    'Conditions : ${_orMissing(ticket.printInfo?.conditions)}',
   ];
 }
 
@@ -82,11 +110,13 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) async {
   } catch (_) {
     logo = null;
   }
-  final document = pw.Document(title: pdfSafe('Billet ${ticket.reference}'));
+  final document = pw.Document(
+    title: pdfSafe('Billet de transport ${ticket.reference}'),
+  );
   final fields = ticketFields(ticket);
   document.addPage(
     pw.Page(
-      pageFormat: PdfPageFormat.a5,
+      pageFormat: PdfPageFormat.a4,
       margin: const pw.EdgeInsets.all(28),
       build: (context) => pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
@@ -103,7 +133,7 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) async {
             ),
           pw.SizedBox(height: 4),
           pw.Text(
-            pdfSafe('Billet électronique'),
+            pdfSafe('Billet de transport'),
             style: const pw.TextStyle(fontSize: 12),
           ),
           pw.SizedBox(height: 18),
@@ -117,7 +147,7 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) async {
               ),
             )
           else
-            pw.Text(pdfSafe('QR code : $missingValue')),
+            pw.Text(pdfSafe('QR code disponible après le paiement.')),
           pw.SizedBox(height: 18),
           for (final (label, value) in fields)
             pw.Padding(
@@ -149,6 +179,9 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) async {
             pdfSafe('Présentez ce QR code à l\'embarquement.'),
             style: const pw.TextStyle(fontSize: 10),
           ),
+          pw.SizedBox(height: 8),
+          for (final line in ticketFooter(ticket))
+            pw.Text(pdfSafe(line), style: const pw.TextStyle(fontSize: 8)),
         ],
       ),
     ),

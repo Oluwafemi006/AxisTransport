@@ -200,6 +200,7 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
         .reserveBooking(
           trip: draft.trip!.id,
           contactPhone: contactPhone,
+          buyerIfu: draft.buyerIfu,
           passengers: draft.passengers.map((passenger) {
             final seat = draft.seatsByPassenger[passenger.id]!;
             return {
@@ -228,6 +229,7 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
       final reservation = await client.reserveBooking(
         trip: draft.trip!.id,
         contactPhone: contactPhone,
+        buyerIfu: draft.buyerIfu,
         passengers: draft.passengers.map((passenger) {
           final seat = draft.seatsByPassenger[passenger.id]!;
           return {

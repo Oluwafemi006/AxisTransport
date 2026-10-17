@@ -168,7 +168,9 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
-                              item.statusDisplay,
+                              item.printInfo?.paid ?? item.isConfirmed
+                                  ? 'Payé'
+                                  : item.statusDisplay,
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 11,
@@ -221,7 +223,7 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                         ),
                       ),
                       const Divider(height: 34, color: Color(0xFF31577D)),
-                      // Uniquement des données du serveur ; « à confirmer » si une donnée manque.
+                      // Uniquement des données du serveur ; une information facultative absente est masquée.
                       for (final (label, value) in ticketFields(item).skip(1))
                         if (label != 'Statut')
                           Padding(
@@ -231,6 +233,15 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                               style: const TextStyle(color: Color(0xFFE2ECF7)),
                             ),
                           ),
+                      const Divider(height: 26, color: Color(0xFF31577D)),
+                      for (final line in ticketFooter(item))
+                        Text(
+                          line,
+                          style: const TextStyle(
+                            color: Color(0xFFB9CBE0),
+                            fontSize: 12,
+                          ),
+                        ),
                     ],
                   ),
                 ),

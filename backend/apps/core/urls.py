@@ -13,6 +13,9 @@ from .views import (
     PaymentIncidentViewSet,
     SegmentFareChangeViewSet,
     ManualTicketChangeViewSet,
+    AgencyProfileView,
+    AgencySettingChangeViewSet,
+    TaxViewSet,
     SegmentFareViewSet,
     PaymentMethodViewSet,
     RentalBookingViewSet,
@@ -47,6 +50,8 @@ router.register("payment-incidents", PaymentIncidentViewSet)
 router.register("segment-fares", SegmentFareViewSet)
 router.register("segment-fare-changes", SegmentFareChangeViewSet)
 router.register("ticket-manual-changes", ManualTicketChangeViewSet, basename="ticket-manual-change")
+router.register("taxes", TaxViewSet)
+router.register("agency-changes", AgencySettingChangeViewSet)
 router.register("transactions", TransactionViewSet)
 
 urlpatterns = [
@@ -54,5 +59,6 @@ urlpatterns = [
     path("auth/me/", MeView.as_view()),
     path("auth/register/", RegisterView.as_view()),
     path("dashboard/", DashboardView.as_view()),
+    path("agency-profile/", AgencyProfileView.as_view()),
     path("", include(router.urls)),
 ]

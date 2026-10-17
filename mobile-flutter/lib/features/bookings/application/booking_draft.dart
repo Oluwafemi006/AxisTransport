@@ -8,9 +8,13 @@ class BookingDraft {
     this.trip,
     this.passengers = const [],
     this.seatsByPassenger = const {},
+    this.buyerIfu = '',
   });
 
   final Trip? trip;
+
+  /// IFU de l'acheteur, facultatif : imprimé sur le billet s'il est rempli.
+  final String buyerIfu;
   final List<Passenger> passengers;
   final Map<String, Seat> seatsByPassenger;
 
@@ -28,10 +32,12 @@ class BookingDraft {
     Trip? trip,
     List<Passenger>? passengers,
     Map<String, Seat>? seatsByPassenger,
+    String? buyerIfu,
   }) => BookingDraft(
     trip: trip ?? this.trip,
     passengers: passengers ?? this.passengers,
     seatsByPassenger: seatsByPassenger ?? this.seatsByPassenger,
+    buyerIfu: buyerIfu ?? this.buyerIfu,
   );
 }
 
@@ -66,6 +72,8 @@ class BookingDraftNotifier extends Notifier<BookingDraft> {
     assignments[passengerId] = seat;
     state = state.copyWith(seatsByPassenger: Map.unmodifiable(assignments));
   }
+
+  void setBuyerIfu(String value) => state = state.copyWith(buyerIfu: value);
 
   void clear() => state = const BookingDraft();
 }

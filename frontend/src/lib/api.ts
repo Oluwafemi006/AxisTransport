@@ -70,6 +70,10 @@ export async function login(username: string, password: string) {
 
 export function money(amount: string | number | null, currency = "XOF") {
   if (amount === null || amount === undefined || amount === "") return "À configurer";
+  // Le franc CFA s'affiche « FCFA », jamais avec son code « XOF ».
+  if (currency === "XOF") {
+    return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Number(amount))} FCFA`;
+  }
   return new Intl.NumberFormat("fr-FR", { style: "currency", currency, maximumFractionDigits: 0 }).format(
     Number(amount),
   );

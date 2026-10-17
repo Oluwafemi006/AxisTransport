@@ -296,6 +296,21 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
           ),
           const SizedBox(height: 8),
 
+          // IFU de l'acheteur : facultatif, saisi avant la réservation, imprimé sur le billet s'il est rempli.
+          if (pending == null) ...[
+            TextFormField(
+              key: const Key('buyer-ifu'),
+              initialValue: draft.buyerIfu,
+              maxLength: 30,
+              decoration: const InputDecoration(
+                labelText: 'IFU de l\'acheteur (facultatif)',
+                helperText: 'Imprimé sur le billet s\'il est rempli.',
+              ),
+              onChanged: ref.read(bookingDraftProvider.notifier).setBuyerIfu,
+            ),
+            const SizedBox(height: 8),
+          ],
+
           // Choix du moyen de paiement, seulement s'il y en a plusieurs : il précède l'action unique.
           if (methods.length > 1 &&
               checkout == null &&

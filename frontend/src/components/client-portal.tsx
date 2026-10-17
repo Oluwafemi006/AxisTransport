@@ -383,6 +383,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
   const [seatId, setSeatId] = useState("");
   const [passengerName, setPassengerName] = useState("");
   const [phone, setPhone] = useState("");
+  const [buyerIfu, setBuyerIfu] = useState("");
   const [pending, setPending] = useState<Ticket | null>(null);
   const [checkout, setCheckout] = useState<Checkout | null>(null);
   // Réservation en cours. Sans compte, le serveur renvoie un jeton qui autorise le paiement.
@@ -500,7 +501,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
   }
 
   async function createBooking() {
-    const created = await apiFetch<BookingPayload>("/client/bookings/", { method: "POST", body: JSON.stringify({ trip: Number(tripId), contact_phone: phone, passengers: [{ full_name: passengerName, phone, seat: Number(seatId) }] }) }, !!user);
+    const created = await apiFetch<BookingPayload>("/client/bookings/", { method: "POST", body: JSON.stringify({ trip: Number(tripId), contact_phone: phone, buyer_ifu: buyerIfu.trim(), passengers: [{ full_name: passengerName, phone, seat: Number(seatId) }] }) }, !!user);
     const current = { id: created.id, token: created.guest_access_token ?? null };
     saveGuestBooking(current.id, current.token);
     setBooking(current);
@@ -637,6 +638,9 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
             
             <label style={{ marginTop: '20px' }}>Téléphone{!user && " (obligatoire sans compte)"}</label>
             <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required={!user} pattern={user ? undefined : "\\+?[0-9\\(][0-9 \\(\\)\\.\\-]{5,}"} title="Numéro de téléphone" />
+
+            <label style={{ marginTop: '20px' }}>IFU de l’acheteur (facultatif, imprimé sur le billet)</label>
+            <input value={buyerIfu} onChange={(e) => setBuyerIfu(e.target.value)} maxLength={30} />
 
             {singleQuote && !held && !issued && (
               <p style={{ marginTop: '20px', fontSize: '14px', color: 'var(--mute)' }}>

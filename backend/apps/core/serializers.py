@@ -26,6 +26,10 @@ from .models import (
     PaymentIncident,
     SegmentFare,
     SegmentFareChange,
+    AgencyProfile,
+    AgencySettingChange,
+    PaymentReceipt,
+    Tax,
 )
 from .payments import ONLINE_PROVIDERS, payment_quote
 from .services import boarding_lead_minutes, boarding_time, rental_is_available, trip_fare
@@ -271,6 +275,62 @@ class TicketControlSerializer(serializers.ModelSerializer):
         fields = ["id", "ticket", "controller", "controller_name", "controlled_at", "method", "result", "result_display", "note"]
 
 
+def public_agency_info():
+    """Informations de l'agence imprimées sur le billet (vides = « À renseigner »). Jamais les comptes bancaires."""
+    profile = AgencyProfile.objects.filter(pk=1).first()
+    return {field: (getattr(profile, field, "") or "").strip() for field in AgencyProfile.PUBLIC_FIELDS}
+
+
+def _display_name(user):
+    return (user.get_full_name() or user.username) if user else ""
+
+
+def ticket_print_info(ticket):
+    """
+    Données imprimées sur le billet, toutes lues sur le serveur ; les apps et le site ne calculent rien.
+    Chaîne vide = information absente (l'affichage écrit « À renseigner » ou masque la ligne, selon le cas).
+    """
+    paid = ticket.status in {Ticket.Status.PAID, Ticket.Status.ISSUED, Ticket.Status.CHECKED, Ticket.Status.COMPLETED}
+    booking = ticket.booking
+    receipts = PaymentReceipt.objects.filter(refund_due=False)
+    receipt = (
+        receipts.filter(booking=booking).first() if booking else None
+    ) or receipts.filter(ticket=ticket).first()
+    seller = booking.sold_by if booking and booking.sold_by_id else None
+    if seller is None and receipt and receipt.source == PaymentReceipt.Source.COUNTER:
+        seller = receipt.recorded_by
+    if seller is not None:
+        sale = f"Vendeur : {_display_name(seller)}"
+    elif ticket.channel == Ticket.Channel.ONLINE:
+        sale = "Vente en ligne"
+    else:
+        sale = "Vente au guichet"
+    payment_mode = ""
+    if paid and receipt:
+        if receipt.provider.upper() in ONLINE_PROVIDERS:
+            payment_mode = "Mobile Money"
+        else:
+            method = PaymentMethod.objects.filter(code__iexact=receipt.provider).first()
+            payment_mode = method.label if method else ""
+    agency = public_agency_info()
+    origin = ticket.trip.route.origin if ticket.trip_id else None
+    # Décomposition HT / taxes : seulement si l'IFU de l'agence est renseigné et si le billet a ses taxes figées.
+    show_taxes = bool(agency["ifu"]) and ticket.price_excl_tax is not None
+    return {
+        "title": "Billet de transport",
+        "paid": paid,
+        "sale": sale,
+        "payment_mode": payment_mode,
+        "buyer_ifu": booking.buyer_ifu if booking else "",
+        "boarding_place": (origin.address or "").strip() if origin else "",
+        "price_incl_tax": int(ticket.amount),
+        "price_excl_tax": int(ticket.price_excl_tax) if show_taxes else None,
+        "tax_lines": ticket.tax_lines if show_taxes else [],
+        "agency": agency,
+        "conditions": "",
+    }
+
+
 class TicketSerializer(serializers.ModelSerializer):
     trip_detail = TripSerializer(source="trip", read_only=True)
     seat_detail = SeatSerializer(source="seat", read_only=True)
@@ -280,12 +340,14 @@ class TicketSerializer(serializers.ModelSerializer):
     status_history = TicketStatusHistorySerializer(many=True, read_only=True)
     controls = TicketControlSerializer(many=True, read_only=True)
     public_url = serializers.SerializerMethodField()
+    print_info = serializers.SerializerMethodField()
 
     class Meta:
         model = Ticket
         fields = [
             "id",
             "reference",
+            "print_info",
             "public_url",
             "trip",
             "trip_detail",
@@ -311,6 +373,9 @@ class TicketSerializer(serializers.ModelSerializer):
 
     def get_public_url(self, obj):
         return public_ticket_url(obj)
+
+    def get_print_info(self, obj):
+        return ticket_print_info(obj)
 
 
 class ControllerTicketSerializer(serializers.ModelSerializer):
@@ -363,6 +428,7 @@ class BookingCreateSerializer(serializers.Serializer):
     trip = serializers.PrimaryKeyRelatedField(queryset=Trip.objects.all())
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
+    buyer_ifu = serializers.CharField(max_length=30, required=False, allow_blank=True)
     passengers = BookingCreatePassengerSerializer(many=True, allow_empty=False, min_length=1, max_length=8)
 
     def validate(self, attrs):
@@ -395,6 +461,7 @@ class BookingSerializer(serializers.ModelSerializer):
             "customer_detail",
             "contact_phone",
             "contact_email",
+            "buyer_ifu",
             "status",
             "status_display",
             "reservation_expires_at",
@@ -525,11 +592,15 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
     formatted_amount = serializers.SerializerMethodField()
     company_name = serializers.SerializerMethodField()
     public_url = serializers.SerializerMethodField()
+    print_info = serializers.SerializerMethodField()
+    arrival_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Ticket
         fields = [
             "reference",
+            "print_info",
+            "arrival_at",
             "status",
             "status_display",
             "passenger_name",
@@ -547,6 +618,12 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
+    def get_print_info(self, obj):
+        return ticket_print_info(obj)
+
+    def get_arrival_at(self, obj):
+        return serializers.DateTimeField().to_representation(obj.trip.arrival_at) if obj.trip.arrival_at else None
 
     def get_seat_label(self, obj):
         return obj.seat.number if obj.seat else "N/A"
@@ -655,3 +732,51 @@ class SegmentFareChangeSerializer(serializers.ModelSerializer):
         if user is None:
             return "Chargement initial"
         return user.get_full_name() or user.username
+
+
+class AgencyProfileSerializer(serializers.ModelSerializer):
+    """Fiche de l'agence pour la page admin (comptes bancaires compris, jamais imprimés)."""
+
+    updated_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AgencyProfile
+        fields = AgencyProfile.EDITABLE_FIELDS + ["updated_at", "updated_by_name"]
+        read_only_fields = ["updated_at", "updated_by_name"]
+
+    def validate(self, attrs):
+        return {key: value.strip() for key, value in attrs.items()}
+
+    def get_updated_by_name(self, obj):
+        return _display_name(obj.updated_by)
+
+
+class TaxSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tax
+        fields = ["id", "name", "rate", "active", "included", "updated_at"]
+        read_only_fields = ["id", "updated_at"]
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Le nom de la taxe est obligatoire.")
+        return value
+
+    def validate_rate(self, value):
+        if value < 0 or value >= 100:
+            raise serializers.ValidationError("Le taux doit être compris entre 0 et 100 (exclu).")
+        return value
+
+
+class AgencySettingChangeSerializer(serializers.ModelSerializer):
+    changed_by_name = serializers.SerializerMethodField()
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+
+    class Meta:
+        model = AgencySettingChange
+        fields = ["id", "changed_at", "kind", "kind_display", "label", "old_value", "new_value", "changed_by_name"]
+        read_only_fields = fields
+
+    def get_changed_by_name(self, obj):
+        return _display_name(obj.changed_by) or "—"

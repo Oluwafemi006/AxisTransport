@@ -192,6 +192,13 @@ Ces dix prix ont été fournis par l'équipe et **restent à confirmer par la di
 - Le web, les apps et le billet n'affichent plus de ligne « Frais de paiement » ni « Total ». L'API garde ses champs : `fee_amount` = 0 et `total` = prix.
 - Une transaction FedaPay créée avant cette migration avec l'ancien total (prix + frais) ne correspond plus au montant dû : son paiement est refusé et inscrit dans les incidents de paiement, à rembourser à la main.
 
+## 2 quinquies. Billet de transport, agence et taxes (lot 4)
+
+- **Prix affiché TTC** : rien ne s'ajoute au prix de la grille. Taxe initiale : TVA 18 %, incluse, seule taxe. Ce taux est une valeur transmise, **non vérifiée pour le transport de voyageurs** : modifiable dans `/admin`, onglet « Agence et taxes ». Un billet déjà vendu garde son taux et ses montants (HT et TVA figés à la vente).
+- **Informations de l'agence** (raison sociale, IFU, RCCM, capital, adresse, téléphones, e-mail, comptes bancaires) : vides au départ, **saisies uniquement dans `/admin`**, jamais dans le code ni les fichiers de configuration. Chaque modification est journalisée (compte, date, ancien et nouveau contenu). Les comptes bancaires ne sont jamais imprimés ni exposés publiquement.
+- Le bas du billet affiche ces informations, ou « À renseigner » si elles sont vides. La ligne HT / TVA / TTC n'apparaît que si l'IFU de l'agence est renseigné.
+- **Facturation normalisée e-MECeF : obligation à confirmer avec le boss et son comptable avant les premières ventes réelles ; hors périmètre actuel.** Le billet ne porte ni numéro de facture, ni NIM, ni code MeCeF/DGI, ni QR de la DGI.
+
 ## 2 quater. Une seule application mobile (clients et personnel)
 
 L'application « Axis Transport » (`mobile-flutter`, identifiant Android `com.axistransport.axis_transport_flutter`) sert désormais aux clients et au personnel. Après connexion, l'interface dépend uniquement du rôle renvoyé par le serveur : client → billets, colis, location ; guichet, contrôleur ou administrateur → Accueil, Scanner, Vendre, Profil. L'inscription ne crée que des comptes clients.

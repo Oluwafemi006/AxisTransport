@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { QRCodeCanvas, QRCodeSVG } from "qrcode.react";
 import { API_URL } from "@/lib/api";
+import { ticketFooter, ticketRows } from "@/lib/ticket-print";
+import type { TicketPrintInfo } from "@/lib/types";
 
 interface PublicTicketData {
   reference: string;
@@ -15,6 +17,8 @@ interface PublicTicketData {
   destination: string;
   departure_at: string | null;
   boarding_at: string | null;
+  arrival_at: string | null;
+  print_info?: TicketPrintInfo;
   amount: number;
   currency: string;
   formatted_amount: string;
@@ -99,9 +103,11 @@ export default function PublicTicketPage() {
     );
   }
 
-  const isConfirmed = ticket.status === "CONFIRMED" || ticket.status === "ISSUED";
+  const paid = ticket.print_info?.paid ?? false;
+  const rows = ticketRows(ticket, formatDate);
+  const footer = ticketFooter(ticket.print_info);
 
-  // Compose le billet en image à partir des données du serveur ; une donnée absente affiche « à confirmer ».
+  // Compose le billet en image avec exactement les mêmes lignes que la page.
   const downloadTicket = async () => {
     // Logo du site ; s'il ne se charge pas, le nom est écrit en texte.
     const logo = await new Promise<HTMLImageElement | null>((resolve) => {
@@ -113,7 +119,7 @@ export default function PublicTicketPage() {
     const qr = document.getElementById("ticket-qr-canvas") as HTMLCanvasElement | null;
     const canvas = document.createElement("canvas");
     canvas.width = 800;
-    canvas.height = 1120;
+    canvas.height = 700 + rows.length * 46 + footer.length * 30;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.fillStyle = "#ffffff";
@@ -126,27 +132,21 @@ export default function PublicTicketPage() {
       ctx.fillText(ticket.company_name || "AXIS Transport", 50, 80);
     }
     ctx.font = "24px sans-serif";
-    ctx.fillText("Billet électronique", 50, 144);
+    ctx.fillText("Billet de transport", 50, 144);
     if (qr) ctx.drawImage(qr, 200, 160, 400, 400);
-    const rows: [string, string][] = [
-      ["Référence", ticket.reference],
-      ["Trajet", ticket.origin && ticket.destination ? `${ticket.origin} → ${ticket.destination}` : ""],
-      ["Embarquement", ticket.boarding_at ? formatDate(ticket.boarding_at) : ""],
-      ["Départ", ticket.departure_at ? formatDate(ticket.departure_at) : ""],
-      ["Siège", ticket.seat_label],
-      ["Passager", ticket.passenger_name],
-      ["Prix du billet", ticket.formatted_amount],
-      ["Statut", ticket.status_display],
-    ];
-    rows.forEach(([label, value], index) => {
-      const y = 628 + index * 54;
-      ctx.font = "bold 24px sans-serif";
+    let y = 628;
+    rows.forEach(([label, value]) => {
+      ctx.font = "bold 22px sans-serif";
       ctx.fillText(label, 50, y);
-      ctx.font = "24px sans-serif";
-      ctx.fillText(value && value !== "N/A" ? value : "à confirmer", 250, y);
+      ctx.font = "22px sans-serif";
+      ctx.fillText(value, 300, y);
+      y += 46;
     });
     ctx.font = "20px sans-serif";
-    ctx.fillText("Présentez ce QR code à l'embarquement.", 50, 1080);
+    ctx.fillText("Présentez ce QR code à l'embarquement.", 50, y + 10);
+    y += 50;
+    ctx.font = "16px sans-serif";
+    footer.forEach((line) => { ctx.fillText(line, 50, y); y += 30; });
     const link = document.createElement("a");
     link.download = `billet-axis-${ticket.reference}.png`;
     link.href = canvas.toDataURL("image/png");
@@ -160,7 +160,7 @@ export default function PublicTicketPage() {
         {/* Header Branding */}
         <div className="bg-white border-b border-slate-200 p-6 text-center relative">
           <div className="inline-block bg-axis-100 text-axis-900 px-3 py-1 rounded-full text-xs font-semibold tracking-wider uppercase mb-3">
-            Billet Électronique Officiel
+            Billet de transport
           </div>
           <h1>
             <img src="/images/axis-logo.png" alt={ticket.company_name || "AXIS Transport"} width={570} height={176} className="mx-auto h-16 w-auto" />
@@ -171,15 +171,11 @@ export default function PublicTicketPage() {
         {/* Status Badge */}
         <div className="px-6 pt-6 flex items-center justify-between">
           <span className="text-xs text-slate-400 font-medium">RÉFÉRENCE</span>
-          <span
-            className={`px-3 py-1 rounded-full text-xs font-bold tracking-wide ${
-              isConfirmed
-                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                : "bg-amber-100 text-amber-800 border border-amber-200"
-            }`}
-          >
-            ● {ticket.status_display || ticket.status}
-          </span>
+          {paid && (
+            <span className="px-3 py-1 rounded-full text-xs font-bold tracking-wide bg-emerald-100 text-emerald-800 border border-emerald-200">
+              Payé
+            </span>
+          )}
         </div>
         <div className="px-6 text-xl font-mono font-bold text-slate-900 mt-1">
           {ticket.reference}
@@ -215,61 +211,21 @@ export default function PublicTicketPage() {
           )}
         </div>
 
-        {/* Trip & Route Details */}
-        <div className="p-6 bg-slate-50/50 space-y-4">
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
-            <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">
-              Trajet
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="text-lg font-bold text-slate-900">{ticket.origin || "Départ"}</div>
-              <div className="text-indigo-600 font-bold px-2">➔</div>
-              <div className="text-lg font-bold text-slate-900">{ticket.destination || "Arrivée"}</div>
-            </div>
-            <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-600 flex items-center justify-between">
-              <span>🕒 Embarquement</span>
-              <span className="font-semibold text-slate-800">{ticket.boarding_at ? formatDate(ticket.boarding_at) : "à confirmer"}</span>
-            </div>
-            <div className="mt-2 text-xs text-slate-600 flex items-center justify-between">
-              <span>📅 Départ</span>
-              <span className="font-semibold text-slate-800">{formatDate(ticket.departure_at)}</span>
-            </div>
-          </div>
-
-          {/* Passenger & Seat */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
-              <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">
-                Passager
+        {/* Informations du billet : mêmes lignes que l'image téléchargée */}
+        <div className="p-6 bg-slate-50/50">
+          <dl className="bg-white rounded-2xl border border-slate-200/80 shadow-sm divide-y divide-slate-100">
+            {rows.map(([label, value]) => (
+              <div key={label} className="flex items-start justify-between gap-4 px-4 py-2.5 text-sm">
+                <dt className="text-slate-500">{label}</dt>
+                <dd className="font-semibold text-slate-900 text-right">{value}</dd>
               </div>
-              <div className="font-bold text-slate-900 truncate">
-                {ticket.passenger_name || "Nom non spécifié"}
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
-              <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">
-                Siège
-              </div>
-              <div className="text-2xl font-black text-indigo-700">
-                N° {ticket.seat_label}
-              </div>
-            </div>
-          </div>
-
-          {/* Prix du billet seul : les frais de paiement n'apparaissent jamais sur le billet */}
-          <div className="bg-slate-900 text-white p-4 rounded-2xl flex items-center justify-between shadow-lg">
-            <span className="text-xs font-medium text-slate-300">Prix du billet</span>
-            <span className="text-xl font-black tracking-tight text-emerald-400">
-              {ticket.formatted_amount}
-            </span>
-          </div>
+            ))}
+          </dl>
         </div>
 
-        {/* Security / Footer Warning */}
-        <div className="p-4 bg-slate-100 text-center text-[11px] text-slate-400 border-t border-slate-200 space-y-1">
-          <p className="font-medium">Ce billet est personnel, en lecture seule et certifié par AXIS.</p>
-          <p>© {new Date().getFullYear()} AXIS Transport. Tous droits réservés.</p>
+        {/* Bas du billet : agence (jamais les comptes bancaires) et conditions */}
+        <div className="p-4 bg-slate-100 text-[11px] text-slate-500 border-t border-slate-200 space-y-1">
+          {footer.map((line) => <p key={line}>{line}</p>)}
         </div>
 
       </div>
