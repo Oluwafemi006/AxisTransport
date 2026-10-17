@@ -5,7 +5,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée.
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
-| IFU de l'acheteur et lignes HT / TVA dans le partage de l'app du personnel | `ag/billet-personnel` | Antigravity | à faire |
+| IFU de l'acheteur et lignes HT / TVA dans le partage de l'app du personnel | `ag/billet-personnel` | Antigravity | à valider par Eddy |
 | Bouton « Vérifier mon paiement », rattrapage automatique en local, vérification patiente | `confirmation-paiement` | Claude Code | à valider par Eddy (non fusionnée, 3 conflits à résoudre) |
 
 ## Tâche `ag/billet-personnel` (Antigravity)

@@ -139,9 +139,11 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
   }
 
   Future<void> _share(SaleTicket ticket) {
-    return Share.share(
-      saleShareText(ticket, formatFullDateTime),
-      subject: 'Billet AXIS Transport ${ticket.reference}',
+    return SharePlus.instance.share(
+      ShareParams(
+        text: saleShareText(ticket, formatFullDateTime),
+        subject: 'Billet AXIS Transport ${ticket.reference}',
+      ),
     );
   }
 
@@ -399,6 +401,7 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
   }
 
   List<Widget> _issued(SaleTicket ticket) {
+    final info = ticket.printInfo;
     return [
       AxisCard(
         child: Column(
@@ -423,6 +426,20 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
             Text(
               'Prix du billet : ${formatMoney(ticket.amount, ticket.currency)}',
             ),
+            if (info != null && info.buyerIfu.trim().isNotEmpty)
+              Text('IFU de l\'acheteur : ${info.buyerIfu.trim()}'),
+            if (info != null && info.priceExclTax != null) ...[
+              Text(
+                'Prix HT : ${formatMoney(info.priceExclTax!, ticket.currency)}',
+              ),
+              for (final line in info.taxLines)
+                Text(
+                  '${line.name} ${line.rate} % (incluse) : ${formatMoney(line.amount, ticket.currency)}',
+                ),
+              Text(
+                'Prix TTC : ${formatMoney(info.priceInclTax, ticket.currency)}',
+              ),
+            ],
           ],
         ),
       ),

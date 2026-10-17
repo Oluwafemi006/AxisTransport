@@ -98,12 +98,15 @@ class _Api extends ApiClient {
     sells += 1;
     keys.add(idempotencyKey);
     await Future<void>.delayed(const Duration(milliseconds: 20));
-    if (sellError != null) throw sellError!;
-    if (paymentMethod == 1)
+    if (sellError != null) {
+      throw sellError!;
+    }
+    if (paymentMethod == 1) {
       return {
         'booking': _booking('CONFIRMED', ticketStatus: 'ISSUED'),
         'checkout': null,
       };
+    }
     if (paymentError != null) {
       return {
         'booking': _booking('HELD'),
@@ -316,5 +319,74 @@ void main() {
       saleShareText(withLink, formatFullDateTime),
       contains('https://site.exemple.test/t/AX-20261012-ABCDEF12'),
     );
+  });
+
+  test('le texte de partage inclut le prix en FCFA', () {
+    final ticket = SaleTicket.fromJson(
+      (_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+    );
+    final text = saleShareText(ticket, formatFullDateTime);
+    expect(text.replaceAll(RegExp(r'\s'), ''), contains('Prixdubillet:1000FCFA'));
+  });
+
+  test('le texte de partage inclut l\'IFU de l\'acheteur seulement s\'il est renseigné', () {
+    final withoutIfu = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'print_info': {
+        'buyer_ifu': '',
+      },
+    });
+    expect(saleShareText(withoutIfu, formatFullDateTime), isNot(contains('IFU')));
+
+    final withIfu = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'print_info': {
+        'buyer_ifu': 'TEST-IFU-ACHETEUR',
+      },
+    });
+    expect(
+      saleShareText(withIfu, formatFullDateTime),
+      contains('IFU de l\'acheteur : TEST-IFU-ACHETEUR'),
+    );
+  });
+
+  test('le texte de partage inclut les lignes HT et TVA seulement si price_excl_tax n\'est pas nul', () {
+    final withoutTaxes = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'print_info': {
+        'price_incl_tax': 1000,
+        'price_excl_tax': null,
+        'tax_lines': [],
+      },
+    });
+    final textWithout = saleShareText(withoutTaxes, formatFullDateTime);
+    expect(textWithout, isNot(contains('Prix HT')));
+    expect(textWithout, isNot(contains('TVA')));
+    expect(textWithout, isNot(contains('Prix TTC')));
+
+    final withTaxes = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'amount': 1000,
+      'currency': 'XOF',
+      'print_info': {
+        'buyer_ifu': 'TEST-IFU-123',
+        'price_incl_tax': 1000,
+        'price_excl_tax': 847,
+        'tax_lines': [
+          {'name': 'TVA', 'rate': '18', 'amount': 153},
+        ],
+      },
+    });
+    final textWith = saleShareText(withTaxes, formatFullDateTime);
+    expect(textWith, contains('IFU de l\'acheteur : TEST-IFU-123'));
+    final compacted = textWith.replaceAll(RegExp(r'\s'), '');
+    expect(compacted, contains('PrixHT:847FCFA'));
+    expect(compacted, contains('TVA18%(incluse):153FCFA'));
+    expect(compacted, contains('PrixTTC:1000FCFA'));
   });
 }
