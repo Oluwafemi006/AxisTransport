@@ -280,6 +280,12 @@ class RegisterAddressThrottle(_AddressThrottle):
     scope = "register_address"
 
 
+class PaymentRefreshThrottle(_AddressThrottle):
+    """« Vérifier mon paiement » : chaque demande interroge FedaPay, donc limitée par adresse IP."""
+
+    scope = "payment_refresh"
+
+
 class LoginAccountThrottle(_LiveRateThrottle):
     """
     Échecs de connexion par identifiant saisi, comptés de deux façons :
