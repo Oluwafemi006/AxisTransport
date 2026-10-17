@@ -13,7 +13,26 @@ const source = readFileSync(path.join(here, "../src/lib/portal-rules.ts"), "utf8
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
 const compiled = path.join(mkdtempSync(path.join(tmpdir(), "axis-portal-rules-")), "portal-rules.mjs");
 writeFileSync(compiled, outputText);
-const { holdMinutesConfigured, counterTripLabel, actionErrorText } = await import(pathToFileURL(compiled).href);
+const { placeChoices, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText } = await import(pathToFileURL(compiled).href);
+
+const places = [{ id: 1, name: "Cotonou" }, { id: 2, name: "Parakou" }];
+
+test("aucune ville n'est retirée tant que l'autre liste est vide", () => {
+  assert.deepEqual(placeChoices(places, "").map((place) => place.name), ["Cotonou", "Parakou"]);
+});
+
+test("la destination exclut le départ choisi, et inversement", () => {
+  assert.deepEqual(placeChoices(places, "1").map((place) => place.name), ["Parakou"]);
+  assert.deepEqual(placeChoices(places, "2").map((place) => place.name), ["Cotonou"]);
+});
+
+test("recherche refusée sans les deux villes, ou avec la même ville", () => {
+  assert.equal(searchError("", ""), "Choisissez une ville de départ et une destination.");
+  assert.equal(searchError("1", ""), "Choisissez une ville de départ et une destination.");
+  assert.equal(searchError("", "2"), "Choisissez une ville de départ et une destination.");
+  assert.equal(searchError("1", "1"), "La destination doit être différente de la ville de départ.");
+  assert.equal(searchError("1", "2"), null);
+});
 
 test("durée de blocage : absente, vide, nulle ou invalide = non configurée", () => {
   assert.equal(holdMinutesConfigured([]), false);
@@ -47,3 +66,27 @@ test("erreur d'action : toujours en français, sans texte technique, jamais comm
   }
 });
 
+test("lien d'appel : chiffres et « + » seulement, rien si vide ou invalide", async () => {
+  const { phoneHref } = await import(pathToFileURL(compiled).href);
+  assert.equal(phoneHref("+229 01 97 00 00 00"), "tel:+2290197000000");
+  assert.equal(phoneHref("01 97 00 00 00"), "tel:0197000000");
+  assert.equal(phoneHref("(+229) 97-00.00.00"), "tel:+22997000000");
+  assert.equal(phoneHref(""), null);
+  assert.equal(phoneHref("   "), null);
+  assert.equal(phoneHref(null), null);
+  assert.equal(phoneHref("À renseigner"), null);
+  assert.equal(phoneHref("229+97"), null);
+  assert.equal(phoneHref("+1234567890123456"), null);
+});
+
+test("lien WhatsApp : numéro international sans « + » ni espaces, rien sinon", async () => {
+  const { whatsappHref } = await import(pathToFileURL(compiled).href);
+  assert.equal(whatsappHref("+229 01 97 00 00 00"), "https://wa.me/2290197000000");
+  assert.equal(whatsappHref("00229 97-00-00-00"), "https://wa.me/22997000000");
+  assert.equal(whatsappHref(""), null);
+  assert.equal(whatsappHref(null), null);
+  assert.equal(whatsappHref("01 97 00 00 00"), null);
+  assert.equal(whatsappHref("+229 abc"), null);
+  assert.equal(whatsappHref("https://evil.example/+229"), null);
+  assert.equal(whatsappHref("+1234567890123456"), null);
+});
