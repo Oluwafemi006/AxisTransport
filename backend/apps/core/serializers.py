@@ -285,6 +285,16 @@ def _display_name(user):
     return (user.get_full_name() or user.username) if user else ""
 
 
+# Valeurs du champ « mode » de FedaPay réellement observées, et leur libellé imprimé. Seule « momo_test »
+# a été vue (sandbox). Toute autre valeur, ou son absence, s'imprime « Paiement en ligne » : rien n'est deviné.
+# Ajouter ici chaque valeur réelle une fois constatée sur une transaction live.
+FEDAPAY_MODE_LABELS = {"momo_test": "Mobile Money (test)"}
+
+
+def online_payment_label(mode):
+    return FEDAPAY_MODE_LABELS.get((mode or "").strip().lower(), "Paiement en ligne")
+
+
 def ticket_print_info(ticket):
     """
     Données imprimées sur le billet, toutes lues sur le serveur ; les apps et le site ne calculent rien.
@@ -308,8 +318,9 @@ def ticket_print_info(ticket):
     payment_mode = ""
     if paid and receipt:
         if receipt.provider.upper() in ONLINE_PROVIDERS:
-            payment_mode = "Mobile Money"
+            payment_mode = online_payment_label(receipt.provider_mode)
         else:
+            # Au guichet : le nom du moyen tel que configuré par l'administrateur (ex. « Espèces »).
             method = PaymentMethod.objects.filter(code__iexact=receipt.provider).first()
             payment_mode = method.label if method else ""
     agency = public_agency_info()

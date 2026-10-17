@@ -138,11 +138,14 @@ class TicketPrintInfoTests(APITestCase):
     def fill_agency(self):
         AgencyProfile.objects.update_or_create(pk=1, defaults=TEST_AGENCY)
 
-    def online_paid_ticket(self, **booking_fields):
+    def online_paid_ticket(self, mode=None, **booking_fields):
         booking = make_booking(self.context, customer=self.context["client"], seats=1)
         Booking.objects.filter(pk=booking.pk).update(**booking_fields)
         self.client.force_authenticate(self.context["client"])
-        with mock.patch(FETCH, return_value=fedapay_transaction(booking, transaction_id="9001")):
+        fetched = fedapay_transaction(booking, transaction_id="9001")
+        if mode is not None:
+            fetched["mode"] = mode
+        with mock.patch(FETCH, return_value=fetched):
             paid = self.client.post(
                 f"/api/v1/client/bookings/{booking.pk}/pay/",
                 {"payment_method": self.fedapay.pk, "external_reference": "9001"},
@@ -161,11 +164,21 @@ class TicketPrintInfoTests(APITestCase):
         info = self.client_ticket_json(ticket)["print_info"]
         self.assertEqual(info["title"], "Billet de transport")
         self.assertTrue(info["paid"])
-        self.assertEqual((info["sale"], info["payment_mode"]), ("Vente en ligne", "Mobile Money"))
+        # FedaPay sans « mode » connu : jamais « Mobile Money » par défaut.
+        self.assertEqual((info["sale"], info["payment_mode"]), ("Vente en ligne", "Paiement en ligne"))
         self.assertEqual(set(info["agency"].values()), {""})
         self.assertIsNone(info["price_excl_tax"])
         self.assertEqual(info["tax_lines"], [])
         self.assertEqual(info["conditions"], "")
+
+    def test_payment_mode_returned_by_fedapay_is_stored_and_printed_only_when_known(self):
+        from apps.core.models import PaymentReceipt
+
+        ticket = self.online_paid_ticket(mode="momo_test")
+        self.assertEqual(PaymentReceipt.objects.get().provider_mode, "momo_test")
+        self.assertEqual(self.client_ticket_json(ticket)["print_info"]["payment_mode"], "Mobile Money (test)")
+        PaymentReceipt.objects.update(provider_mode="valeur_jamais_vue")
+        self.assertEqual(self.client_ticket_json(ticket)["print_info"]["payment_mode"], "Paiement en ligne")
 
     def test_with_agency_ifu_the_breakdown_is_printed(self):
         self.fill_agency()

@@ -648,6 +648,8 @@ class PaymentReceipt(TimeStampedModel):
 
     provider = models.CharField(max_length=40)
     external_id = models.CharField(max_length=120)
+    # Moyen réellement utilisé, tel que renvoyé par le prestataire (FedaPay : champ « mode »). Vide s'il est inconnu.
+    provider_mode = models.CharField(max_length=40, blank=True)
     booking = models.ForeignKey(
         Booking, on_delete=models.PROTECT, related_name="payment_receipts", null=True, blank=True
     )
