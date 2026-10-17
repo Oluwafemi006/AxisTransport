@@ -10,6 +10,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "unsafe-development-key")
 DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
+# « local » seulement sur le poste de développement (compose.yaml) : autorise les données de démonstration.
+AXIS_ENVIRONMENT = os.environ.get("AXIS_ENVIRONMENT", "").strip().lower()
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")

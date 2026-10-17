@@ -468,7 +468,7 @@ Limites : la sauvegarde reste sur le même serveur (une copie hors du serveur es
 
 ### 5.7 Aucune donnée de démonstration ; compte administrateur réel
 
-- Ne jamais lancer `seed_demo` sur le serveur. La commande refuse de tourner quand le debug est coupé, et `compose.vps.yaml` le fixe à `false`.
+- Ne jamais lancer `seed_demo` sur le serveur. La commande refuse de tourner si `DJANGO_DEBUG` n'est pas `true` **ou** si `AXIS_ENVIRONMENT` ne vaut pas `local` ; `compose.vps.yaml` fixe le debug à `false` et ne définit pas `AXIS_ENVIRONMENT`. Ne jamais ajouter `AXIS_ENVIRONMENT` dans `.env.vps`.
 - Au premier démarrage, `bootstrap_axis` crée seulement : les lieux Cotonou et Parakou, leurs deux itinéraires, le véhicule « Yutong » sans capacité, le moyen de paiement FedaPay sans frais client, des réglages vides, les arrêts de la ligne et la grille des 10 prix par tronçon (section 2 ter ; Savè, Kétou et Porto-Novo créés inactifs). Aucun compte de démonstration, aucun départ.
 - Le compte administrateur est créé au premier démarrage à partir de `AXIS_ADMIN_USERNAME` et `AXIS_ADMIN_PASSWORD`, saisis dans `.env.vps` sur le serveur. Une fois connecté une première fois, vider `AXIS_ADMIN_PASSWORD` du fichier (le compte existe déjà, la variable ne sert plus).
 - À saisir ensuite dans le portail `/admin` avant toute vente : capacité du véhicule, départs, durée de blocage d'un siège (`ticket_hold_minutes`), téléphone et WhatsApp de contact.

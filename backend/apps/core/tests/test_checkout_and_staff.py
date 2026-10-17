@@ -415,7 +415,7 @@ class SeedDemoTests(TestCase):
             call_command("seed_demo", stdout=StringIO())
         self.assertEqual(User.objects.count(), 0)
 
-    @override_settings(DEBUG=True, AXIS_PAYMENT_SIMULATION=False)
+    @override_settings(DEBUG=True, AXIS_ENVIRONMENT="local", AXIS_PAYMENT_SIMULATION=False)
     def test_creates_demo_data_and_is_idempotent(self):
         call_command("seed_demo", stdout=StringIO())
         call_command("seed_demo", stdout=StringIO())
@@ -430,13 +430,23 @@ class SeedDemoTests(TestCase):
         self.assertEqual(FareRule.objects.filter(name="Tarif DÉMO").count(), 1)
         self.assertFalse(PaymentMethod.objects.get(code="SIMULATION").active)
 
+    @override_settings(DEBUG=True, AXIS_ENVIRONMENT="")
+    def test_refuses_to_run_outside_the_local_environment(self):
+        # Debug activé par erreur sur un serveur : la commande refuse quand même, aucune donnée créée.
+        for environment in ("", "production", "recette"):
+            with self.subTest(environment=environment), override_settings(AXIS_ENVIRONMENT=environment):
+                with self.assertRaisesMessage(CommandError, "AXIS_ENVIRONMENT"):
+                    call_command("seed_demo", stdout=StringIO())
+        self.assertEqual(User.objects.count(), 0)
+        self.assertFalse(Trip.objects.exists())
+
     @override_settings(DEBUG=False)
     def test_ticket_option_also_refuses_outside_debug(self):
         with self.assertRaises(CommandError):
             call_command("seed_demo", with_ticket=True, stdout=StringIO())
         self.assertEqual(Ticket.objects.count(), 0)
 
-    @override_settings(DEBUG=True, AXIS_PAYMENT_SIMULATION=False)
+    @override_settings(DEBUG=True, AXIS_ENVIRONMENT="local", AXIS_PAYMENT_SIMULATION=False)
     def test_ticket_option_issues_a_ticket_scannable_today(self):
         output = StringIO()
         call_command("seed_demo", with_ticket=True, stdout=output)
