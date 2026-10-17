@@ -4,9 +4,9 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone } from "./ui";
 import { LoginCard } from "./login-card";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import type { FareRule, FeatureFlag, Location, ManualTicketChange, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle } from "@/lib/types";
+import type { AgencyProfile, AgencySettingChange, FareRule, FeatureFlag, Location, ManualTicketChange, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle } from "@/lib/types";
 
-type AdminTab = "dashboard" | "planning" | "guichet" | "colis" | "flotte" | "tarifs" | "troncons" | "paiements" | "equipe";
+type AdminTab = "dashboard" | "planning" | "guichet" | "colis" | "flotte" | "tarifs" | "troncons" | "agence" | "paiements" | "equipe";
 type Dashboard = {
   tickets: { sold: number; online: number; counter: number; checked: number; cancelled_or_refunded: number };
   revenue: { total: number; by_payment_method: Array<{ payment_method__label: string; total: number }> };
@@ -21,7 +21,7 @@ const nextParcelStatus: Record<string, string> = {
 
 const tabs: Array<[AdminTab, string]> = [
   ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["colis", "Colis"],
-  ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["troncons", "Tarifs par tronçon"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
+  ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["troncons", "Tarifs par tronçon"], ["agence", "Agence et taxes"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
 ];
 
 function failure(reason: unknown, fallback: string): NoticeState {
@@ -94,6 +94,7 @@ export function AdminPortal() {
           {tab === "flotte" && <FleetPanel locations={locations} vehicles={vehicles} onChanged={load} />}
           {tab === "tarifs" && <PricingPanel routes={routes} fares={fares} flags={flags} payments={payments} settings={settings} onChanged={load} />}
           {tab === "troncons" && <SegmentFarePanel />}
+          {tab === "agence" && <AgencyPanel />}
           {tab === "paiements" && <div className="space-y-5"><IncidentPanel incidents={incidents} onChanged={load} /><ManualTicketChangeLog /></div>}
           {tab === "equipe" && <TeamPanel users={users} onChanged={load} />}
         </>
@@ -626,6 +627,154 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
             </div>
           ))}
         </div>
+      </section>
+    </div>
+  );
+}
+
+const agencyFields: Array<[keyof AgencyProfile, string]> = [
+  ["legal_name", "Raison sociale"], ["ifu", "IFU"], ["rccm", "RCCM"], ["capital", "Capital"], ["address", "Adresse"],
+  ["phones", "Téléphones"], ["email", "E-mail"], ["bank_accounts", "Comptes bancaires (jamais imprimés)"],
+];
+
+function describeChange(value: Record<string, unknown> | null) {
+  if (!value) return "—";
+  const labels = Object.fromEntries(agencyFields) as Record<string, string>;
+  return Object.entries(value).map(([key, item]) => `${labels[key] ?? key} : ${item === "" || item === null ? "À renseigner" : String(item)}`).join(" · ");
+}
+
+// Informations légales de l'agence (imprimées en bas du billet) et taxes comprises dans le prix. Rien n'est prérempli.
+function AgencyPanel() {
+  const [profile, setProfile] = useState<AgencyProfile | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [taxes, setTaxes] = useState<Tax[]>([]);
+  const [taxDrafts, setTaxDrafts] = useState<Record<number, { rate: string; active: boolean; included: boolean }>>({});
+  const [newTax, setNewTax] = useState({ name: "", rate: "" });
+  const [log, setLog] = useState<AgencySettingChange[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [agency, rows, changes] = await Promise.all([
+        apiFetch<AgencyProfile>("/agency-profile/"), apiList<Tax>("/taxes/"), apiList<AgencySettingChange>("/agency-changes/"),
+      ]);
+      setProfile(agency);
+      setDraft(Object.fromEntries(agencyFields.map(([key]) => [key, String(agency[key] ?? "")])));
+      setTaxes(rows);
+      setTaxDrafts(Object.fromEntries(rows.map((tax) => [tax.id, { rate: tax.rate, active: tax.active, included: tax.included }])));
+      setLog(changes);
+    } catch (reason) { setNotice(failure(reason, "Les informations n’ont pas pu être chargées. Réessayez.")); }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function saveAgency(event: FormEvent) {
+    event.preventDefault();
+    if (!window.confirm("Enregistrer les informations de l’agence ? Elles seront imprimées sur les billets.")) return;
+    setBusy(true);
+    try {
+      await apiFetch("/agency-profile/", { method: "PATCH", body: JSON.stringify(draft) });
+      setNotice({ text: "Informations de l’agence enregistrées.", tone: "ok" });
+      await load();
+    } catch (reason) { setNotice(failure(reason, "Les informations n’ont pas été enregistrées.")); }
+    finally { setBusy(false); }
+  }
+
+  async function saveTax(tax: Tax) {
+    const change = taxDrafts[tax.id];
+    if (!change) return;
+    if (!window.confirm(`Enregistrer la taxe ${tax.name} : ${change.rate} %, ${change.active ? "active" : "inactive"}, ${change.included ? "incluse dans le prix" : "non incluse"} ? Les billets déjà vendus gardent leur taux.`)) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/taxes/${tax.id}/`, { method: "PATCH", body: JSON.stringify(change) });
+      setNotice({ text: `Taxe ${tax.name} enregistrée.`, tone: "ok" });
+      await load();
+    } catch (reason) { setNotice(failure(reason, "La taxe n’a pas été enregistrée.")); }
+    finally { setBusy(false); }
+  }
+
+  async function addTax(event: FormEvent) {
+    event.preventDefault();
+    if (!window.confirm(`Ajouter la taxe ${newTax.name} à ${newTax.rate} %, incluse dans le prix ?`)) return;
+    setBusy(true);
+    try {
+      await apiFetch("/taxes/", { method: "POST", body: JSON.stringify({ name: newTax.name, rate: newTax.rate, active: true, included: true }) });
+      setNewTax({ name: "", rate: "" });
+      setNotice({ text: "Taxe ajoutée.", tone: "ok" });
+      await load();
+    } catch (reason) { setNotice(failure(reason, "La taxe n’a pas été ajoutée.")); }
+    finally { setBusy(false); }
+  }
+
+  if (!profile) return <section className="card">{notice ? <Notice notice={notice} /> : <Loading />}</section>;
+  return (
+    <div className="space-y-5">
+      <section className="card">
+        <SectionHeading eyebrow="Imprimé en bas du billet" title="Informations de l’agence" />
+        <p className="mb-4 text-sm text-slate-500">Un champ vide est imprimé « À renseigner ». Les comptes bancaires ne sont jamais imprimés.</p>
+        <form onSubmit={saveAgency} className="grid gap-3 md:grid-cols-2">
+          {agencyFields.map(([key, label]) => (
+            <label key={key} className={key === "bank_accounts" || key === "address" ? "md:col-span-2" : ""}>
+              <span className="mb-1 block text-sm font-semibold">{label}</span>
+              {key === "bank_accounts"
+                ? <textarea className="field min-h-24" value={draft[key] ?? ""} placeholder="À renseigner" onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} />
+                : <input className="field" value={draft[key] ?? ""} placeholder="À renseigner" onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} />}
+            </label>
+          ))}
+          <div className="md:col-span-2"><button className="primary-button" disabled={busy}>{busy ? "Enregistrement…" : "Enregistrer"}</button></div>
+        </form>
+        {profile.updated_by_name && <p className="mt-3 text-sm text-slate-500">Dernière modification : {formatDate(profile.updated_at)} par {profile.updated_by_name}.</p>}
+      </section>
+      <section className="card">
+        <SectionHeading eyebrow="Comprises dans le prix affiché (TTC)" title="Taxes" />
+        <p className="mb-4 text-sm text-slate-500">Taux modifiable : la valeur de 18 % a été transmise et n’est pas vérifiée pour le transport de voyageurs. Un billet déjà vendu garde son taux.</p>
+        <div className="table-scroll">
+          <table className="staff-table min-w-[620px]">
+            <thead><tr><th>Taxe</th><th>Taux (%)</th><th>Active</th><th>Incluse dans le prix</th><th /></tr></thead>
+            <tbody>
+              {taxes.map((tax) => {
+                const change = taxDrafts[tax.id] ?? { rate: tax.rate, active: tax.active, included: tax.included };
+                return (
+                  <tr key={tax.id}>
+                    <td className="strong">{tax.name}</td>
+                    <td><input className="field max-w-28" inputMode="decimal" aria-label={`Taux ${tax.name}`} value={change.rate} onChange={(e) => setTaxDrafts({ ...taxDrafts, [tax.id]: { ...change, rate: e.target.value } })} /></td>
+                    <td><input type="checkbox" aria-label={`${tax.name} active`} checked={change.active} onChange={(e) => setTaxDrafts({ ...taxDrafts, [tax.id]: { ...change, active: e.target.checked } })} /></td>
+                    <td><input type="checkbox" aria-label={`${tax.name} incluse`} checked={change.included} onChange={(e) => setTaxDrafts({ ...taxDrafts, [tax.id]: { ...change, included: e.target.checked } })} /></td>
+                    <td className="text-right"><button className="secondary-button" disabled={busy} onClick={() => void saveTax(tax)}>Enregistrer</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <form onSubmit={addTax} className="mt-4 flex flex-wrap items-end gap-3">
+          <label><span className="mb-1 block text-sm font-semibold">Nouvelle taxe</span><input className="field" value={newTax.name} required onChange={(e) => setNewTax({ ...newTax, name: e.target.value })} /></label>
+          <label><span className="mb-1 block text-sm font-semibold">Taux (%)</span><input className="field max-w-28" inputMode="decimal" required value={newTax.rate} onChange={(e) => setNewTax({ ...newTax, rate: e.target.value })} /></label>
+          <button className="secondary-button" disabled={busy}>Ajouter</button>
+        </form>
+        <Notice notice={notice} />
+      </section>
+      <section className="card">
+        <SectionHeading eyebrow="Lecture seule" title="Journal des modifications" />
+        {log.length === 0 ? <EmptyState title="Aucune modification" text="Chaque changement apparaîtra ici." /> : (
+          <div className="table-scroll">
+            <table className="staff-table min-w-[720px]">
+              <thead><tr><th>Date</th><th>Élément</th><th>Avant</th><th>Après</th><th>Par</th></tr></thead>
+              <tbody>
+                {log.map((entry) => (
+                  <tr key={entry.id}>
+                    <td className="whitespace-nowrap">{formatDate(entry.changed_at)}</td>
+                    <td className="strong">{entry.label}</td>
+                    <td className="text-sm">{describeChange(entry.old_value)}</td>
+                    <td className="text-sm">{describeChange(entry.new_value)}</td>
+                    <td>{entry.changed_by_name}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );
