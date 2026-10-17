@@ -161,10 +161,10 @@ Pour appeler ce backend depuis le site Vercel (hors du but de cet essai) : ajout
 - **Incidents dans le portail** : onglet « Incidents de paiement » de `/admin` (administrateur seulement), en lecture seule avec une case « traité ».
 - La documentation FedaPay ne publie aucune limite de débit pour son API. Le rattrapage se borne lui-même : au plus `AXIS_PAYMENT_RECONCILE_BATCH` appels par passage, relectures espacées (chaque passage pendant 30 min, puis toutes les 10 min jusqu'à 2 h, puis chaque heure), arrêt du passage dès une réponse 429 ou 5xx.
 
-## 2 ter. Tarifs par tronçon (À CONFIRMER par la direction)
+## 2 ter. Tarifs par tronçon (validée par la direction, transmise par Eddy)
 
 Ligne, dans l'ordre : Parakou, Savè, Kétou, Porto-Novo, Cotonou. Un prix par paire d'arrêts, le même dans les deux sens.
-Ces dix prix ont été fournis par l'équipe et **restent à confirmer par la direction** :
+Ces dix prix sont la grille **validée par la direction (transmise par Eddy)** :
 
 | Tronçon | Prix (FCFA) |
 |---|---|
@@ -197,6 +197,9 @@ Ces dix prix ont été fournis par l'équipe et **restent à confirmer par la di
 - **Prix affiché TTC** : rien ne s'ajoute au prix de la grille. Taxe initiale : TVA 18 %, incluse, seule taxe. Ce taux est une valeur transmise, **non vérifiée pour le transport de voyageurs** : modifiable dans `/admin`, onglet « Agence et taxes ». Un billet déjà vendu garde son taux et ses montants (HT et TVA figés à la vente).
 - **Informations de l'agence** (raison sociale, IFU, RCCM, capital, adresse, téléphones, e-mail, comptes bancaires) : vides au départ, **saisies uniquement dans `/admin`**, jamais dans le code ni les fichiers de configuration. Chaque modification est journalisée (compte, date, ancien et nouveau contenu). Les comptes bancaires ne sont jamais imprimés ni exposés publiquement.
 - Le bas du billet affiche ces informations, ou « À renseigner » si elles sont vides. La ligne HT / TVA / TTC n'apparaît que si l'IFU de l'agence est renseigné.
+- **Compte du boss** : aucun rôle « boss » n'existe. Le boss reçoit un compte **administrateur nominatif** (à son nom, créé par `create_admin` ou dans « Équipe & rôles ») ; le journal de « Agence et taxes » et celui des tarifs indiquent qui a modifié quoi.
+- **Mode de paiement imprimé** : pour un paiement FedaPay, le billet imprime le moyen réellement renvoyé par FedaPay (champ `mode` de la transaction). Seule la valeur `momo_test` (sandbox) a été observée, imprimée « Mobile Money (test) » ; toute autre valeur s'imprime « Paiement en ligne » jusqu'à ce qu'elle soit constatée sur une transaction réelle et ajoutée (`FEDAPAY_MODE_LABELS` dans `backend/apps/core/serializers.py`). Au guichet, c'est le nom du moyen de paiement configuré qui s'imprime : le renommer « Espèces » dans `/django-admin/` → « Payment methods » → le moyen du guichet → champ « Label » (le portail `/admin` n'a pas d'écran pour renommer un moyen de paiement).
+- **Frais FedaPay constatés en sandbox** : sur la transaction de test du 17/10/2026 (1 000 FCFA), FedaPay a débité **1 042** au client et versé 1 000 à l'agence. Le compte sandbox fait donc payer les frais au client, contrairement à la décision. À régler dans le tableau de bord FedaPay (qui supporte les frais) puis à revérifier sur une transaction, en sandbox et en live.
 - **Facturation normalisée e-MECeF : obligation à confirmer avec le boss et son comptable avant les premières ventes réelles ; hors périmètre actuel.** Le billet ne porte ni numéro de facture, ni NIM, ni code MeCeF/DGI, ni QR de la DGI.
 
 ## 2 quater. Une seule application mobile (clients et personnel)
@@ -285,17 +288,26 @@ Fichiers utilisés :
 
 ### 5.0 Mise en ligne pas à pas — variante B, `axistransportlogistique.com`
 
-Procédure complète dans l'ordre, pour une première mise en ligne en HTTPS. Domaine : `axistransportlogistique.com` (site) et `api.axistransportlogistique.com` (API). Une adresse `www.` n'est pas prévue : à ajouter seulement si elle est décidée (inconnu). Chaque commande se lance sur le serveur, dans `~/axis`, sauf mention contraire. `C` désigne :
+Procédure complète dans l'ordre, pour une première mise en ligne en HTTPS. Domaine : `axistransportlogistique.com` (site) et `api.axistransportlogistique.com` (API). `www.axistransportlogistique.com` redirige vers `axistransportlogistique.com`. Chaque commande se lance sur le serveur, dans `~/axis`, sauf mention contraire. `C` désigne :
 
 ```bash
 C="docker compose --env-file .env.vps -f compose.vps.yaml"
 ```
 
-**Étape 0 — Avant de commencer** (une seule fois) : serveur sécurisé (5.2), Docker installé (5.3), et chez le fournisseur du domaine deux enregistrements DNS de type A vers `<IP>` : `axistransportlogistique.com` et `api.axistransportlogistique.com`. Vérifier :
+**Étape 0 — Avant de commencer** (une seule fois) : serveur sécurisé (5.2), Docker installé (5.3), et chez le fournisseur du domaine trois enregistrements DNS de type A vers `<IP>` :
+
+| Type | Nom | Valeur |
+|---|---|---|
+| A | `axistransportlogistique.com` (souvent noté `@`) | `<IP>` |
+| A | `api` | `<IP>` |
+| A | `www` | `<IP>` (Caddy le redirige vers l'adresse sans `www`) |
+
+Vérifier :
 
 ```bash
 dig +short axistransportlogistique.com        # doit afficher <IP>
 dig +short api.axistransportlogistique.com    # doit afficher <IP>
+dig +short www.axistransportlogistique.com    # doit afficher <IP>
 ```
 
 **Étape 1 — Récupérer le code** (5.3), puis noter la version déployée :
@@ -366,6 +378,7 @@ La commande demande l'identifiant, l'e-mail (facultatif), puis deux fois le mot 
 curl -sI https://axistransportlogistique.com | head -1                      # HTTP/2 200
 curl -s https://api.axistransportlogistique.com/api/v1/health/              # réponse de l'API
 curl -sI http://axistransportlogistique.com | grep -i '^location'          # redirection vers https://
+curl -sI https://www.axistransportlogistique.com | grep -i '^location'     # redirection vers https://axistransportlogistique.com/
 ```
 
 **Étape 8 — Sauvegardes** : installer la sauvegarde quotidienne et tester une restauration (5.6), puis faire les contrôles après déploiement (5.12).
@@ -665,6 +678,21 @@ Pour un essai sur la variante A seulement : `--dart-define=AXIS_API_URL=http://<
 - Les sauvegardes et la restauration sur le serveur (scripts essayés seulement sur le PC), le redémarrage automatique après `reboot`.
 - L'interface du tableau de bord FedaPay (où se déclarent le webhook et l'adresse de retour) et l'acceptation de ces adresses.
 - Le comportement des apps mobiles en release contre une API distante.
+
+## 5 bis. À faire avant ouverture au public
+
+### Pièces déposées pour la location (pièce d'identité, permis) et preuves de dépôt des colis
+
+Ce que fait le code aujourd'hui (constaté en lisant le code, non essayé sur le VPS) :
+
+- Les fichiers sont enregistrés dans `/app/media` (volume `vps_media` sur le VPS), sous `rental-documents/identity/`, `rental-documents/licence/` et `parcel-proofs/`, avec le nom d'origine du fichier.
+- Django ne sert `/media/` **que si `DEBUG` est activé** (`backend/config/urls.py`). Sur le VPS, `DJANGO_DEBUG` est fixé à `false` : une adresse `/media/...` répond 404. WhiteNoise ne sert que les fichiers statiques (`/static/`), et `deploy/Caddyfile.https` n'a aucune règle `/media` : il transmet tout `api.<DOMAINE>` à Django, qui répond 404. Les pièces ne sont donc **pas publiques** sur le VPS… mais **personne ne peut les consulter**, administrateur compris.
+- L'API de location renvoie l'adresse de ces fichiers (`identity_document`, `driving_licence`) au client propriétaire et au personnel autorisé.
+- **En local** (`compose.yaml`, `DEBUG` activé), `/media/` est servi **sans contrôle d'accès** : quiconque connaît l'adresse peut ouvrir le fichier.
+
+Non vérifié : le comportement réel derrière Caddy sur le VPS, et les adresses renvoyées par l'API en production.
+
+Solution proposée (non faite) : une vue Django protégée, par exemple `/api/v1/documents/<id>/<champ>/`, réservée aux administrateurs (et au client propriétaire si c'est décidé), qui lit le fichier sur le disque et le renvoie ; l'API ne renverrait plus l'adresse `/media/` directe ; noms de fichiers remplacés par un identifiant aléatoire à l'enregistrement ; chaque consultation journalisée (compte, date, document). Garder `/media/` jamais servi, ni par Django ni par Caddy.
 
 ## 6. À construire en étape 5 (notes, rien n'est codé)
 
