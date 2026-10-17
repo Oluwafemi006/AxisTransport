@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/formatters.dart';
 import '../../core/session.dart';
 import '../../core/theme.dart';
+import '../../shared/payment_link.dart';
 import '../../shared/shell.dart';
 import '../../shared/widgets.dart';
 import 'sale_controller.dart';
@@ -65,10 +65,7 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
   Future<void> _openPaymentPage() async {
     final url = _sale.checkout?.paymentUrl;
     if (url == null) return;
-    final opened = await launchUrl(
-      Uri.parse(url),
-      mode: LaunchMode.externalApplication,
-    );
+    final opened = await openPaymentPage(Uri.parse(url));
     if (!opened && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

@@ -30,7 +30,7 @@ DEMO_ACCOUNTS = [
 
 
 class Command(BaseCommand):
-    help = "Crée des données de DÉMONSTRATION (comptes, véhicule, voyage, tarif). Refuse de tourner hors DEBUG."
+    help = "Crée des données de DÉMONSTRATION (comptes, véhicule, voyage, tarif). Refuse de tourner hors DEBUG ou hors environnement local."
 
     def add_arguments(self, parser):
         parser.add_argument("--password", default="demo-axis-2026", help="Mot de passe des comptes de démonstration.")
@@ -43,6 +43,11 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if not settings.DEBUG:
             raise CommandError("seed_demo est réservé au développement : DJANGO_DEBUG doit valoir true.")
+        if settings.AXIS_ENVIRONMENT != "local":
+            raise CommandError(
+                "seed_demo est réservé au poste de développement : AXIS_ENVIRONMENT doit valoir « local » "
+                "(défini seulement dans compose.yaml). Jamais sur le serveur."
+            )
 
         for username, role, label in DEMO_ACCOUNTS:
             user, _ = User.objects.get_or_create(
