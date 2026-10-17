@@ -83,6 +83,7 @@ export interface Seat {
 export interface Ticket {
   id: number;
   reference: string;
+  booking?: number | null;
   trip: number;
   trip_detail: Trip;
   seat: number;
