@@ -6,7 +6,7 @@ from apps.core.models import LineStop, Location, SegmentFare, SegmentFareChange
 # Ligne Parakou ↔ Cotonou, dans l'ordre de parcours du trajet aller.
 STOPS = ["Parakou", "Savè", "Kétou", "Porto-Novo", "Cotonou"]
 
-# Prix en francs CFA, identiques dans les deux sens. Fournis par l'équipe Axis, À CONFIRMER par la direction.
+# Prix en francs CFA, identiques dans les deux sens. Grille validée par la direction (transmise par Eddy).
 FARES = {
     ("Parakou", "Cotonou"): 7500,
     ("Parakou", "Porto-Novo"): 7500,

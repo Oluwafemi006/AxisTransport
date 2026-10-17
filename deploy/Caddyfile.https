@@ -8,3 +8,9 @@
 api.{$AXIS_DOMAIN} {
 	reverse_proxy backend:8000
 }
+
+# www. renvoie vers l'adresse sans www (redirection permanente, chemin et paramètres conservés).
+# Prérequis : un enregistrement DNS A pour www.AXIS_DOMAIN vers ce serveur.
+www.{$AXIS_DOMAIN} {
+	redir https://{$AXIS_DOMAIN}{uri} permanent
+}
