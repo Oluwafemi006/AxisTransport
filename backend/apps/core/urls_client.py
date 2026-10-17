@@ -388,6 +388,7 @@ class ClientBookingViewSet(viewsets.GenericViewSet):
                 customer=customer,
                 contact_phone=data.get("contact_phone", ""),
                 contact_email=data.get("contact_email", ""),
+                buyer_ifu=data.get("buyer_ifu", ""),
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc)

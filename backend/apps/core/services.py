@@ -3,7 +3,7 @@ import hashlib
 import secrets
 from datetime import timedelta
 from types import SimpleNamespace
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import transaction
@@ -31,6 +31,7 @@ from .models import (
     LineStop,
     SegmentFare,
     SegmentFareChange,
+    Tax,
 )
 
 
@@ -184,6 +185,48 @@ def trip_fare(trip):
     return SimpleNamespace(id=fare.id, name=fare.label, amount=Decimal(fare.amount), currency=fare.currency)
 
 
+def tax_breakdown(price, taxes=None):
+    """
+    Décompose un prix TTC (taxes comprises, rien ne s'ajoute) : HT = TTC / (1 + taux), taxe = TTC - HT,
+    arrondis au franc ; HT + taxes vaut toujours exactement le TTC.
+    Plusieurs taxes incluses : leur part est répartie au prorata des taux, la dernière reçoit le reste.
+    Renvoie (HT, [{"name", "rate", "amount"}]). Sans taxe incluse active : HT = TTC, aucune ligne.
+    """
+    price = Decimal(price).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    if taxes is None:
+        taxes = list(Tax.objects.filter(active=True, included=True).order_by("name", "pk"))
+    taxes = [tax for tax in taxes if Decimal(tax.rate) > 0]
+    if not taxes:
+        return price, []
+    total_rate = sum(Decimal(tax.rate) for tax in taxes)
+    excl = (price * Decimal(100) / (Decimal(100) + total_rate)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    total_tax = price - excl
+    lines, assigned = [], Decimal(0)
+    for index, tax in enumerate(taxes):
+        if index == len(taxes) - 1:
+            amount = total_tax - assigned
+        else:
+            amount = (total_tax * Decimal(tax.rate) / total_rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        assigned += amount
+        lines.append({"name": tax.name, "rate": str(Decimal(tax.rate).normalize()), "amount": int(amount)})
+    return excl, lines
+
+
+def _tax_snapshot(price):
+    excl, lines = tax_breakdown(price)
+    return {"price_excl_tax": excl, "tax_lines": lines}
+
+
+def clean_buyer_ifu(value):
+    """IFU de l'acheteur, facultatif : texte court sans mise en forme imposée (format officiel non vérifié ici)."""
+    text = " ".join(str(value or "").split())
+    if len(text) > 30:
+        raise ValidationError("L'IFU de l'acheteur ne doit pas dépasser 30 caractères.")
+    if text and not re.fullmatch(r"[A-Za-z0-9 ./-]+", text):
+        raise ValidationError("L'IFU de l'acheteur ne peut contenir que des lettres, des chiffres, des espaces, « . », « / » ou « - ».")
+    return text
+
+
 def parse_fcfa_amount(value):
     """Prix saisi par l'administrateur : nombre entier de francs CFA, strictement positif."""
     text = str(value).strip().replace(" ", "").replace("\u202f", "").replace("\xa0", "") if value is not None else ""
@@ -280,8 +323,10 @@ def reserve_booking(
     channel=Ticket.Channel.ONLINE,
     sold_by=None,
     idempotency_key="",
+    buyer_ifu="",
 ):
     """Reserve all seats for a group or none of them."""
+    buyer_ifu = clean_buyer_ifu(buyer_ifu)
     if not 1 <= len(passengers) <= 8:
         raise ValidationError("Une réservation doit contenir entre 1 et 8 passagers.")
 
@@ -323,11 +368,13 @@ def reserve_booking(
         guest_token_hash=hash_guest_token(guest_token) if guest_token else "",
         sold_by=sold_by,
         idempotency_key=idempotency_key,
+        buyer_ifu=buyer_ifu,
         reservation_expires_at=expires_at,
         amount=fare.amount * Decimal(len(passengers)),
         currency=fare.currency,
     )
 
+    taxes = _tax_snapshot(fare.amount)
     for item in passengers:
         seat = seats[item["seat"].pk]
         passenger = Passenger.objects.create(
@@ -348,6 +395,7 @@ def reserve_booking(
             reservation_expires_at=expires_at,
             amount=fare.amount,
             currency=fare.currency,
+            **taxes,
         )
         TicketStatusHistory.objects.create(ticket=ticket, to_status=Ticket.Status.HELD, changed_by=customer)
         seat.status = Seat.Status.HELD
@@ -426,6 +474,7 @@ def reserve_ticket(*, trip, seat, customer, passenger_name, passenger_phone="", 
         reservation_expires_at=expires_at,
         amount=fare.amount,
         currency=fare.currency,
+        **_tax_snapshot(fare.amount),
     )
     TicketStatusHistory.objects.create(ticket=ticket, to_status=Ticket.Status.HELD, changed_by=customer)
     locked_seat.status = Seat.Status.HELD
