@@ -15,7 +15,7 @@ services:
 
   backend:
     build: ./backend
-    environment:
+    environment: &backend-environment
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-unsafe-local-compose-key}
       DJANGO_DEBUG: "true"
       DJANGO_ALLOWED_HOSTS: "*,localhost,127.0.0.1,backend,${AXIS_LAN_IP:-127.0.0.1}"
@@ -46,6 +46,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  # Réinterroge FedaPay pour les paiements jamais confirmés (en local, le webhook ne peut pas arriver sans tunnel), comme sur le VPS.
+  payments:
+    build: ./backend
+    environment: *backend-environment
+    command: >-
+      sh -c "while true; do sleep ${AXIS_PAYMENT_RECONCILE_INTERVAL_SECONDS:-60}; python manage.py reconcile_payments; done"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      backend:
+        condition: service_started
 
   frontend:
     build:
