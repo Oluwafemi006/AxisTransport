@@ -126,6 +126,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     # Suivi de colis public : nombre de recherches autorisées par adresse IP.
     "DEFAULT_THROTTLE_RATES": {
+        "payment_refresh": os.environ.get("AXIS_PAYMENT_REFRESH_RATE", "20/min"),
         "parcel_tracking": os.environ.get("AXIS_PARCEL_TRACKING_RATE", "20/min"),
         "public_ticket": os.environ.get("AXIS_PUBLIC_TICKET_RATE", "60/min"),
         # Connexion et inscription : blocage temporaire au-delà de ces seuils (propositions, réglables).

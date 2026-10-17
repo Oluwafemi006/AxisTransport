@@ -359,6 +359,7 @@ class TicketSerializer(serializers.ModelSerializer):
             "id",
             "reference",
             "print_info",
+            "booking",
             "public_url",
             "trip",
             "trip_detail",

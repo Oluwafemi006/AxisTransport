@@ -57,7 +57,14 @@ from .serializers import (
     TransactionSerializer,
     TripSerializer,
 )
-from .payments import ONLINE_PROVIDERS, SIMULATION, payment_quote, settle_booking_payment, settle_ticket_payment
+from .payments import (
+    ONLINE_PROVIDERS,
+    SIMULATION,
+    payment_quote,
+    reconcile_pending_payments,
+    settle_booking_payment,
+    settle_ticket_payment,
+)
 from .services import (
     cancel_held_booking,
     hash_guest_token,
@@ -70,6 +77,8 @@ from .services import (
 )
 from .views import (
     FedaPayWebhookView,
+    FrenchThrottleMixin,
+    PaymentRefreshThrottle,
     KKiaPayWebhookView,
     ParcelTrackingView,
     PublicContactView,
@@ -296,7 +305,7 @@ class ClientTicketViewSet(viewsets.GenericViewSet):
         })
 
 
-class ClientBookingViewSet(viewsets.GenericViewSet):
+class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
     """
     Réservations de groupe (multi-passagers).
 
@@ -447,6 +456,18 @@ class ClientBookingViewSet(viewsets.GenericViewSet):
             settlement.transactions, many=True, context={"request": request}
         ).data
         return Response({"booking": self._serialized_booking(booking), "transactions": transactions})
+
+    @action(detail=True, methods=["post"], url_path="refresh-payment", throttle_classes=[PaymentRefreshThrottle])
+    def refresh_payment(self, request, pk=None):
+        """
+        « Vérifier mon paiement » : relit tout de suite chez FedaPay les transactions en cours de cette
+        réservation, par le même chemin que le rattrapage automatique (montant exact, rattachement,
+        une seule émission). Ne crée aucun paiement ; sans transaction en cours, ne fait rien.
+        Réservé au propriétaire du compte ou au porteur du jeton de réservation (invité).
+        """
+        booking = self._get_booking(pk)
+        reconcile_pending_payments(booking=booking)
+        return Response(self._serialized_booking(self.BASE_QUERYSET.get(pk=booking.pk)))
 
 
 class ClientParcelViewSet(viewsets.GenericViewSet):

@@ -558,10 +558,12 @@ def _due_for_check(attempt, now):
     return now - attempt.last_checked_at >= wait
 
 
-def reconcile_pending_payments(now=None):
+def reconcile_pending_payments(now=None, *, booking=None):
     """
     Réinterroge FedaPay pour les transactions créées dont le paiement n'a jamais été confirmé
     (ni par le client, ni par le webhook). L'émission passe par le même chemin que le webhook.
+    Avec `booking` : seulement les transactions de cette réservation, tout de suite (demande du client
+    « Vérifier mon paiement »), sans attendre l'espacement des relectures automatiques.
     Renvoie un décompte par résultat.
     """
     counts = {"checked": 0, "settled": 0, "refund_due": 0, "refused": 0, "abandoned": 0, "anomalies": 0, "pending": 0}
@@ -576,6 +578,8 @@ def reconcile_pending_payments(now=None):
     # « Annulée » = réservation annulée par le client : toujours surveillée, pour voir un paiement fait malgré tout.
     watched = (PaymentAttempt.Outcome.PENDING, PaymentAttempt.Outcome.CANCELLED)
     pending = PaymentAttempt.objects.filter(provider=FEDAPAY, outcome__in=watched)
+    if booking is not None:
+        pending = pending.filter(booking=booking)
 
     # Trop anciennes : on cesse de les interroger, sans appel au prestataire.
     counts["abandoned"] = pending.filter(created_at__lt=oldest).update(
@@ -587,7 +591,8 @@ def reconcile_pending_payments(now=None):
         attempt.save(update_fields=["outcome", "provider_status", "checks", "last_checked_at", "updated_at"])
 
     queue = pending.filter(created_at__gte=oldest).order_by("last_checked_at", "created_at")
-    for attempt in [item for item in queue if _due_for_check(item, now)][: settings.AXIS_PAYMENT_RECONCILE_BATCH]:
+    due = [item for item in queue if booking is not None or _due_for_check(item, now)]
+    for attempt in due[: settings.AXIS_PAYMENT_RECONCILE_BATCH]:
         # Déjà réglée par le client ou le webhook : rien à demander au prestataire.
         receipt = PaymentReceipt.objects.filter(provider=attempt.provider, external_id=attempt.external_id).first()
         if receipt:

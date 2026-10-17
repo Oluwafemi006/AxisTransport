@@ -28,6 +28,10 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
     with WidgetsBindingObserver {
   PaymentMethod? _selectedMethod;
 
+  /// Vérification répétée en cours après le retour de la page de paiement.
+  bool _confirming = false;
+  int _confirmRun = 0;
+
   @override
   void initState() {
     super.initState();
@@ -47,16 +51,36 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
 
   @override
   void dispose() {
+    _confirmRun++; // arrête une vérification répétée en cours
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  // Au retour de la page de paiement, on demande au serveur de vérifier.
+  // Au retour de la page de paiement, on demande au serveur de vérifier, avec patience.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
     final current = ref.read(bookingCheckoutProvider).value;
-    if (current?.checkout != null && !current!.busy) _verifyPayment();
+    if (current?.checkout != null && !current!.busy) _confirmPatiently();
+  }
+
+  Future<void> _confirmPatiently() async {
+    final run = ++_confirmRun;
+    bool active() => mounted && run == _confirmRun;
+    setState(() => _confirming = true);
+    await retryWhilePending(
+      active: active,
+      stillPending: () async {
+        final current = ref.read(bookingCheckoutProvider).value;
+        if (current?.checkout == null) return false; // émis, refusé ou expiré
+        if (current!.busy) return true;
+        await _verifyPayment();
+        if (!active()) return false;
+        final after = ref.read(bookingCheckoutProvider).value;
+        return after?.checkout != null && after?.phase == PaymentPhase.awaiting;
+      },
+    );
+    if (active()) setState(() => _confirming = false);
   }
 
   Future<void> _openPaymentPage(String url) async {
@@ -387,9 +411,13 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                 error: paymentFailed,
               ),
               PaymentPhase.awaiting => Notice(
-                'Paiement en attente. Terminez-le sur la page de paiement, puis revenez ici : '
-                'vos billets sont émis dès que le paiement est confirmé.'
-                '${heldUntil == null ? '' : ' Sièges bloqués jusqu\'à $heldUntil.'}',
+                _confirming
+                    ? 'Paiement en cours de confirmation… Restez sur cet écran : '
+                          'vos billets s\'affichent dès que FedaPay confirme le paiement.'
+                    : 'Paiement en attente. Terminez-le sur la page de paiement, puis revenez ici : '
+                          'vos billets sont émis dès que le paiement est confirmé. '
+                          'Vous pouvez aussi le vérifier plus tard depuis l\'onglet Billets.'
+                          '${heldUntil == null ? '' : ' Sièges bloqués jusqu\'à $heldUntil.'}',
               ),
               PaymentPhase.failed => Notice(
                 'Paiement refusé ou annulé : aucun billet n\'a été émis. '

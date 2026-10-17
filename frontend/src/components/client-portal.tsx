@@ -379,6 +379,7 @@ type BookingPayload = { id: number; status: string; tickets: Ticket[]; payment_q
 
 function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChanged }: { user: User | null; trips: Trip[]; tickets: Ticket[]; paymentMethods: PaymentMethod[]; onAuthenticated: () => Promise<void>; onChanged: () => Promise<void> }) {
   const [tripId, setTripId] = useState("");
+  const [paymentCheck, setPaymentCheck] = useState<{ ticketId: number; busy: boolean; text: string } | null>(null);
   const [seats, setSeats] = useState<Seat[]>([]);
   const [seatId, setSeatId] = useState("");
   const [passengerName, setPassengerName] = useState("");
@@ -573,6 +574,20 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     if (!redirecting) { locked.current = false; setBusy(false); }
   }
 
+  // « Vérifier mon paiement » depuis la liste : le serveur relit la transaction chez FedaPay, rien n'est décidé ici.
+  async function checkTicketPayment(ticket: Ticket) {
+    if (!ticket.booking) return;
+    setPaymentCheck({ ticketId: ticket.id, busy: true, text: "Vérification du paiement…" });
+    try {
+      const found = await apiFetch<BookingPayload>(`/client/bookings/${ticket.booking}/refresh-payment/`, { method: "POST", body: "{}" });
+      const confirmed = found.tickets.some((item) => item.id === ticket.id && item.status === "ISSUED");
+      setPaymentCheck({ ticketId: ticket.id, busy: false, text: confirmed ? "Paiement confirmé : votre billet est prêt." : "Paiement pas encore confirmé par FedaPay. Réessayez dans un instant." });
+      if (confirmed) await onChanged();
+    } catch (reason) {
+      setPaymentCheck({ ticketId: ticket.id, busy: false, text: reason instanceof Error ? reason.message : "Vérification impossible. Réessayez." });
+    }
+  }
+
   async function confirmPayment(current: Checkout | null = checkout, target: { id: number; token: string | null } | null = booking) {
     if (!current || !target) return;
     // La vérification interroge le prestataire : elle peut prendre plusieurs secondes.
@@ -743,6 +758,15 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
                   <div><span style={{ color: 'var(--mute)', display: 'block', fontSize: '11px', textTransform: 'uppercase' }}>Passager</span> {ticket.passenger_name}</div>
                   <div><span style={{ color: 'var(--mute)', display: 'block', fontSize: '11px', textTransform: 'uppercase' }}>Prix du billet</span> {money(ticket.amount, ticket.currency)}</div>
                 </div>
+                {ticket.status === "HELD" && ticket.booking && (
+                  <div style={{ marginTop: '14px' }}>
+                    <p style={{ fontSize: '13px', color: 'var(--mute)', marginBottom: '8px' }}>Vous avez payé ? La confirmation peut prendre une minute.</p>
+                    <button type="button" className="btn" disabled={paymentCheck?.ticketId === ticket.id && paymentCheck.busy} onClick={() => void checkTicketPayment(ticket)}>
+                      {paymentCheck?.ticketId === ticket.id && paymentCheck.busy ? "Vérification…" : "Vérifier mon paiement"}
+                    </button>
+                    {paymentCheck?.ticketId === ticket.id && !paymentCheck.busy && <p role="status" style={{ fontSize: '13px', marginTop: '8px' }}>{paymentCheck.text}</p>}
+                  </div>
+                )}
               </div>
             ))}
           </div>

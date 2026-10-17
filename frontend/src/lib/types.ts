@@ -84,6 +84,7 @@ export interface Ticket {
   id: number;
   reference: string;
   print_info?: TicketPrintInfo;
+  booking?: number | null;
   trip: number;
   trip_detail: Trip;
   seat: number;

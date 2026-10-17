@@ -308,6 +308,22 @@ class ApiClient {
     );
   }
 
+  /// « Vérifier mon paiement » : le serveur relit chez FedaPay les transactions en cours de la réservation.
+  Future<BookingReservation> refreshBookingPayment({
+    required int bookingId,
+    String? guestAccessToken,
+  }) async {
+    final payload = await _request<Map<String, dynamic>>(
+      '/client/bookings/$bookingId/refresh-payment/',
+      data: const <String, dynamic>{},
+      auth: true,
+      headers: guestAccessToken == null
+          ? null
+          : {'X-Booking-Token': guestAccessToken},
+    );
+    return BookingReservation.fromJson(payload);
+  }
+
   /// Demande au serveur de créer la transaction de paiement (montant fixé côté serveur).
   Future<PaymentCheckout> checkoutBooking({
     required int bookingId,

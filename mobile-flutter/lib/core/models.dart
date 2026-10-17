@@ -467,10 +467,14 @@ class Ticket {
     this.reservationExpiresAt,
     this.publicUrl = '',
     this.printInfo,
+    this.bookingId,
   });
 
   final int id;
   final String reference;
+
+  /// Réservation à laquelle appartient le billet (null pour un ancien billet vendu seul).
+  final int? bookingId;
   final Trip trip;
   final Seat seat;
   final String passengerName;
@@ -491,10 +495,14 @@ class Ticket {
   bool get isConfirmed =>
       status == 'ISSUED' || status == 'CHECKED' || status == 'COMPLETED';
 
+  /// Réservé, en attente de paiement : le client peut demander de vérifier son paiement.
+  bool get awaitsPayment => status == 'HELD' && bookingId != null;
+
   factory Ticket.fromJson(Map<String, dynamic> json) {
     return Ticket(
       id: json['id'] as int,
       reference: json['reference'] as String? ?? '',
+      bookingId: json['booking'] as int?,
       publicUrl: json['public_url'] as String? ?? '',
       printInfo: json['print_info'] is Map<String, dynamic>
           ? TicketPrintInfo.fromJson(json['print_info'] as Map<String, dynamic>)
@@ -517,6 +525,7 @@ class Ticket {
   Map<String, dynamic> toJson() => {
     'id': id,
     'reference': reference,
+    'booking': bookingId,
     'public_url': publicUrl,
     if (printInfo != null) 'print_info': printInfo!.toJson(),
     'trip_detail': trip.toJson(),
