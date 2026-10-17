@@ -63,16 +63,30 @@ def feature_enabled(key):
     return FeatureFlag.objects.filter(key=key, enabled=True).exists()
 
 
+class ReservationsClosed(ImproperlyConfigured):
+    """
+    Durée de blocage d'un siège (« ticket_hold_minutes ») absente ou invalide : aucune réservation possible.
+    Deux messages sans texte technique : un pour le client, un pour le personnel (qui sait quoi faire).
+    """
+
+    CLIENT_MESSAGE = "Les réservations ne sont pas encore ouvertes. Réessayez plus tard ou contactez l'agence."
+    STAFF_MESSAGE = (
+        "Vente impossible : la durée de blocage d'un siège n'est pas encore saisie. "
+        "Un administrateur doit la renseigner dans le portail /admin, onglet « Tarifs & règles »."
+    )
+
+    def __init__(self):
+        super().__init__(self.CLIENT_MESSAGE)
+
+
 def configured_hold_duration():
     try:
         raw_value = SystemSetting.objects.get(key="ticket_hold_minutes").value
         minutes = int(raw_value)
     except (SystemSetting.DoesNotExist, TypeError, ValueError) as exc:
-        raise ImproperlyConfigured(
-            "Le paramètre administrable 'ticket_hold_minutes' doit être configuré avant toute réservation."
-        ) from exc
+        raise ReservationsClosed() from exc
     if minutes <= 0:
-        raise ImproperlyConfigured("'ticket_hold_minutes' doit être un entier positif.")
+        raise ReservationsClosed()
     return timedelta(minutes=minutes)
 
 
