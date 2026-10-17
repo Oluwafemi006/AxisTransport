@@ -50,6 +50,12 @@ class RefreshPaymentTests(APITestCase):
         self.attempt.refresh_from_db()
         self.assertEqual(self.attempt.outcome, PaymentAttempt.Outcome.SETTLED)
 
+    def test_client_ticket_gives_its_booking_for_the_check(self):
+        self.client.force_authenticate(self.context["client"])
+        rows = self.client.get("/api/v1/client/tickets/").json()
+        rows = rows["results"] if isinstance(rows, dict) else rows
+        self.assertEqual([(row["status"], row["booking"]) for row in rows], [("HELD", self.booking.pk)])
+
     def test_pending_payment_changes_nothing(self):
         response, _ = self.refresh(fetched=fedapay_transaction(self.booking, transaction_id="7001", status="pending"))
         self.assertEqual(response.status_code, 200, response.data)

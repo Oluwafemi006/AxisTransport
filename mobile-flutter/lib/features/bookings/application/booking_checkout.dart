@@ -89,6 +89,24 @@ PaymentPhase phaseFromRefusal(
   return reservationExpired ? PaymentPhase.expired : PaymentPhase.awaiting;
 }
 
+/// Au retour de la page de paiement, FedaPay peut valider le paiement une minute plus tard :
+/// on relance la vérification (`stillPending`, vrai tant que la réponse est « en attente »)
+/// toutes les [delay], au plus [attempts] fois, tant que l'écran est ouvert (`active`).
+/// Renvoie vrai si l'attente a pris fin (billet émis, paiement refusé, réservation expirée).
+Future<bool> retryWhilePending({
+  required Future<bool> Function() stillPending,
+  required bool Function() active,
+  int attempts = 12,
+  Duration delay = const Duration(seconds: 5),
+}) async {
+  for (var attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await Future<void>.delayed(delay);
+    if (!active()) return false;
+    if (!await stillPending()) return true;
+  }
+  return false;
+}
+
 class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
   @override
   Future<BookingCheckoutState> build() async {

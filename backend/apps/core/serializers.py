@@ -286,6 +286,7 @@ class TicketSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "reference",
+            "booking",
             "public_url",
             "trip",
             "trip_detail",

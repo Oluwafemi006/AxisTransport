@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/api_client.dart';
 import '../../core/downloads.dart';
 import '../../core/formatters.dart';
 import '../../core/models.dart';
@@ -24,6 +25,30 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
   Ticket? _ticket;
   bool _loading = true;
   bool _downloading = false;
+  bool _checkingPayment = false;
+
+  /// « Vérifier mon paiement » : le serveur relit la transaction chez FedaPay ; rien n'est décidé ici.
+  Future<void> _checkPayment(Ticket ticket) async {
+    setState(() => _checkingPayment = true);
+    String message;
+    try {
+      await ref
+          .read(apiClientProvider)
+          .refreshBookingPayment(bookingId: ticket.bookingId!);
+      await _load();
+      message = _ticket?.isConfirmed == true
+          ? 'Paiement confirmé : votre billet est prêt.'
+          : 'Paiement pas encore confirmé par FedaPay. Réessayez dans un instant.';
+    } on ApiException catch (error) {
+      message = error.isNetwork
+          ? 'Serveur injoignable : vérifiez votre connexion et réessayez.'
+          : error.message;
+    }
+    if (!mounted) return;
+    setState(() => _checkingPayment = false);
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
 
   // Enregistre le billet en PDF dans Téléchargements ; à défaut, propose de l'envoyer par partage.
   Future<void> _downloadTicket(Ticket ticket) async {
@@ -235,6 +260,29 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                if (item.awaitsPayment) ...[
+                  const Text(
+                    'Vous avez payé ? La confirmation peut prendre une minute.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AxisColors.muted, height: 1.45),
+                  ),
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: _checkingPayment
+                        ? null
+                        : () => _checkPayment(item),
+                    icon: const Icon(Icons.refresh),
+                    label: Text(
+                      _checkingPayment
+                          ? 'Vérification…'
+                          : 'Vérifier mon paiement',
+                    ),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 FilledButton.icon(
                   onPressed: canShowQr && !_downloading
                       ? () => _downloadTicket(item)

@@ -306,6 +306,22 @@ class ApiClient {
     );
   }
 
+  /// « Vérifier mon paiement » : le serveur relit chez FedaPay les transactions en cours de la réservation.
+  Future<BookingReservation> refreshBookingPayment({
+    required int bookingId,
+    String? guestAccessToken,
+  }) async {
+    final payload = await _request<Map<String, dynamic>>(
+      '/client/bookings/$bookingId/refresh-payment/',
+      data: const <String, dynamic>{},
+      auth: true,
+      headers: guestAccessToken == null
+          ? null
+          : {'X-Booking-Token': guestAccessToken},
+    );
+    return BookingReservation.fromJson(payload);
+  }
+
   /// Demande au serveur de créer la transaction de paiement (montant fixé côté serveur).
   Future<PaymentCheckout> checkoutBooking({
     required int bookingId,
@@ -365,7 +381,10 @@ class ApiClient {
   // Réservée aux rôles COUNTER, CONTROLLER et ADMIN : le serveur refuse tout autre compte (403).
 
   /// Contrôle d'un billet par son QR code.
-  Future<Map<String, dynamic>> validateTicket(String qrToken, {int? expectedTripId}) {
+  Future<Map<String, dynamic>> validateTicket(
+    String qrToken, {
+    int? expectedTripId,
+  }) {
     return _request<Map<String, dynamic>>(
       '/staff/tickets/validate/',
       data: {
@@ -412,7 +431,10 @@ class ApiClient {
   }) {
     return _request<Map<String, dynamic>>(
       '/staff/sales/$bookingId/verify/',
-      data: {'payment_method': paymentMethod, 'external_reference': externalReference},
+      data: {
+        'payment_method': paymentMethod,
+        'external_reference': externalReference,
+      },
       auth: true,
     );
   }
