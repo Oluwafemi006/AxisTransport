@@ -241,7 +241,7 @@ L'application « Axis Transport » (`mobile-flutter`, identifiant Android `com.a
 
 Tout tourne sur le VPS : API, PostgreSQL, site Next.js, et un proxy Caddy devant. Vercel (offre Hobby, usage non commercial) ne sert plus qu'aux démonstrations.
 
-**Statut de cette section** : rédigée sans accès au serveur. Aucune commande n'a été lancée sur le VPS. Seule la syntaxe de `compose.vps.yaml` et des deux fichiers Caddy a été validée sur un PC. Tout le reste est à vérifier sur place ; la liste est au point 5.12.
+**Statut de cette section** : rédigée sans accès au serveur. Aucune commande n'a été lancée sur le VPS. Seule la syntaxe de `compose.vps.yaml` et des deux fichiers Caddy a été validée sur un PC. Tout le reste est à vérifier sur place ; la liste est au point 5.13.
 
 Notations : `<IP>` = adresse du serveur, `<DOMAINE>` = nom de domaine (pas encore choisi ; il n'est écrit nulle part dans le code, il vient de la variable `AXIS_DOMAIN`), `<UTILISATEUR>` = compte non-root créé au point 5.2.
 
@@ -282,6 +282,93 @@ Fichiers utilisés :
 | HTTP non chiffré autorisé dans les deux apps mobiles | Voir 5.10 |
 
 **HTTPS avant l'achat du domaine (nom de type `sslip.io`) : non vérifié.** En principe `<IP>.sslip.io` désigne l'adresse du serveur et Caddy pourrait demander un certificat pour ce nom. Rien ne garantit ici que l'autorité de certification l'accorde (quotas partagés par tous les utilisateurs de ce service), ni que FedaPay accepte une telle adresse pour le webhook. À essayer sur le serveur avant d'y compter.
+
+### 5.0 Mise en ligne pas à pas — variante B, `axistransportlogistique.com`
+
+Procédure complète dans l'ordre, pour une première mise en ligne en HTTPS. Domaine : `axistransportlogistique.com` (site) et `api.axistransportlogistique.com` (API). Une adresse `www.` n'est pas prévue : à ajouter seulement si elle est décidée (inconnu). Chaque commande se lance sur le serveur, dans `~/axis`, sauf mention contraire. `C` désigne :
+
+```bash
+C="docker compose --env-file .env.vps -f compose.vps.yaml"
+```
+
+**Étape 0 — Avant de commencer** (une seule fois) : serveur sécurisé (5.2), Docker installé (5.3), et chez le fournisseur du domaine deux enregistrements DNS de type A vers `<IP>` : `axistransportlogistique.com` et `api.axistransportlogistique.com`. Vérifier :
+
+```bash
+dig +short axistransportlogistique.com        # doit afficher <IP>
+dig +short api.axistransportlogistique.com    # doit afficher <IP>
+```
+
+**Étape 1 — Récupérer le code** (5.3), puis noter la version déployée :
+
+```bash
+cd ~/axis && git log -1 --oneline | tee -a ~/versions-deployees.txt
+```
+
+**Étape 2 — Variables** : `cp vps.env.example .env.vps && chmod 600 .env.vps && nano .env.vps`. Noms seulement ; les valeurs sont saisies par Eddy, sur le serveur, jamais dans le dépôt ni dans une discussion :
+
+| Variable | Qui la saisit | Contenu attendu (variante B) |
+|---|---|---|
+| `AXIS_CADDYFILE` | Eddy | `Caddyfile.https` |
+| `AXIS_DOMAIN` | Eddy | le domaine, sans `https://` ni `www` |
+| `DJANGO_SECRET_KEY` | **Eddy (secret)** | chaîne aléatoire générée sur le serveur (commande dans `vps.env.example`) |
+| `DJANGO_ALLOWED_HOSTS` | Eddy | le sous-domaine `api.` |
+| `DJANGO_CORS_ALLOWED_ORIGINS` | Eddy | l'adresse `https://` du site |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Eddy | l'adresse `https://` de l'API |
+| `PUBLIC_WEB_URL` | Eddy | l'adresse `https://` du site |
+| `AXIS_NUM_PROXIES` | déjà `1` | un seul proxy (Caddy) |
+| `POSTGRES_PASSWORD` | **Eddy (secret)** | lettres et chiffres seulement |
+| `NEXT_PUBLIC_API_URL` | Eddy | adresse `https://` de l'API suivie de `/api/v1` |
+| `AXIS_ADMIN_USERNAME`, `AXIS_ADMIN_PASSWORD`, `AXIS_ADMIN_EMAIL` | **laisser vides** | le compte admin se crée à l'étape 5, mot de passe saisi masqué |
+| `FEDAPAY_ENVIRONMENT` | Eddy | `sandbox` d'abord, `live` à l'ouverture réelle |
+| `FEDAPAY_SECRET_KEY` | **Eddy (secret)** | clé du même environnement |
+| `FEDAPAY_WEBHOOK_SECRET` | **Eddy (secret)** | secret affiché par FedaPay après l'étape 6 |
+| `FEDAPAY_CALLBACK_URL` | Eddy | adresse de retour, étape 6 |
+| les autres (`AXIS_*_RATE`, `AXIS_PAYMENT_RECONCILE_*`, `FEDAPAY_WEBHOOK_TOLERANCE_SECONDS`) | valeurs proposées déjà dans le modèle | à garder sauf décision |
+
+Ne jamais ajouter `AXIS_ENVIRONMENT`, `AXIS_PAYMENT_SIMULATION` ni `DJANGO_DEBUG` dans `.env.vps`.
+
+**Étape 3 — Construire et démarrer** (la construction du site peut être longue) :
+
+```bash
+$C build
+$C up -d
+$C ps                                   # db, backend, holds, payments, frontend, caddy : « Up »
+```
+
+Au démarrage, le service `backend` applique lui-même les migrations (dont `0011`, `0012`, `0013` et les suivantes), puis lance `bootstrap_axis`.
+
+**Étape 4 — Vérifier migrations et grille de prix** :
+
+```bash
+$C exec -T backend python manage.py showmigrations core | tail -4   # toutes cochées [X]
+$C exec -T backend python manage.py load_segment_fares             # « Tarifs déjà présents, laissés tels quels : 10 »
+```
+
+La grille chargée est celle de la section 2 ter (10 prix). La commande ne modifie jamais un prix déjà présent. Savè, Kétou et Porto-Novo sont créés inactifs, donc invisibles pour les clients.
+
+**Étape 5 — Créer le compte ADMIN réel**, sur place, de façon interactive (sans `-T`) :
+
+```bash
+$C exec backend python manage.py create_admin
+```
+
+La commande demande l'identifiant, l'e-mail (facultatif), puis deux fois le mot de passe, en saisie masquée : il n'apparaît ni à l'écran, ni dans l'historique du shell, ni dans un fichier.
+
+**Étape 6 — FedaPay**, dans le tableau de bord, pour l'environnement choisi :
+
+- Adresse du webhook : `https://api.axistransportlogistique.com/api/v1/client/webhooks/fedapay/`. Copier le secret affiché dans `FEDAPAY_WEBHOOK_SECRET`.
+- Adresse de retour (`FEDAPAY_CALLBACK_URL`) : `https://axistransportlogistique.com/paiement/retour`.
+- Puis `$C up -d backend payments` pour relire les variables.
+
+**Étape 7 — Vérifier HTTPS** :
+
+```bash
+curl -sI https://axistransportlogistique.com | head -1                      # HTTP/2 200
+curl -s https://api.axistransportlogistique.com/api/v1/health/              # réponse de l'API
+curl -sI http://axistransportlogistique.com | grep -i '^location'          # redirection vers https://
+```
+
+**Étape 8 — Sauvegardes** : installer la sauvegarde quotidienne et tester une restauration (5.6), puis faire les contrôles après déploiement (5.12).
 
 ### 5.1 Mesurer si le VPS tient
 
@@ -441,28 +528,21 @@ docker compose --env-file .env.vps -f compose.vps.yaml ps      # tous les servic
 
 ### 5.6 Sauvegardes
 
-Sauvegarde quotidienne de la base, à 3 h, gardée 14 jours (ces deux valeurs sont des propositions). Créer `~/axis/backup.sh` sur le serveur :
+Sauvegarde quotidienne de la base à 3 h, gardée 14 jours (deux valeurs proposées ; la durée se change avec `AXIS_BACKUP_KEEP_DAYS`). Le script est dans le dépôt : `deploy/backup.sh`. Il écrit `~/sauvegardes/axis-AAAA-MM-JJ-HHMM.dump` (droits 600), ne remplace jamais une bonne sauvegarde par une sauvegarde interrompue, et supprime les plus anciennes.
 
 ```bash
-#!/bin/sh
-set -eu
-cd "$HOME/axis"
-mkdir -p "$HOME/sauvegardes"
-docker compose --env-file .env.vps -f compose.vps.yaml exec -T db pg_dump -U axis -Fc axis > "$HOME/sauvegardes/axis-$(date +%F).dump"
-find "$HOME/sauvegardes" -name 'axis-*.dump' -mtime +14 -delete
+~/axis/deploy/backup.sh                       # essai à la main : « Sauvegarde : … »
+crontab -e                                    # puis ajouter la ligne :
+0 3 * * * $HOME/axis/deploy/backup.sh >> $HOME/sauvegardes/journal.log 2>&1
 ```
 
-Puis `chmod +x ~/axis/backup.sh` et, dans `crontab -e` : `0 3 * * * $HOME/axis/backup.sh`.
-
-**Test de restauration**, à faire au moins une fois, dans une base à part (la base réelle n'est pas touchée) :
+**Test de restauration** (script `deploy/restore-test.sh`), à faire après la première sauvegarde puis une fois par mois. Il restaure la sauvegarde la plus récente dans une base **à part**, compte quelques tables, puis supprime cette base ; la base réelle n'est pas touchée :
 
 ```bash
-cd ~/axis && C="docker compose --env-file .env.vps -f compose.vps.yaml"
-$C exec -T db createdb -U axis axis_essai_restauration
-$C exec -T db pg_restore -U axis -d axis_essai_restauration < ~/sauvegardes/axis-AAAA-MM-JJ.dump
-$C exec -T db psql -U axis -d axis_essai_restauration -c "select count(*) from core_ticket;"
-$C exec -T db dropdb -U axis axis_essai_restauration
+~/axis/deploy/restore-test.sh                 # ou : deploy/restore-test.sh ~/sauvegardes/<fichier>.dump
 ```
+
+Les deux scripts ont été essayés sur la base PostgreSQL du PC de développement (sauvegarde, rotation, restauration à part). Ils n'ont jamais tourné sur le VPS.
 
 Limites : la sauvegarde reste sur le même serveur (une copie hors du serveur est à décider : où, par qui) ; les fichiers envoyés (volume `vps_media`) ne sont pas sauvegardés par ce script.
 
@@ -470,7 +550,8 @@ Limites : la sauvegarde reste sur le même serveur (une copie hors du serveur es
 
 - Ne jamais lancer `seed_demo` sur le serveur. La commande refuse de tourner si `DJANGO_DEBUG` n'est pas `true` **ou** si `AXIS_ENVIRONMENT` ne vaut pas `local` ; `compose.vps.yaml` fixe le debug à `false` et ne définit pas `AXIS_ENVIRONMENT`. Ne jamais ajouter `AXIS_ENVIRONMENT` dans `.env.vps`.
 - Au premier démarrage, `bootstrap_axis` crée seulement : les lieux Cotonou et Parakou, leurs deux itinéraires, le véhicule « Yutong » sans capacité, le moyen de paiement FedaPay sans frais client, des réglages vides, les arrêts de la ligne et la grille des 10 prix par tronçon (section 2 ter ; Savè, Kétou et Porto-Novo créés inactifs). Aucun compte de démonstration, aucun départ.
-- Le compte administrateur est créé au premier démarrage à partir de `AXIS_ADMIN_USERNAME` et `AXIS_ADMIN_PASSWORD`, saisis dans `.env.vps` sur le serveur. Une fois connecté une première fois, vider `AXIS_ADMIN_PASSWORD` du fichier (le compte existe déjà, la variable ne sert plus).
+- Le compte administrateur réel se crée sur place avec `create_admin` (5.0, étape 5) : mot de passe saisi masqué, jamais écrit dans un fichier. Laisser `AXIS_ADMIN_USERNAME` et `AXIS_ADMIN_PASSWORD` vides. (Ces variables restent possibles, mais elles obligent à écrire le mot de passe dans `.env.vps` puis à l'en retirer.)
+- Ne pas utiliser `createsuperuser` : le compte serait créé avec le rôle « Client » et refusé par le portail `/admin`.
 - À saisir ensuite dans le portail `/admin` avant toute vente : capacité du véhicule, départs, durée de blocage d'un siège (`ticket_hold_minutes`), téléphone et WhatsApp de contact.
 
 ### 5.8 Le site est servi par le VPS ; et le site Vercel de démonstration ?
@@ -533,12 +614,20 @@ Pour un essai sur la variante A seulement : `--dart-define=AXIS_API_URL=http://<
 ### 5.11 Retour arrière
 
 - **Le premier déploiement échoue** : `docker compose --env-file .env.vps -f compose.vps.yaml down`. Rien d'autre n'a été touché sur le serveur ; les volumes restent. Les journaux se lisent avec `... logs backend` (ou `frontend`, `caddy`).
-- **Une mise à jour casse le site** : revenir au code précédent et reconstruire.
+- **Avant chaque mise à jour**, toujours dans cet ordre :
   ```bash
-  cd ~/axis && git log --oneline -5        # repérer le commit précédent
+  cd ~/axis && C="docker compose --env-file .env.vps -f compose.vps.yaml"
+  deploy/backup.sh                                          # sauvegarde juste avant
+  git log -1 --oneline | tee -a ~/versions-deployees.txt    # version qui tourne encore
+  git pull && $C up -d --build                              # mise à jour
+  ```
+- **Une mise à jour casse le site** : revenir à la version notée juste avant et reconstruire.
+  ```bash
+  cd ~/axis && tail -2 ~/versions-deployees.txt            # la ligne précédente = version qui marchait
   git checkout <COMMIT>
   docker compose --env-file .env.vps -f compose.vps.yaml up -d --build
   ```
+  Si la mise à jour contenait une migration, le code précédent peut ne pas comprendre la base modifiée : restaurer alors aussi la sauvegarde faite juste avant (point suivant).
   Avec la copie par archive (5.3), garder l'archive précédente et la redéployer dans un dossier à part.
 - **Une migration a modifié la base** : restaurer la sauvegarde faite juste avant (toujours lancer `~/axis/backup.sh` avant une mise à jour) :
   ```bash
@@ -550,7 +639,19 @@ Pour un essai sur la variante A seulement : `--dart-define=AXIS_API_URL=http://<
   Tout ce qui a été vendu ou payé depuis la sauvegarde est alors perdu en base : à ne faire qu'en dernier recours, et à rapprocher ensuite des paiements visibles chez FedaPay.
 - **Le passage de A à B échoue** (certificat refusé, DNS pas encore propagé) : remettre les anciennes valeurs dans `.env.vps` et relancer la commande de l'étape 6 ; le site revient en HTTP sur l'IP.
 
-### 5.12 Non vérifiable sans le serveur réel
+### 5.12 Contrôles après le déploiement
+
+1. `$C ps` : les six services sont « Up » ; `$C logs --tail 50 backend` sans erreur.
+2. `https://axistransportlogistique.com` s'ouvre avec le cadenas ; `http://` redirige vers `https://`.
+3. `https://api.axistransportlogistique.com/api/v1/health/` répond.
+4. Depuis un autre PC, les ports 5432 et 8000 du serveur sont fermés (`nc -zv <IP> 5432` et `nc -zv <IP> 8000` échouent).
+5. Connexion au portail `/admin` avec le compte de l'étape 5 ; l'onglet « Tarifs par tronçon » montre les 10 prix ; aucun compte `demo_*` dans « Équipe & rôles ».
+6. Onglet « Agence et taxes » rempli par l'administrateur ; un billet de test affiche ces informations.
+7. Un paiement sandbox de bout en bout : billet émis au prix affiché, webhook reçu (onglet « Incidents de paiement » vide).
+8. `deploy/backup.sh` puis `deploy/restore-test.sh` réussissent ; la ligne cron est en place (`crontab -l`).
+9. `sudo reboot`, puis `$C ps` : tout redémarre seul.
+
+### 5.13 Non vérifiable sans le serveur réel
 
 - Les caractéristiques du VPS (mémoire, processeurs, disque) et donc sa capacité à construire et faire tourner le projet.
 - La construction des images sur le serveur, en particulier celle du site.
@@ -561,7 +662,8 @@ Pour un essai sur la variante A seulement : `--dart-define=AXIS_API_URL=http://<
 - La réception réelle d'un webhook FedaPay : jamais vue de bout en bout, sur aucun environnement.
 - L'acceptation par FedaPay d'un webhook en HTTP sur une IP (variante A) ou d'un nom `sslip.io`.
 - Les commandes de sécurisation SSH sur l'image Ubuntu 24.04 de Contabo (nom du service, fichiers de configuration déjà présents).
-- Les sauvegardes, la restauration et le redémarrage automatique après `reboot`.
+- Les sauvegardes et la restauration sur le serveur (scripts essayés seulement sur le PC), le redémarrage automatique après `reboot`.
+- L'interface du tableau de bord FedaPay (où se déclarent le webhook et l'adresse de retour) et l'acceptation de ces adresses.
 - Le comportement des apps mobiles en release contre une API distante.
 
 ## 6. À construire en étape 5 (notes, rien n'est codé)
