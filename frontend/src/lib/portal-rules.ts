@@ -67,3 +67,20 @@ export function whatsappHref(text: string | null | undefined): string | null {
   const match = /^(?:\+|00)(\d{1,15})$/.exec(compact);
   return match ? `https://wa.me/${match[1]}` : null;
 }
+
+// ─── Dates à l'heure du Bénin ────────────────────────────────────────────────
+// Le jour « aujourd'hui » est celui du Bénin (Africa/Porto-Novo, UTC+1), jamais celui du navigateur.
+const BENIN_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Porto-Novo", year: "numeric", month: "2-digit", day: "2-digit" });
+
+// Date AAAA-MM-JJ, au Bénin, d'un instant (par défaut : maintenant).
+export function beninDateKey(at: Date = new Date()): string {
+  return BENIN_DAY.format(at);
+}
+
+// Date de départ de la recherche : obligatoire, au format AAAA-MM-JJ, pas avant aujourd'hui au Bénin.
+export function searchDateError(value: string, today: string = beninDateKey()): string | null {
+  if (!value) return "Choisissez une date de départ.";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) return "Date de départ invalide : choisissez-la dans le calendrier.";
+  if (value < today) return "Choisissez une date à partir d’aujourd’hui.";
+  return null;
+}

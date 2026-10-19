@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/benin_time.dart';
 import '../../../core/models.dart';
 import '../../../core/session.dart';
 import '../../../core/theme.dart';
@@ -35,9 +36,7 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    _date =
-        widget.initialSearch?.date ?? DateTime(now.year, now.month, now.day);
+    _date = widget.initialSearch?.date ?? beninToday();
     _originId = widget.initialSearch?.originId;
     _destinationId = widget.initialSearch?.destinationId;
     _passengers = widget.initialSearch?.passengers ?? 1;
@@ -75,8 +74,8 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
   }
 
   Future<void> _chooseDate() async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    // Jours passés grisés : le calendrier commence aujourd'hui au Bénin.
+    final today = beninToday();
     final selected = await showDatePicker(
       context: context,
       initialDate: _date.isBefore(today) ? today : _date,
@@ -122,10 +121,9 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
   }
 
   void _search() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    if (_date.isBefore(today)) {
-      setState(() => _error = 'Choisissez une date à partir d’aujourd’hui.');
+    final dateProblem = tripDateError(_date);
+    if (dateProblem != null) {
+      setState(() => _error = dateProblem);
       return;
     }
     if (_originId == null || _destinationId == null) {

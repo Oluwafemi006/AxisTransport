@@ -90,3 +90,23 @@ test("lien WhatsApp : numéro international sans « + » ni espaces, rien sinon"
   assert.equal(whatsappHref("https://evil.example/+229"), null);
   assert.equal(whatsappHref("+1234567890123456"), null);
 });
+
+test("aujourd'hui = jour du Bénin (UTC+1), pas celui du navigateur ni UTC", async () => {
+  const { beninDateKey } = await import(pathToFileURL(compiled).href);
+  assert.equal(beninDateKey(new Date("2026-10-17T22:59:59Z")), "2026-10-17"); // 23 h 59 au Bénin
+  assert.equal(beninDateKey(new Date("2026-10-17T23:00:00Z")), "2026-10-18"); // minuit au Bénin
+  assert.equal(beninDateKey(new Date("2026-10-17T23:30:00Z")), "2026-10-18"); // départ à 00 h 30 : bon jour
+  assert.equal(beninDateKey(new Date("2026-12-31T23:00:00Z")), "2027-01-01"); // changement d'année
+});
+
+test("date de recherche : vide, tapée à la main, passée ou invalide = message, sinon rien", async () => {
+  const { searchDateError } = await import(pathToFileURL(compiled).href);
+  const today = "2026-10-18";
+  assert.equal(searchDateError("", today), "Choisissez une date de départ.");
+  assert.equal(searchDateError("2026-10-17", today), "Choisissez une date à partir d’aujourd’hui.");
+  assert.equal(searchDateError("2025-12-31", today), "Choisissez une date à partir d’aujourd’hui.");
+  assert.equal(searchDateError("18/10/2026", today), "Date de départ invalide : choisissez-la dans le calendrier.");
+  assert.equal(searchDateError("2026-13-45", today), "Date de départ invalide : choisissez-la dans le calendrier.");
+  assert.equal(searchDateError("2026-10-18", today), null);
+  assert.equal(searchDateError("2026-10-19", today), null);
+});
