@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import { phoneHref, placeChoices, searchError, whatsappHref } from "@/lib/portal-rules";
+import { beninDateKey, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Checkout, Contact, Location, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { clearGuestBooking, loadGuestBooking, rememberGuestPayment, saveGuestBooking } from "@/lib/guest-booking";
@@ -91,9 +91,12 @@ export function ClientPortal() {
   const [searchDate, setSearchDate] = useState("");
   const [searchMessage, setSearchMessage] = useState("");
 
-  // Rechercher sans les deux villes : message, et rien n'est lancé.
+  // Aujourd'hui au Bénin : date minimale du calendrier (les jours passés sont grisés).
+  const beninToday = beninDateKey();
+
+  // Rechercher sans les deux villes, sans date, ou avec une date passée : message, et rien n'est lancé.
   function runSearch() {
-    const problem = searchError(searchOrigin, searchDestination);
+    const problem = searchError(searchOrigin, searchDestination) ?? searchDateError(searchDate, beninDateKey());
     setSearchMessage(problem ?? "");
     if (!problem) setTab("billets");
   }
@@ -104,7 +107,8 @@ export function ClientPortal() {
     if (searchOrigin && trip.route_detail.origin !== Number(searchOrigin)) match = false;
     if (searchDestination && trip.route_detail.destination !== Number(searchDestination)) match = false;
     if (searchDate) {
-      const tripDate = new Date(trip.departure_at).toISOString().split('T')[0];
+      // Date du départ au Bénin (et non en UTC : un départ à 00 h 30 tombe le bon jour).
+      const tripDate = beninDateKey(new Date(trip.departure_at));
       if (tripDate !== searchDate) match = false;
     }
     return match;
@@ -192,7 +196,7 @@ export function ClientPortal() {
                   </div>
                   <div className="f">
                     <label>Date de départ</label>
-                    <input type="date" value={searchDate} onChange={(e) => setSearchDate(e.target.value)} />
+                    <input type="date" min={beninToday} value={searchDate} onChange={(e) => { setSearchDate(e.target.value); setSearchMessage(""); }} />
                   </div>
                   <div className="f">
                     <label>Passagers</label>
