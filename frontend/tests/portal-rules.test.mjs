@@ -90,3 +90,18 @@ test("lien WhatsApp : numéro international sans « + » ni espaces, rien sinon"
   assert.equal(whatsappHref("https://evil.example/+229"), null);
   assert.equal(whatsappHref("+1234567890123456"), null);
 });
+
+test("guichet : seuls les départs à venir et vendables, du plus proche au plus lointain", async () => {
+  const { upcomingSellableTrips } = await import(pathToFileURL(compiled).href);
+  const now = new Date("2026-10-19T10:00:00Z");
+  const trip = (id, departure_at, status = "SCHEDULED", active = true) => ({ id, departure_at, status, route_detail: { active } });
+  const trips = [
+    trip(1, "2026-10-21T08:00:00Z"),
+    trip(2, "2026-10-19T08:00:00Z"), // déjà parti
+    trip(3, "2026-10-20T08:00:00Z"),
+    trip(4, "2026-10-22T08:00:00Z", "CANCELLED"),
+    trip(5, "2026-10-23T08:00:00Z", "SCHEDULED", false),
+    trip(6, "2026-10-19T10:30:00Z", "BOARDING"),
+  ];
+  assert.deepEqual(upcomingSellableTrips(trips, now).map((item) => item.id), [6, 3, 1]);
+});
