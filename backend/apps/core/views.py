@@ -106,6 +106,7 @@ from .payments import (
 from .services import (
     ReservationsClosed,
     cancel_held_booking,
+    generate_alternating_trips,
     generate_trip_seats,
     hash_guest_token,
     release_expired_holds,
@@ -536,6 +537,42 @@ class TripViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
         trip = serializer.save()
         if trip.vehicle.seat_labels:
             generate_trip_seats(trip)
+
+    @action(detail=False, methods=["post"], url_path="generate")
+    def generate(self, request):
+        """
+        Planning quotidien en sens alterné (administrateur) : parcours du premier jour, bus, date de début,
+        nombre de jours, heure de départ. Voir services.generate_alternating_trips.
+        """
+        data = request.data
+        route = Route.objects.filter(pk=data.get("route")).select_related("origin", "destination").first()
+        if route is None:
+            raise ValidationError({"route": "Choisissez le parcours du premier jour."})
+        vehicle = Vehicle.objects.filter(pk=data.get("vehicle"), category=Vehicle.Category.BUS).first()
+        if vehicle is None:
+            raise ValidationError({"vehicle": "Choisissez un bus."})
+        try:
+            start_date = datetime.strptime(str(data.get("start_date") or ""), "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValidationError({"start_date": "Date de début invalide (format AAAA-MM-JJ)."}) from exc
+        try:
+            departure_time = datetime.strptime(str(data.get("departure_time") or ""), "%H:%M").time()
+        except ValueError as exc:
+            raise ValidationError({"departure_time": "Heure de départ invalide (format HH:MM)."}) from exc
+        try:
+            days = int(data.get("days"))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({"days": "Nombre de jours invalide."}) from exc
+        try:
+            created, skipped = generate_alternating_trips(
+                route=route, vehicle=vehicle, start_date=start_date, days=days, departure_time=departure_time
+            )
+        except DjangoValidationError as exc:
+            raise service_validation_error(exc)
+        return Response(
+            {"created": len(created), "trips": TripSerializer(created, many=True, context={"request": request}).data, "skipped": skipped},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class SeatViewSet(viewsets.ReadOnlyModelViewSet):

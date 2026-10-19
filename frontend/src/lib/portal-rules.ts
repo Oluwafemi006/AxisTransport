@@ -84,3 +84,18 @@ export function searchDateError(value: string, today: string = beninDateKey()): 
   if (value < today) return "Choisissez une date à partir d’aujourd’hui.";
   return null;
 }
+
+// ─── Vente au guichet ────────────────────────────────────────────────────────
+// Départs proposés au guichet : planifiés ou en embarquement, itinéraire actif, pas encore partis,
+// du plus proche au plus lointain.
+export interface SellableTrip {
+  status: string;
+  departure_at: string;
+  route_detail: { active: boolean };
+}
+
+export function upcomingSellableTrips<T extends SellableTrip>(trips: T[], now: Date = new Date()): T[] {
+  return trips
+    .filter((trip) => trip.route_detail.active && ["SCHEDULED", "BOARDING"].includes(trip.status) && Date.parse(trip.departure_at) > now.getTime())
+    .sort((a, b) => Date.parse(a.departure_at) - Date.parse(b.departure_at));
+}

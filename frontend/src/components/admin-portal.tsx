@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone, useActionFeedback } from "./ui";
 import { LoginCard } from "./login-card";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import { actionErrorText, counterTripLabel, holdMinutesConfigured } from "@/lib/portal-rules";
+import { actionErrorText, counterTripLabel, holdMinutesConfigured, upcomingSellableTrips } from "@/lib/portal-rules";
 import type { AgencyProfile, AgencySettingChange, FareRule, FeatureFlag, Location, ManualTicketChange, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle } from "@/lib/types";
 
 type AdminTab = "dashboard" | "planning" | "guichet" | "colis" | "flotte" | "tarifs" | "troncons" | "agence" | "paiements" | "equipe";
@@ -172,6 +172,23 @@ function PlanningPanel({ routes, vehicles, trips, onChanged }: { routes: Route[]
     } catch (reason) { feedback.failure(reason, "Le trajet n’a pas été ajouté."); }
   }
 
+  // Planning quotidien : un départ par jour à heure fixe, sens alterné (Parakou → Cotonou, puis l'inverse…).
+  const [plan, setPlan] = useState({ route: "", vehicle: "", start_date: "", days: "", departure_time: "09:00" });
+
+  async function generate(event: FormEvent) {
+    event.preventDefault();
+    try {
+      const result = await apiFetch<{ created: number; skipped: Array<{ date: string; reason: string }> }>("/trips/generate/", {
+        method: "POST",
+        body: JSON.stringify({ ...plan, route: Number(plan.route), vehicle: Number(plan.vehicle), days: Number(plan.days) }),
+      });
+      const skipped = result.skipped.length ? ` ${result.skipped.length} jour(s) ignoré(s) : ${result.skipped.map((item) => `${item.date} (${item.reason})`).join(", ")}.` : "";
+      if (result.created === 0) feedback.info(`Aucun départ créé.${skipped}`);
+      else feedback.success(`${result.created} départ(s) créé(s) à ${plan.departure_time}, sens alterné.${skipped}`);
+      await onChanged();
+    } catch (reason) { feedback.failure(reason, "Le planning n’a pas été créé."); }
+  }
+
   async function cancel(trip: Trip) {
     try {
       await apiFetch(`/trips/${trip.id}/`, { method: "PATCH", body: JSON.stringify({ status: "CANCELLED" }) });
@@ -217,6 +234,17 @@ function PlanningPanel({ routes, vehicles, trips, onChanged }: { routes: Route[]
           <Input label="Départ" type="datetime-local" value={form.departure_at} onChange={(value) => setForm({ ...form, departure_at: value })} />
           <Input label="Arrivée (même jour)" type="datetime-local" value={form.arrival_at} onChange={(value) => setForm({ ...form, arrival_at: value })} required={false} />
           <button className="primary-button w-full">Ajouter au planning</button>
+        </form>
+        <hr className="my-6 border-[var(--line)]" />
+        <SectionHeading eyebrow="Un départ par jour" title="Planning quotidien (sens alterné)" />
+        <p className="mb-4 text-sm text-slate-500">Le 1er jour suit le parcours choisi, le lendemain le parcours inverse, et ainsi de suite. Les jours où ce bus a déjà un départ sont laissés tels quels. Heure d’arrivée laissée vide.</p>
+        <form onSubmit={generate} className="space-y-4">
+          <Select label="Parcours du premier jour" value={plan.route} onChange={(value) => setPlan({ ...plan, route: value })} options={routes.map((r) => [String(r.id), r.label])} />
+          <Select label="Bus" value={plan.vehicle} onChange={(value) => setPlan({ ...plan, vehicle: value })} options={vehicles.map((v) => [String(v.id), `${v.name} · ${v.capacity ?? "capacité requise"}`])} />
+          <Input label="Date du premier jour" type="date" value={plan.start_date} onChange={(value) => setPlan({ ...plan, start_date: value })} />
+          <Input label="Nombre de jours (1 à 90)" type="number" value={plan.days} onChange={(value) => setPlan({ ...plan, days: value })} />
+          <Input label="Heure de départ" type="time" value={plan.departure_time} onChange={(value) => setPlan({ ...plan, departure_time: value })} />
+          <button className="primary-button w-full">Créer le planning</button>
         </form>
       </section>
     </div>
@@ -270,13 +298,38 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
     setTicket(null); setNotice(null); setSeat(""); setName(""); setPhone("");
   }
 
-  // Les départs d'un itinéraire désactivé ne sont pas proposés à la vente.
-  const sellable = trips.filter((trip) => trip.route_detail.active && ["SCHEDULED", "BOARDING"].includes(trip.status));
+  // Départs à venir et vendables (itinéraire actif, pas encore partis), du plus proche au plus lointain.
+  const sellable = upcomingSellableTrips(trips);
   const activeMethods = payments.filter((p) => p.active);
   const held = ticket?.status === "HELD";
 
   return (
     <div className="grid gap-5 lg:grid-cols-2">
+      <section className="card lg:col-span-2">
+        <SectionHeading eyebrow="À vendre" title="Prochains départs" />
+        {sellable.length === 0 ? <EmptyState title="Aucun départ à venir" text="Créez les départs dans l’onglet « Trajets & planning »." /> : (
+          <div className="table-scroll">
+            <table className="staff-table min-w-[640px]">
+              <thead><tr><th>Départ</th><th>Parcours</th><th>Prix</th><th>Places libres</th><th /></tr></thead>
+              <tbody>
+                {sellable.map((trip) => (
+                  <tr key={trip.id} className={String(trip.id) === tripId ? "bg-[var(--tint)]" : undefined}>
+                    <td className="whitespace-nowrap">{formatDate(trip.departure_at)}</td>
+                    <td className="strong">{trip.route_detail.label}</td>
+                    <td className="whitespace-nowrap">{trip.current_fare ? money(trip.current_fare.amount, trip.current_fare.currency) : "sans prix (non vendable)"}</td>
+                    <td>{trip.available_seats}</td>
+                    <td className="text-right">
+                      <button type="button" className="secondary-button" disabled={!trip.current_fare || trip.available_seats === 0} onClick={() => { setTripId(String(trip.id)); setSeat(""); }}>
+                        {String(trip.id) === tripId ? "Sélectionné" : "Vendre"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
       <section className="card">
         <SectionHeading eyebrow="Base commune" title="Vendre un billet" />
         <form onSubmit={sell} className="space-y-4">

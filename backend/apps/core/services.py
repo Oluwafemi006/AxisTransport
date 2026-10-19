@@ -1,7 +1,7 @@
 import re
 import hashlib
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -26,6 +26,7 @@ from .models import (
     TicketControl,
     TicketStatusHistory,
     Transaction,
+    Route,
     Trip,
     PaymentAttempt,
     LineStop,
@@ -117,6 +118,50 @@ def boarding_time(trip, lead_minutes=None):
     if lead_minutes is None:
         lead_minutes = boarding_lead_minutes()
     return trip.departure_at - timedelta(minutes=lead_minutes)
+
+
+PLANNING_MAX_DAYS = 90  # proposition : au-delà, générer en plusieurs fois
+
+
+@transaction.atomic
+def generate_alternating_trips(*, route, vehicle, start_date, days, departure_time):
+    """
+    Planning quotidien en sens alterné : un départ par jour à `departure_time` (heure du Bénin), le premier
+    jour sur `route`, le lendemain sur le parcours inverse, et ainsi de suite (le sens suit le rang du jour).
+    Ne crée rien un jour où ce véhicule a déjà un départ (non annulé), ni un départ déjà passé ;
+    ne modifie aucun départ existant. Heure d'arrivée laissée vide. Renvoie (créés, jours ignorés).
+    """
+    if not 1 <= days <= PLANNING_MAX_DAYS:
+        raise ValidationError(f"Le nombre de jours doit être compris entre 1 et {PLANNING_MAX_DAYS}.")
+    if start_date < timezone.localdate():
+        raise ValidationError("La date de début ne peut pas être passée.")
+    if not vehicle.seat_labels:
+        raise ValidationError("Saisissez d'abord la capacité ou le plan de sièges de ce véhicule (onglet Flotte).")
+    reverse = Route.objects.filter(origin=route.destination, destination=route.origin).first()
+    if reverse is None:
+        raise ValidationError(f"Le parcours inverse de « {route} » n'existe pas : impossible d'alterner.")
+    if not (route.active and reverse.active):
+        raise ValidationError("Les deux parcours doivent être actifs.")
+
+    created, skipped = [], []
+    for index in range(days):
+        day = start_date + timedelta(days=index)
+        day_route = route if index % 2 == 0 else reverse
+        departure = timezone.make_aware(datetime.combine(day, departure_time))
+        if departure <= timezone.now():
+            skipped.append({"date": day.isoformat(), "reason": "heure déjà passée"})
+            continue
+        if (
+            Trip.objects.filter(vehicle=vehicle, departure_at__date=day)
+            .exclude(status=Trip.Status.CANCELLED)
+            .exists()
+        ):
+            skipped.append({"date": day.isoformat(), "reason": "ce véhicule a déjà un départ ce jour-là"})
+            continue
+        trip = Trip.objects.create(route=day_route, vehicle=vehicle, departure_at=departure)
+        generate_trip_seats(trip)
+        created.append(trip)
+    return created, skipped
 
 
 def generate_trip_seats(trip):
