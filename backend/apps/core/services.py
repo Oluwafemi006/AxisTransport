@@ -326,6 +326,9 @@ def hash_guest_token(token):
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+DEPARTED_MESSAGE = "Ce départ est déjà parti : il n'est plus possible de réserver."
+
+
 @transaction.atomic
 def reserve_booking(
     *,
@@ -338,8 +341,12 @@ def reserve_booking(
     sold_by=None,
     idempotency_key="",
     buyer_ifu="",
+    allow_departed=False,
 ):
-    """Reserve all seats for a group or none of them."""
+    """
+    Reserve all seats for a group or none of them.
+    Départ déjà parti : refusé, sauf `allow_departed` (vente du contrôleur à l'arrêt, départs du jour seulement).
+    """
     buyer_ifu = clean_buyer_ifu(buyer_ifu)
     if not 1 <= len(passengers) <= 8:
         raise ValidationError("Une réservation doit contenir entre 1 et 8 passagers.")
@@ -348,6 +355,8 @@ def reserve_booking(
     locked_trip = Trip.objects.select_for_update().select_related("route").get(pk=trip.pk)
     if locked_trip.status not in {Trip.Status.SCHEDULED, Trip.Status.BOARDING}:
         raise ValidationError("Ce trajet n'accepte pas de nouvelle réservation.")
+    if not allow_departed and locked_trip.departure_at <= timezone.now():
+        raise ValidationError(DEPARTED_MESSAGE)
 
     seat_ids = [item["seat"].pk for item in passengers]
     if len(seat_ids) != len(set(seat_ids)):
@@ -462,6 +471,8 @@ def pay_and_issue_booking(booking, *, payment_method, receipt, actor=None, exter
 def reserve_ticket(*, trip, seat, customer, passenger_name, passenger_phone="", channel=Ticket.Channel.ONLINE):
     if trip.status not in {Trip.Status.SCHEDULED, Trip.Status.BOARDING}:
         raise ValidationError("Ce trajet n'accepte pas de nouvelle réservation.")
+    if trip.departure_at <= timezone.now():
+        raise ValidationError(DEPARTED_MESSAGE)
     if seat.trip_id != trip.id:
         raise ValidationError("Le siège ne correspond pas au trajet sélectionné.")
     locked_seat = Seat.objects.select_for_update().get(pk=seat.pk)

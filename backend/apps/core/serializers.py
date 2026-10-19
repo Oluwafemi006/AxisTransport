@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+from django.utils import timezone
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
@@ -553,6 +554,9 @@ class RentalBookingSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
+        # Nouvelle demande : le début ne peut pas être déjà passé.
+        if self.instance is None and attrs.get("starts_at") and attrs["starts_at"] <= timezone.now():
+            raise serializers.ValidationError({"starts_at": "Le début de la location doit être dans le futur."})
         instance = self.instance or RentalBooking()
         for key, value in attrs.items():
             setattr(instance, key, value)

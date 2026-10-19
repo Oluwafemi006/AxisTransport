@@ -1454,6 +1454,8 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                         channel=Ticket.Channel.COUNTER,
                         sold_by=request.user,
                         idempotency_key=key,
+                        # Le contrôleur vend à l'arrêt, y compris après l'heure (départs du jour : _sellable_trips).
+                        allow_departed=request.user.role == User.Role.CONTROLLER,
                         buyer_ifu=str(request.data.get("buyer_ifu") or ""),
                     )
                 # Espèces : réservation et émission dans la même transaction, donc jamais de billet à moitié créé.
