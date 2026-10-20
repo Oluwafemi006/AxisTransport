@@ -4,9 +4,7 @@ from django.contrib import admin
 from django.urls import include, path
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from apps.core.views import AxisTokenObtainPairView
-
-from apps.core.views import MeView, RegisterView
+from apps.core.views import AcceptStaffInvitationView, AxisTokenObtainPairView, MeView, RegisterView
 from apps.core.urls_client import client_urlpatterns
 from apps.core.urls_staff import staff_urlpatterns
 
@@ -18,6 +16,8 @@ urlpatterns = [
     path("api/v1/auth/token/refresh/", TokenRefreshView.as_view(), name="v1_token_refresh"),
     path("api/v1/auth/register/", RegisterView.as_view(), name="v1_register"),
     path("api/v1/auth/me/", MeView.as_view(), name="v1_me"),
+    path("api/v1/auth/invite/accept/", AcceptStaffInvitationView.as_view(), name="v1_auth_invite_accept"),
+    path("api/auth/invite/accept/", AcceptStaffInvitationView.as_view(), name="auth_invite_accept"),
 
     # ── Surface CLIENT (/api/v1/client/) ────────────────────────────────────
     # Accès strictement réservé aux clients mobiles.

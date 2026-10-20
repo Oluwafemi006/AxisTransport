@@ -68,6 +68,41 @@ export async function login(username: string, password: string) {
   return tokens;
 }
 
+export interface StaffInvitationVerification {
+  email: string;
+  group: string;
+  role: string;
+  role_label: string;
+  expires_at: string;
+}
+
+export interface StaffInvitationAcceptResponse {
+  detail: string;
+  username: string;
+  role: string;
+  group: string;
+}
+
+export async function verifyStaffInvitation(token: string): Promise<StaffInvitationVerification> {
+  return await apiFetch<StaffInvitationVerification>(
+    `/auth/invite/accept/?token=${encodeURIComponent(token)}`,
+    { method: "GET" },
+    false,
+  );
+}
+
+export async function acceptStaffInvitation(token: string, password: string): Promise<StaffInvitationAcceptResponse> {
+  return await apiFetch<StaffInvitationAcceptResponse>(
+    "/auth/invite/accept/",
+    {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
+    },
+    false,
+  );
+}
+
+
 export function money(amount: string | number | null, currency = "XOF") {
   if (amount === null || amount === undefined || amount === "") return "À configurer";
   // Le franc CFA s'affiche « FCFA », jamais avec son code « XOF ».

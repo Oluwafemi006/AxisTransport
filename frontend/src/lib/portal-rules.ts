@@ -99,3 +99,21 @@ export function upcomingSellableTrips<T extends SellableTrip>(trips: T[], now: D
     .filter((trip) => trip.route_detail.active && ["SCHEDULED", "BOARDING"].includes(trip.status) && Date.parse(trip.departure_at) > now.getTime())
     .sort((a, b) => Date.parse(a.departure_at) - Date.parse(b.departure_at));
 }
+
+// ─── Activation du compte du personnel ───────────────────────────────────────
+// Validation du mot de passe choisi par l'invité.
+export function activationPasswordError(password: string, confirm: string): string | null {
+  if (!password) return "Saisissez un mot de passe.";
+  if (password.length < 8) return "Le mot de passe doit comporter au moins 8 caractères.";
+  if (password !== confirm) return "Les deux mots de passe ne correspondent pas.";
+  return null;
+}
+
+// Redirection vers le portail adapté selon le rôle assigné.
+export function staffPortalLoginUrl(role?: string | null): string {
+  if (role === "COUNTER") return "/guichet";
+  if (role === "CONTROLLER") return "/controleur";
+  if (role === "ADMIN") return "/admin";
+  return "/";
+}
+
