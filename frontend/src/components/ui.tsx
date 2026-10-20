@@ -1,5 +1,8 @@
-import { ReactNode } from "react";
+"use client";
+
+import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Brand } from "./brand";
+import { actionErrorText } from "@/lib/portal-rules";
 import type { User } from "@/lib/types";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "grey";
@@ -44,6 +47,62 @@ export function Notice({ notice, className = "mt-4" }: { notice: NoticeState; cl
       {notice.text}
     </p>
   );
+}
+
+// ─── Retour des actions du portail ───────────────────────────────────────────
+// Un seul composant pour toutes les actions d'écriture : message fixe dans un coin de l'écran (visible même
+// en bas de page), succès 6 s, erreur 15 s, fermable. Une erreur n'est jamais affichée comme un succès.
+
+type Feedback = { id: number; text: string; tone: "ok" | "error" | "info" };
+type ActionFeedback = {
+  success: (text: string) => void;
+  info: (text: string) => void;
+  failure: (reason: unknown, failed: string) => void;
+};
+
+const FEEDBACK_DURATION = { ok: 6000, info: 8000, error: 15000 } as const;
+const ActionFeedbackContext = createContext<ActionFeedback | null>(null);
+
+export function ActionFeedbackProvider({ children }: { children: ReactNode }) {
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const counter = useRef(0);
+
+  const show = useCallback((text: string, tone: Feedback["tone"]) => {
+    counter.current += 1;
+    setFeedback({ id: counter.current, text, tone });
+  }, []);
+
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = window.setTimeout(() => setFeedback((current) => (current?.id === feedback.id ? null : current)), FEEDBACK_DURATION[feedback.tone]);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
+
+  const value = useRef<ActionFeedback>({
+    success: (text) => show(text, "ok"),
+    info: (text) => show(text, "info"),
+    failure: (reason, failed) => show(actionErrorText(reason, failed), "error"),
+  }).current;
+
+  return (
+    <ActionFeedbackContext.Provider value={value}>
+      {children}
+      <div className="action-feedback" aria-live="polite">
+        {feedback && (
+          <p key={feedback.id} className={noticeClasses[feedback.tone]} role={feedback.tone === "error" ? "alert" : "status"}>
+            <span>{feedback.text}</span>
+            <button type="button" className="action-feedback-close" aria-label="Fermer le message" onClick={() => setFeedback(null)}>×</button>
+          </p>
+        )}
+      </div>
+    </ActionFeedbackContext.Provider>
+  );
+}
+
+export function useActionFeedback(): ActionFeedback {
+  const context = useContext(ActionFeedbackContext);
+  if (!context) throw new Error("useActionFeedback doit être utilisé dans StaffShell (ActionFeedbackProvider).");
+  return context;
 }
 
 export function SectionHeading({ eyebrow, title, action }: { eyebrow?: string; title: string; action?: ReactNode }) {
@@ -96,7 +155,7 @@ export function StaffShell<Key extends string>({ user, tabs, current, onTab, chi
           </nav>
         )}
       </header>
-      <main className="wrap staff-main">{children}</main>
+      <main className="wrap staff-main"><ActionFeedbackProvider>{children}</ActionFeedbackProvider></main>
     </div>
   );
 }

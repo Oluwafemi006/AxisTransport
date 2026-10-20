@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/benin_time.dart';
 import '../../core/formatters.dart';
 import '../../core/models.dart';
 import '../../core/session.dart';
@@ -65,9 +66,10 @@ class _RentalsScreenState extends ConsumerState<RentalsScreen> {
   Future<DateTime?> _pickDateTime(DateTime initial) async {
     final date = await showDatePicker(
       context: context,
-      initialDate: initial,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 730)),
+      initialDate: initial.isBefore(beninToday()) ? beninToday() : initial,
+      // Jours passés grisés : le calendrier commence aujourd'hui au Bénin.
+      firstDate: beninToday(),
+      lastDate: beninToday().add(const Duration(days: 730)),
     );
     if (date == null || !mounted) return null;
     final time = await showTimePicker(
@@ -83,7 +85,16 @@ class _RentalsScreenState extends ConsumerState<RentalsScreen> {
       context.push('/login');
       return;
     }
-    if (_vehicle == null || _startsAt == null || _endsAt == null) return;
+    if (_vehicle == null) {
+      setState(() => _message = 'Choisissez un véhicule.');
+      return;
+    }
+    // Date passée, heure déjà dépassée ou champ vide : message, et aucun appel au serveur.
+    final periodProblem = rentalPeriodError(_startsAt, _endsAt);
+    if (periodProblem != null) {
+      setState(() => _message = periodProblem);
+      return;
+    }
     setState(() {
       _busy = true;
       _message = null;

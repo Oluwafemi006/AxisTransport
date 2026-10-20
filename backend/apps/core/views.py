@@ -104,7 +104,9 @@ from .payments import (
     verify_fedapay_signature,
 )
 from .services import (
+    ReservationsClosed,
     cancel_held_booking,
+    generate_alternating_trips,
     generate_trip_seats,
     hash_guest_token,
     release_expired_holds,
@@ -118,7 +120,10 @@ from .services import (
 )
 
 
-def service_validation_error(exc):
+def service_validation_error(exc, *, staff=False):
+    # Réservations fermées (durée de blocage non saisie) : message sans texte technique, adapté au public.
+    if isinstance(exc, ReservationsClosed):
+        return ValidationError({"detail": ReservationsClosed.STAFF_MESSAGE if staff else ReservationsClosed.CLIENT_MESSAGE})
     # Statut du prestataire transmis tel quel, pour que les clients distinguent « en attente » d'un échec.
     if isinstance(exc, PaymentNotApproved):
         return ValidationError({"detail": exc.messages[0], "payment_status": exc.provider_status})
@@ -533,6 +538,42 @@ class TripViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
         if trip.vehicle.seat_labels:
             generate_trip_seats(trip)
 
+    @action(detail=False, methods=["post"], url_path="generate")
+    def generate(self, request):
+        """
+        Planning quotidien en sens alterné (administrateur) : parcours du premier jour, bus, date de début,
+        nombre de jours, heure de départ. Voir services.generate_alternating_trips.
+        """
+        data = request.data
+        route = Route.objects.filter(pk=data.get("route")).select_related("origin", "destination").first()
+        if route is None:
+            raise ValidationError({"route": "Choisissez le parcours du premier jour."})
+        vehicle = Vehicle.objects.filter(pk=data.get("vehicle"), category=Vehicle.Category.BUS).first()
+        if vehicle is None:
+            raise ValidationError({"vehicle": "Choisissez un bus."})
+        try:
+            start_date = datetime.strptime(str(data.get("start_date") or ""), "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValidationError({"start_date": "Date de début invalide (format AAAA-MM-JJ)."}) from exc
+        try:
+            departure_time = datetime.strptime(str(data.get("departure_time") or ""), "%H:%M").time()
+        except ValueError as exc:
+            raise ValidationError({"departure_time": "Heure de départ invalide (format HH:MM)."}) from exc
+        try:
+            days = int(data.get("days"))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({"days": "Nombre de jours invalide."}) from exc
+        try:
+            created, skipped = generate_alternating_trips(
+                route=route, vehicle=vehicle, start_date=start_date, days=days, departure_time=departure_time
+            )
+        except DjangoValidationError as exc:
+            raise service_validation_error(exc)
+        return Response(
+            {"created": len(created), "trips": TripSerializer(created, many=True, context={"request": request}).data, "skipped": skipped},
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class SeatViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Seat.objects.select_related("trip")
@@ -776,7 +817,7 @@ class TicketViewSet(viewsets.ModelViewSet):
                 channel=channel,
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
-            raise service_validation_error(exc)
+            raise service_validation_error(exc, staff=request.user.role in {User.Role.COUNTER, User.Role.ADMIN})
         return Response(TicketSerializer(ticket, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -929,7 +970,7 @@ class BookingViewSet(viewsets.ModelViewSet):
                 buyer_ifu=data.get("buyer_ifu", ""),
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
-            raise service_validation_error(exc)
+            raise service_validation_error(exc, staff=request.user.is_authenticated and request.user.role != User.Role.CLIENT)
         booking = self.queryset.get(pk=booking.pk)
         extra = {"guest_access_token": guest_token} if guest_token else {}
         return Response(
@@ -1321,7 +1362,7 @@ class StaffTicketViewSet(viewsets.GenericViewSet):
                     external_reference=request.data.get("external_reference", ""),
                 )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
-            raise service_validation_error(exc)
+            raise service_validation_error(exc, staff=True)
         ticket, payment = settlement.tickets[0], settlement.transactions[0]
         return Response(
             {
@@ -1450,6 +1491,8 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                         channel=Ticket.Channel.COUNTER,
                         sold_by=request.user,
                         idempotency_key=key,
+                        # Le contrôleur vend à l'arrêt, y compris après l'heure (départs du jour : _sellable_trips).
+                        allow_departed=request.user.role == User.Role.CONTROLLER,
                         buyer_ifu=str(request.data.get("buyer_ifu") or ""),
                     )
                 # Espèces : réservation et émission dans la même transaction, donc jamais de billet à moitié créé.
@@ -1462,7 +1505,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                 raise ValidationError("Vente impossible, réessayez.")
             created = False
         except (DjangoValidationError, ImproperlyConfigured) as exc:
-            raise service_validation_error(exc)
+            raise service_validation_error(exc, staff=True)
 
         booking.refresh_from_db()
         checkout = None

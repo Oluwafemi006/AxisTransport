@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
+import { beninDateKey, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Checkout, Contact, Location, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { clearGuestBooking, loadGuestBooking, rememberGuestPayment, saveGuestBooking } from "@/lib/guest-booking";
@@ -88,6 +89,17 @@ export function ClientPortal() {
   const [searchOrigin, setSearchOrigin] = useState("");
   const [searchDestination, setSearchDestination] = useState("");
   const [searchDate, setSearchDate] = useState("");
+  const [searchMessage, setSearchMessage] = useState("");
+
+  // Aujourd'hui au Bénin : date minimale du calendrier (les jours passés sont grisés).
+  const beninToday = beninDateKey();
+
+  // Rechercher sans les deux villes, sans date, ou avec une date passée : message, et rien n'est lancé.
+  function runSearch() {
+    const problem = searchError(searchOrigin, searchDestination) ?? searchDateError(searchDate, beninDateKey());
+    setSearchMessage(problem ?? "");
+    if (!problem) setTab("billets");
+  }
   
   // Derived state: Filtered Trips based on Search
   const filteredTrips = trips.filter(trip => {
@@ -95,7 +107,8 @@ export function ClientPortal() {
     if (searchOrigin && trip.route_detail.origin !== Number(searchOrigin)) match = false;
     if (searchDestination && trip.route_detail.destination !== Number(searchDestination)) match = false;
     if (searchDate) {
-      const tripDate = new Date(trip.departure_at).toISOString().split('T')[0];
+      // Date du départ au Bénin (et non en UTC : un départ à 00 h 30 tombe le bon jour).
+      const tripDate = beninDateKey(new Date(trip.departure_at));
       if (tripDate !== searchDate) match = false;
     }
     return match;
@@ -106,7 +119,8 @@ export function ClientPortal() {
       <div className="top">
         <div className="wrap">
           <span>Axe Parakou – Cotonou</span>
-          {contact.contact_phone && <span>Téléphone : {contact.contact_phone}</span>}
+          {contact.contact_phone && <span>Téléphone : <PhoneText value={contact.contact_phone} /></span>}
+          <WhatsAppIcon value={contact.contact_whatsapp} />
           <span>Voyagez en toute confiance</span>
         </div>
       </div>
@@ -168,21 +182,21 @@ export function ClientPortal() {
                 <div className="search">
                   <div className="f">
                     <label>Départ</label>
-                    <select value={searchOrigin} onChange={(e) => setSearchOrigin(e.target.value)}>
-                      <option value="">Toutes origines</option>
-                      {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                    <select value={searchOrigin} onChange={(e) => { setSearchOrigin(e.target.value); setSearchMessage(""); }}>
+                      <option value="">Choisir…</option>
+                      {placeChoices(locations, searchDestination).map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
                     </select>
                   </div>
                   <div className="f">
                     <label>Destination</label>
-                    <select value={searchDestination} onChange={(e) => setSearchDestination(e.target.value)}>
-                      <option value="">Toutes destinations</option>
-                      {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                    <select value={searchDestination} onChange={(e) => { setSearchDestination(e.target.value); setSearchMessage(""); }}>
+                      <option value="">Choisir…</option>
+                      {placeChoices(locations, searchOrigin).map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
                     </select>
                   </div>
                   <div className="f">
                     <label>Date de départ</label>
-                    <input type="date" value={searchDate} onChange={(e) => setSearchDate(e.target.value)} />
+                    <input type="date" min={beninToday} value={searchDate} onChange={(e) => { setSearchDate(e.target.value); setSearchMessage(""); }} />
                   </div>
                   <div className="f">
                     <label>Passagers</label>
@@ -192,8 +206,9 @@ export function ClientPortal() {
                       <option value="3">3 passagers</option>
                     </select>
                   </div>
-                  <button className="btn p" onClick={() => setTab("billets")}>Rechercher</button>
+                  <button className="btn p" onClick={runSearch}>Rechercher</button>
                 </div>
+                {searchMessage && <p role="alert" style={{ color: 'var(--warn)', marginTop: '10px', fontWeight: 600 }}>{searchMessage}</p>}
 
                 <section className="section-margin">
                   <div className="head">
@@ -356,10 +371,9 @@ export function ClientPortal() {
             </div>
             <div>
               <h4>Contact</h4>
-              <p style={{ opacity: '.8', marginBottom: '6px' }}>Téléphone : {contact.contact_phone || "À renseigner"}</p>
-              <p style={{ opacity: '.8', marginBottom: '10px' }}>WhatsApp : {contact.contact_whatsapp || "À renseigner"}</p>
-              {contact.contact_phone && <a className="btn s" href={`tel:${contact.contact_phone.replace(/[^+\d]/g, "")}`}>Appeler</a>}
-              {contact.contact_whatsapp && <a className="btn s" style={{ marginLeft: contact.contact_phone ? '8px' : 0 }} href={`https://wa.me/${contact.contact_whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">WhatsApp</a>}
+              <p style={{ opacity: '.8', marginBottom: '6px' }}>Téléphone : {contact.contact_phone ? <PhoneText value={contact.contact_phone} /> : "À renseigner"}</p>
+              <p style={{ opacity: '.8', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>WhatsApp : {contact.contact_whatsapp || "À renseigner"} <WhatsAppIcon value={contact.contact_whatsapp} /></p>
+              {phoneHref(contact.contact_phone) && <a className="btn s" href={phoneHref(contact.contact_phone)!}>Appeler</a>}
             </div>
           </div>
           <div className="copy">© {new Date().getFullYear()} AXIS Transport · Mentions légales · Politique de confidentialité</div>
@@ -898,5 +912,24 @@ function Profile({ user, tickets, parcels, rentals, onAuthenticated, onLogout }:
       
       <button className="btn" style={{ width: '100%', borderColor: 'var(--warn)', color: 'var(--warn)' }} onClick={onLogout}>Se déconnecter</button>
     </div>
+  );
+}
+
+// Téléphone de contact : lien d'appel seulement si le numéro est valide ; sinon le texte seul.
+function PhoneText({ value }: { value: string }) {
+  const href = phoneHref(value);
+  return href ? <a href={href} style={{ color: 'inherit', textDecoration: 'underline' }}>{value}</a> : <>{value}</>;
+}
+
+// Icône WhatsApp : seulement si un numéro international est renseigné (sinon rien).
+function WhatsAppIcon({ value }: { value: string }) {
+  const href = whatsappHref(value);
+  if (!href) return null;
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" aria-label="Écrire sur WhatsApp" title="WhatsApp" style={{ display: 'inline-flex', color: 'inherit' }}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3z" />
+      </svg>
+    </a>
   );
 }

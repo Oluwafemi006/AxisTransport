@@ -13,9 +13,10 @@ def build_operational_context(*, trip_date=None):
     route = Route.objects.create(origin=origin, destination=destination)
     vehicle = Vehicle.objects.create(category=Vehicle.Category.BUS, name="Bus test", capacity=4)
     trip_date = trip_date or timezone.localdate()
-    departure = timezone.make_aware(datetime.combine(trip_date, time(hour=10)))
-    arrival = departure + timedelta(hours=4)
-    trip = Trip.objects.create(route=route, vehicle=vehicle, departure_at=departure, arrival_at=arrival)
+    # 23 h 59 : un départ « du jour » (scan du contrôleur) qui n'est pas encore parti quand les tests tournent,
+    # car un départ déjà parti n'est plus réservable.
+    departure = timezone.make_aware(datetime.combine(trip_date, time(hour=23, minute=59)))
+    trip = Trip.objects.create(route=route, vehicle=vehicle, departure_at=departure)
     generate_trip_seats(trip)
     # Prix du billet : grille par tronçon (trajet complet). La règle du parcours, gardée, ne fixe plus le prix.
     segment_fare = SegmentFare.objects.create(
