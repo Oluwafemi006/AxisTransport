@@ -799,7 +799,7 @@ function AgencyPanel() {
         {profile.updated_by_name && <p className="mt-3 text-sm text-slate-500">Dernière modification : {formatDate(profile.updated_at)} par {profile.updated_by_name}.</p>}
       </section>
       <section className="card">
-        <SectionHeading eyebrow="Comprises dans le prix affiché (TTC)" title="Taxes" />
+        <SectionHeading eyebrow="Comprises dans le prix affiché" title="Taxes" />
         <p className="mb-4 text-sm text-slate-500">Taux modifiable : la valeur de 18 % a été transmise et n’est pas vérifiée pour le transport de voyageurs. Un billet déjà vendu garde son taux.</p>
         <div className="table-scroll">
           <table className="staff-table min-w-[620px]">

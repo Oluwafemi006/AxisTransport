@@ -38,12 +38,6 @@ export function ticketRows(ticket: PrintableTicket, formatDate: (iso: string) =>
     rows.push(["Vente", info.sale]);
     if (info.payment_mode) rows.push(["Mode de paiement", info.payment_mode]);
     if (info.buyer_ifu) rows.push(["IFU de l'acheteur", info.buyer_ifu]);
-    // HT / taxes / TTC : seulement si l'IFU de l'agence est renseigné (le serveur n'envoie le détail que dans ce cas).
-    if (info.price_excl_tax !== null) {
-      rows.push(["Prix HT", money(info.price_excl_tax, ticket.currency)]);
-      for (const line of info.tax_lines) rows.push([`${line.name} ${line.rate} % (incluse)`, money(line.amount, ticket.currency)]);
-      rows.push(["Prix TTC", money(info.price_incl_tax, ticket.currency)]);
-    }
   }
   return rows;
 }

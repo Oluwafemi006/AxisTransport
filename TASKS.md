@@ -5,8 +5,9 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Multi-passagers, alignement car Yutong et suppression TVA | `ag/seats-and-vat` | Antigravity | à valider par Eddy |
+| Flux complet d'invitations du personnel (SMTP, backend, frontend) | `ag/admin-invitations` | Antigravity | fusionnée dans main |
 | IFU de l'acheteur et partages de l'app du personnel | `ag/billet-personnel` | Antigravity | terminée |
-| Flux complet d'invitations du personnel (SMTP, backend, frontend) | `ag/admin-invitations` | Antigravity | à valider par Eddy |
 | Bouton « Vérifier mon paiement », rattrapage automatique en local, vérification patiente | `confirmation-paiement` | Claude Code | fusionnée dans main |
 | Dates passées refusées (site, app et serveur), heure du Bénin | `cc/dates-passees` | Claude Code | fusionnée dans main |
 | Planning quotidien à sens alterné et départs vendables au guichet | `cc/planning-guichet` | Claude Code | fusionnée dans main |

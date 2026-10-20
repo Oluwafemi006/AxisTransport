@@ -6,6 +6,8 @@ import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } fro
 import { beninDateKey, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Checkout, Contact, Location, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
+import { BusSeatMap } from "./bus-seat-map";
+import { PassengerForm, type PassengerItem } from "./passenger-form";
 import { clearGuestBooking, loadGuestBooking, rememberGuestPayment, saveGuestBooking } from "@/lib/guest-booking";
 
 type ClientTab = "accueil" | "billets" | "colis" | "location" | "profil";
@@ -395,11 +397,11 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
   const [tripId, setTripId] = useState("");
   const [paymentCheck, setPaymentCheck] = useState<{ ticketId: number; busy: boolean; text: string } | null>(null);
   const [seats, setSeats] = useState<Seat[]>([]);
-  const [seatId, setSeatId] = useState("");
-  const [passengerName, setPassengerName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([]);
+  const [passengers, setPassengers] = useState<PassengerItem[]>([]);
+  const [contactPhone, setContactPhone] = useState("");
   const [buyerIfu, setBuyerIfu] = useState("");
-  const [pending, setPending] = useState<Ticket | null>(null);
+  const [pendingTickets, setPendingTickets] = useState<Ticket[]>([]);
   const [checkout, setCheckout] = useState<Checkout | null>(null);
   // Réservation en cours. Sans compte, le serveur renvoie un jeton qui autorise le paiement.
   const [booking, setBooking] = useState<{ id: number; token: string | null } | null>(null);
@@ -416,6 +418,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
   const onlineMethods = paymentMethods.filter((method) => method.online);
   // Un seul moyen de paiement en ligne : une seule action « Payer [total] ». Plusieurs : le choix reste à l'écran.
   const singleQuote = tripQuotes.length === 1 ? tripQuotes[0] : null;
+  const pending = pendingTickets[0] ?? null;
   const held = pending?.status === "HELD";
   // Un billet vient d'être émis : le formulaire ne propose plus de payer tant que l'on n'a pas choisi « Acheter un autre billet ».
   const issued = pending?.status === "ISSUED";
@@ -423,8 +426,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
 
   useEffect(() => {
     if (user) {
-      setPassengerName((current) => current || [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username);
-      setPhone((current) => current || user.phone || "");
+      setContactPhone((current) => current || user.phone || "");
     }
   }, [user]);
 
@@ -437,14 +439,14 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     apiFetch<BookingPayload>(`/client/bookings/${stored.id}/`, { headers: access(stored) }, !stored.token)
       .then((found) => {
         if (cancelled || !found.tickets.length) return;
-        const ticket = found.tickets[0];
-        if (ticket.status !== "HELD" && ticket.status !== "ISSUED") { clearGuestBooking(); return; }
+        const first = found.tickets[0];
+        if (first.status !== "HELD" && first.status !== "ISSUED") { clearGuestBooking(); return; }
         setBooking({ id: stored.id, token: stored.token });
-        setPending(ticket);
+        setPendingTickets(found.tickets);
         setBookingQuotes(found.payment_quotes);
         const quote = found.payment_quotes.find((item) => item.payment_method === stored.paymentMethod);
-        if (ticket.status === "HELD" && quote && stored.transactionId) setCheckout({ ...quote, transaction_id: stored.transactionId, payment_url: stored.paymentUrl ?? null, simulated: false });
-        setMessage(ticket.status === "ISSUED" ? "Votre billet est prêt." : "Réservation retrouvée. Finalisez le paiement avant l’expiration.");
+        if (first.status === "HELD" && quote && stored.transactionId) setCheckout({ ...quote, transaction_id: stored.transactionId, payment_url: stored.paymentUrl ?? null, simulated: false });
+        setMessage(first.status === "ISSUED" ? "Vos billets sont prêts." : "Réservation retrouvée. Finalisez le paiement avant l’expiration.");
       })
       .catch((reason) => { if ((reason as { status?: number }).status === 403 || (reason as { status?: number }).status === 404) clearGuestBooking(); });
     return () => { cancelled = true; };
@@ -466,14 +468,55 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
 
   useEffect(() => { void loadSeats(); }, [loadSeats]);
 
-  // Total à payer pour le trajet choisi, demandé au serveur avant toute réservation.
+  // Total à payer pour le trajet choisi et le nombre de passagers, demandé au serveur avant toute réservation.
   useEffect(() => {
     setTripQuotes([]);
     if (!tripId) return;
+    const count = Math.max(1, selectedSeatIds.length);
     let cancelled = false;
-    apiFetch<Quote[]>(`/client/trips/${tripId}/payment-quotes/`, {}, false).then((quotes) => { if (!cancelled) setTripQuotes(quotes); }).catch(() => undefined);
+    apiFetch<Quote[]>(`/client/trips/${tripId}/payment-quotes/?passengers=${count}`, {}, false).then((quotes) => { if (!cancelled) setTripQuotes(quotes); }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [tripId]);
+  }, [tripId, selectedSeatIds.length]);
+
+  function handleToggleSeat(seat: Seat) {
+    setSelectedSeatIds((current) => {
+      const exists = current.includes(seat.id);
+      let next: number[];
+      if (exists) {
+        next = current.filter((id) => id !== seat.id);
+      } else {
+        if (current.length >= 8) return current;
+        next = [...current, seat.id];
+      }
+
+      setPassengers((prev) => {
+        const defaultName = user ? [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username : "";
+        return next.map((sId, index) => {
+          const found = prev.find((p) => p.seatId === sId);
+          if (found) return found;
+          const sObj = seats.find((s) => s.id === sId);
+          return {
+            seatId: sId,
+            seatNumber: sObj?.number ?? String(sId),
+            fullName: index === 0 && !prev.length ? defaultName : "",
+            phone: index === 0 && !prev.length ? (user?.phone || contactPhone) : "",
+          };
+        });
+      });
+
+      return next;
+    });
+  }
+
+  function handlePassengerChange(index: number, field: "fullName" | "phone", value: string) {
+    setPassengers((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], [field]: value };
+      }
+      return updated;
+    });
+  }
 
   // Compte à rebours de la tenue du siège.
   const expiresAt = held && pending?.reservation_expires_at ? new Date(pending.reservation_expires_at).getTime() : null;
@@ -488,42 +531,59 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
 
   function forget() {
     clearGuestBooking();
-    setBooking(null); setPending(null); setCheckout(null); setBookingQuotes([]); setPaymentFailed(false); setMessage("");
+    setBooking(null); setPendingTickets([]); setCheckout(null); setBookingQuotes([]); setPaymentFailed(false); setMessage("");
+    setSelectedSeatIds([]); setPassengers([]);
     void loadSeats();
   }
 
   // Repart d'un formulaire vierge après un achat. Sans compte, le billet n'est gardé nulle part sur le site :
   // on demande confirmation avant de ne plus le proposer.
   function buyAnother() {
-    if (!user && !window.confirm("Avez-vous téléchargé votre billet ? Sans compte, il ne sera plus proposé sur cette page.")) return;
+    if (!user && !window.confirm("Avez-vous téléchargé vos billets ? Sans compte, ils ne seront plus proposés sur cette page.")) return;
     forget();
-    setSeatId("");
   }
 
   // Annulation d'une réservation non payée : le serveur libère le siège tout de suite.
   async function cancelBooking() {
     if (locked.current || !booking) return;
-    if (!window.confirm("Annuler cette réservation ? Le siège sera libéré.")) return;
+    if (!window.confirm("Annuler cette réservation ? Les sièges seront libérés.")) return;
     locked.current = true;
     setBusy(true);
     try {
       await apiFetch(`/client/bookings/${booking.id}/cancel/`, { method: "POST", headers: access(booking) }, !booking.token);
       forget();
-      setMessage("Réservation annulée. Le siège est libéré.");
+      setMessage("Réservation annulée. Les sièges sont libérés.");
       void onChanged();
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Annulation impossible."); }
     finally { locked.current = false; setBusy(false); }
   }
 
   async function createBooking() {
-    const created = await apiFetch<BookingPayload>("/client/bookings/", { method: "POST", body: JSON.stringify({ trip: Number(tripId), contact_phone: phone, buyer_ifu: buyerIfu.trim(), passengers: [{ full_name: passengerName, phone, seat: Number(seatId) }] }) }, !!user);
+    if (passengers.length === 0) throw new Error("Veuillez sélectionner au moins une place sur le plan.");
+    for (let i = 0; i < passengers.length; i++) {
+      if (!passengers[i].fullName.trim()) {
+        throw new Error(`Veuillez renseigner le nom du passager pour le siège N° ${passengers[i].seatNumber}.`);
+      }
+    }
+    const payload = {
+      trip: Number(tripId),
+      contact_phone: contactPhone || passengers[0]?.phone || "",
+      buyer_ifu: buyerIfu.trim(),
+      passengers: passengers.map((p) => ({
+        full_name: p.fullName.trim(),
+        phone: p.phone.trim() || contactPhone,
+        seat: p.seatId,
+      })),
+    };
+    const created = await apiFetch<BookingPayload>("/client/bookings/", { method: "POST", body: JSON.stringify(payload) }, !!user);
     const current = { id: created.id, token: created.guest_access_token ?? null };
     saveGuestBooking(current.id, current.token);
     setBooking(current);
-    setPending(created.tickets[0]);
+    setPendingTickets(created.tickets);
     setBookingQuotes(created.payment_quotes);
     setCheckout(null);
-    setSeatId("");
+    setSelectedSeatIds([]);
+    setPassengers([]);
     void Promise.all([onChanged(), loadSeats()]);
     return current;
   }
@@ -549,7 +609,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     return false;
   }
 
-  // Action unique : réserver le siège puis ouvrir le paiement, dans un seul enchaînement.
+  // Action unique : réserver les sièges puis ouvrir le paiement, dans un seul enchaînement.
   async function payNow(event: FormEvent) {
     event.preventDefault();
     if (locked.current || held || !singleQuote) return;
@@ -574,7 +634,7 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     setBusy(true); setMessage("");
     try {
       await createBooking();
-      setMessage("Siège réservé temporairement. Finalisez le paiement avant l’expiration.");
+      setMessage("Sièges réservés temporairement. Finalisez le paiement avant l’expiration.");
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Réservation impossible."); }
     finally { locked.current = false; setBusy(false); }
   }
@@ -609,10 +669,11 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     setMessage("Vérification du paiement…");
     try {
       const response = await apiFetch<{ booking: { tickets: Ticket[] } }>(`/client/bookings/${target.id}/pay/`, { method: "POST", headers: access(target), body: JSON.stringify({ payment_method: current.payment_method, external_reference: current.transaction_id }) }, !target.token);
-      setPending(response.booking.tickets[0]);
+      setPendingTickets(response.booking.tickets);
       setCheckout(null);
-      setMessage("Paiement confirmé, ticket émis.");
-      setSeatId("");
+      setMessage("Paiement confirmé, billet(s) émis.");
+      setSelectedSeatIds([]);
+      setPassengers([]);
       await Promise.all([onChanged(), loadSeats()]);
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Paiement non confirmé."); }
     finally { locked.current = false; setBusy(false); }
@@ -631,58 +692,43 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
         {trips.length === 0 ? <p>Aucun trajet disponible.</p> : (
           <form onSubmit={singleQuote ? payNow : reserveOnly} className="f">
             <label style={{ marginTop: '10px' }}>Voyage</label>
-            <select value={tripId} onChange={(e) => { setTripId(e.target.value); setSeatId(""); }} required>
+            <select value={tripId} onChange={(e) => { setTripId(e.target.value); setSelectedSeatIds([]); setPassengers([]); }} required>
               <option value="">Choisir un départ</option>
               {trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.route_detail.label} — {formatDate(trip.departure_at)}</option>)}
             </select>
             
             {seats.length > 0 && (
-              <div style={{ marginTop: '20px' }}>
-                <label>Plan de sièges</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
-                  {seats.map((seat) => {
-                    // Un siège pris (réservé ou vendu) n'apparaît jamais comme « sélectionné ».
-                    const free = seat.status === "AVAILABLE";
-                    const chosen = free && seatId === String(seat.id);
-                    return (
-                      <button type="button" key={seat.id} disabled={!free} onClick={() => setSeatId(String(seat.id))}
-                        title={chosen ? "Votre choix" : seat.status_display} aria-pressed={chosen}
-                        style={{
-                          aspectRatio: '1/1', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', border: '1px solid var(--line)',
-                          background: chosen ? 'var(--blue)' : free ? '#fff' : 'var(--bg)',
-                          color: chosen ? '#fff' : free ? 'var(--ink)' : 'var(--mute)',
-                          cursor: free ? 'pointer' : 'not-allowed'
-                        }}
-                      >
-                        {seat.number}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <BusSeatMap
+                seats={seats}
+                selectedSeatIds={selectedSeatIds}
+                onToggleSeat={handleToggleSeat}
+                disabled={busy}
+              />
             )}
 
-            <label style={{ marginTop: '20px' }}>Nom du passager</label>
-            <input value={passengerName} onChange={(e) => setPassengerName(e.target.value)} required />
-            
-            <label style={{ marginTop: '20px' }}>Téléphone{!user && " (obligatoire sans compte)"}</label>
-            <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required={!user} pattern={user ? undefined : "\\+?[0-9\\(][0-9 \\(\\)\\.\\-]{5,}"} title="Numéro de téléphone" />
-
-            <label style={{ marginTop: '20px' }}>IFU de l’acheteur (facultatif, imprimé sur le billet)</label>
-            <input value={buyerIfu} onChange={(e) => setBuyerIfu(e.target.value)} maxLength={30} />
+            <PassengerForm
+              passengers={passengers}
+              onPassengerChange={handlePassengerChange}
+              contactPhone={contactPhone}
+              onContactPhoneChange={setContactPhone}
+              buyerIfu={buyerIfu}
+              onBuyerIfuChange={setBuyerIfu}
+              isUserLoggedIn={Boolean(user)}
+            />
 
             {singleQuote && !held && !issued && (
               <p style={{ marginTop: '20px', fontSize: '14px', color: 'var(--mute)' }}>
-                Prix du billet : {money(singleQuote.amount, singleQuote.currency)}
+                Total : <b>{money(singleQuote.total, singleQuote.currency)}</b>
+                {selectedSeatIds.length > 1 && ` (${selectedSeatIds.length} billets)`}
               </p>
             )}
             {!held && !issued && (singleQuote ? (
-              <button className="btn p" style={{ marginTop: '12px', width: '100%' }} disabled={busy || !seatId}>
-                {busy ? "Patientez…" : `Payer ${money(singleQuote.total, singleQuote.currency)}`}
+              <button className="btn p" style={{ marginTop: '16px', width: '100%' }} disabled={busy || selectedSeatIds.length === 0}>
+                {busy ? "Patientez…" : selectedSeatIds.length === 0 ? "Sélectionnez au moins un siège" : `Payer ${money(singleQuote.total, singleQuote.currency)}${selectedSeatIds.length > 1 ? ` (${selectedSeatIds.length} billets)` : ""}`}
               </button>
             ) : (
-              <button className="btn p" style={{ marginTop: '30px', width: '100%' }} disabled={busy || !seatId || !selectedTrip?.current_fare}>
-                {busy ? "Patientez…" : <>Réserver {selectedTrip?.current_fare ? ` · ${money(selectedTrip.current_fare.amount, selectedTrip.current_fare.currency)}` : ""}</>}
+              <button className="btn p" style={{ marginTop: '24px', width: '100%' }} disabled={busy || selectedSeatIds.length === 0 || !selectedTrip?.current_fare}>
+                {busy ? "Patientez…" : selectedSeatIds.length === 0 ? "Sélectionnez au moins un siège" : <>Réserver {selectedTrip?.current_fare ? ` · ${selectedSeatIds.length} place(s)` : ""}</>}
               </button>
             ))}
           </form>
@@ -693,10 +739,12 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
         {held && pending && booking && (
           <div style={{ background: 'var(--warnbg)', color: 'var(--warn)', padding: '20px', borderRadius: '12px', marginTop: '20px', border: '1px solid #f2dfb6' }}>
             <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>Réservation en cours · {pending.reference}</p>
-            <p style={{ fontSize: '14px' }}>Siège {pending.seat_detail.number} · {pending.trip_detail.route_detail.label}</p>
+            <p style={{ fontSize: '14px' }}>
+              Siège(s) : <b>{pendingTickets.map((t) => t.seat_detail?.number ?? t.seat).join(", ")}</b> · {pending.trip_detail.route_detail.label}
+            </p>
             {expired ? (
               <>
-                <p style={{ fontSize: '14px', margin: '8px 0 16px' }}>Le délai de réservation est écoulé : le siège n’est plus tenu.</p>
+                <p style={{ fontSize: '14px', margin: '8px 0 16px' }}>Le délai de réservation est écoulé : les sièges ne sont plus tenus.</p>
                 <button type="button" className="btn" onClick={forget}>Nouvelle réservation</button>
                 {checkout && <button type="button" className="btn" style={{ marginLeft: '10px' }} disabled={busy} onClick={() => void confirmPayment()}>J’ai payé · vérifier</button>}
               </>
@@ -705,7 +753,8 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
                 <p style={{ fontSize: '14px', margin: '8px 0 16px' }}>Temps restant : <b>{countdown}</b></p>
                 {heldQuote && (
                   <p style={{ fontSize: '14px', marginBottom: '12px' }}>
-                    Prix du billet : <b>{money(heldQuote.amount, heldQuote.currency)}</b>
+                    Total à régler : <b>{money(heldQuote.total, heldQuote.currency)}</b>
+                    {pendingTickets.length > 1 && ` (${pendingTickets.length} billets)`}
                   </p>
                 )}
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -729,16 +778,57 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
           </div>
         )}
         
-        {pending?.status === "ISSUED" && (
+        {issued && pending && (
            <div style={{ background: 'var(--okbg)', color: 'var(--ok)', padding: '20px', borderRadius: '12px', marginTop: '20px', border: '1px solid #c3e6d3', textAlign: 'center' }}>
              <p style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '10px' }}>🎉 Voyage confirmé !</p>
-             <p style={{ marginBottom: '16px' }}>Votre billet {pending.reference} a été émis avec succès.</p>
-             <a href={`/t/${pending.reference}`} target="_blank" rel="noreferrer" onClick={clearGuestBooking} className="btn p" style={{ display: 'inline-flex', background: 'var(--ok)', borderColor: 'var(--ok)' }}>
-               Voir et télécharger mon billet
-             </a>
-             {!user && <p style={{ marginTop: '12px', fontSize: '13px' }}>Sans compte, ce billet n’est pas conservé sur le site : téléchargez-le maintenant.</p>}
+             <p style={{ marginBottom: '16px' }}>
+               {pendingTickets.length > 1
+                 ? `${pendingTickets.length} billets ont été émis avec succès.`
+                 : `Votre billet ${pending.reference} a été émis avec succès.`}
+             </p>
+             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+               {pendingTickets.map((ticket) => (
+                 <div
+                   key={ticket.id}
+                   style={{
+                     display: 'flex',
+                     justifyContent: 'space-between',
+                     alignItems: 'center',
+                     background: '#fff',
+                     padding: '12px 16px',
+                     borderRadius: '10px',
+                     border: '1px solid #c3e6d3',
+                     textAlign: 'left',
+                   }}
+                 >
+                   <div>
+                     <div style={{ fontWeight: 700, color: 'var(--ink)' }}>{ticket.passenger_name}</div>
+                     <div style={{ fontSize: '12px', color: 'var(--mute)' }}>
+                       Siège N° {ticket.seat_detail?.number ?? ticket.seat} · Réf. {ticket.reference}
+                     </div>
+                   </div>
+                   <a
+                     href={`/t/${ticket.reference}`}
+                     target="_blank"
+                     rel="noreferrer"
+                     onClick={clearGuestBooking}
+                     className="btn p"
+                     style={{
+                       display: 'inline-flex',
+                       background: 'var(--ok)',
+                       borderColor: 'var(--ok)',
+                       padding: '6px 14px',
+                       fontSize: '13px',
+                     }}
+                   >
+                     Télécharger le billet
+                   </a>
+                 </div>
+               ))}
+             </div>
+             {!user && <p style={{ marginTop: '12px', fontSize: '13px' }}>Sans compte, ces billets ne sont pas conservés sur le site : téléchargez-les maintenant.</p>}
              <p style={{ marginTop: '16px' }}>
-               <button type="button" className="btn" onClick={buyAnother}>Acheter un autre billet</button>
+               <button type="button" className="btn" onClick={buyAnother}>Acheter d’autres billets</button>
              </p>
            </div>
         )}
