@@ -196,6 +196,7 @@ class SaleCheckout {
 /// Texte de partage du billet : uniquement des valeurs du serveur ; le lien n'apparaît que s'il existe.
 String saleShareText(SaleTicket ticket, String Function(DateTime) formatDate) {
   final info = ticket.printInfo;
+  final paid = (info != null && info.paid) || ticket.isIssued;
   return [
     'AXIS Transport',
     'Billet : ${ticket.reference}',
@@ -207,17 +208,30 @@ String saleShareText(SaleTicket ticket, String Function(DateTime) formatDate) {
       'Départ : ${formatDate(ticket.departureAt!)}',
     'Siège : ${ticket.seatNumber}',
     'Prix du billet : ${formatMoney(ticket.amount, ticket.currency)}',
+    if (paid) 'Statut : Payé',
+    if (info != null && info.sale.trim().isNotEmpty)
+      info.sale.trim().startsWith('Vendeur') ||
+              info.sale.trim().startsWith('Vente')
+          ? info.sale.trim()
+          : 'Vente : ${info.sale.trim()}',
+    if (info != null && info.paymentMode.trim().isNotEmpty)
+      'Mode de paiement : ${info.paymentMode.trim()}',
     if (info != null && info.buyerIfu.trim().isNotEmpty)
       'IFU de l\'acheteur : ${info.buyerIfu.trim()}',
-    if (info != null && info.priceExclTax != null) ...[
+    if (info != null &&
+        info.priceExclTax != null &&
+        info.taxLines.any((line) => line.amount > 0)) ...[
       'Prix HT : ${formatMoney(info.priceExclTax!, ticket.currency)}',
       for (final line in info.taxLines)
-        '${line.name} ${line.rate} % (incluse) : ${formatMoney(line.amount, ticket.currency)}',
-      'Prix TTC : ${formatMoney(info.priceInclTax, ticket.currency)}',
+        if (line.amount > 0)
+          '${line.name} ${line.rate} % (incluse) : ${formatMoney(line.amount, ticket.currency)}',
+      'Prix TTC : ${formatMoney(info.priceInclTax > 0 ? info.priceInclTax : ticket.amount, ticket.currency)}',
     ],
     if (ticket.publicUrl.isNotEmpty) ...[
       '',
       'Votre billet : ${ticket.publicUrl}',
     ],
+    '',
+    ...ticketFooterLines(info),
   ].join('\n');
 }

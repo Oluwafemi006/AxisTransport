@@ -63,20 +63,7 @@ List<(String, String)> ticketFields(Ticket ticket) {
 }
 
 /// Bas du billet : agence (jamais les comptes bancaires) et conditions ; vide = « À renseigner ».
-List<String> ticketFooter(Ticket ticket) {
-  final agency = ticket.printInfo?.agency ?? const AgencyInfo();
-  final contacts = [
-    agency.phones,
-    agency.email,
-  ].map((item) => item.trim()).where((item) => item.isNotEmpty).join(' · ');
-  return [
-    'Raison sociale : ${_orMissing(agency.legalName)}',
-    'IFU : ${_orMissing(agency.ifu)} · RCCM : ${_orMissing(agency.rccm)}',
-    'Adresse : ${_orMissing(agency.address)}',
-    'Contacts : ${_orMissing(contacts)}',
-    'Conditions : ${_orMissing(ticket.printInfo?.conditions)}',
-  ];
-}
+List<String> ticketFooter(Ticket ticket) => ticketFooterLines(ticket.printInfo);
 
 /// Les polices PDF standard ne couvrent que le Latin-1 : on remplace les rares autres signes.
 String pdfSafe(String text) {

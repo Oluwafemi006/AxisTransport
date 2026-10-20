@@ -401,48 +401,8 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
   }
 
   List<Widget> _issued(SaleTicket ticket) {
-    final info = ticket.printInfo;
     return [
-      AxisCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Billet émis · ${ticket.reference}',
-              style: const TextStyle(
-                color: AxisColors.success,
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text('Passager : ${ticket.passengerName}'),
-            Text('Siège : ${ticket.seatNumber}'),
-            Text('Trajet : ${ticket.routeLabel}'),
-            if (ticket.boardingAt != null)
-              Text('Embarquement : ${formatFullDateTime(ticket.boardingAt!)}'),
-            if (ticket.departureAt != null)
-              Text('Départ : ${formatFullDateTime(ticket.departureAt!)}'),
-            Text(
-              'Prix du billet : ${formatMoney(ticket.amount, ticket.currency)}',
-            ),
-            if (info != null && info.buyerIfu.trim().isNotEmpty)
-              Text('IFU de l\'acheteur : ${info.buyerIfu.trim()}'),
-            if (info != null && info.priceExclTax != null) ...[
-              Text(
-                'Prix HT : ${formatMoney(info.priceExclTax!, ticket.currency)}',
-              ),
-              for (final line in info.taxLines)
-                Text(
-                  '${line.name} ${line.rate} % (incluse) : ${formatMoney(line.amount, ticket.currency)}',
-                ),
-              Text(
-                'Prix TTC : ${formatMoney(info.priceInclTax, ticket.currency)}',
-              ),
-            ],
-          ],
-        ),
-      ),
+      SaleIssuedCard(ticket: ticket),
       const SizedBox(height: 12),
       FilledButton.icon(
         key: const Key('sale-share'),
@@ -453,6 +413,73 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
       const SizedBox(height: 8),
       OutlinedButton(onPressed: _newSale, child: const Text('Nouvelle vente')),
     ];
+  }
+}
+
+/// Carte de confirmation d'un billet émis par le personnel (guichet ou contrôleur).
+/// Affiche uniquement des données réelles du serveur ; montants en FCFA, aucune mention inventée.
+class SaleIssuedCard extends StatelessWidget {
+  const SaleIssuedCard({super.key, required this.ticket});
+
+  final SaleTicket ticket;
+
+  @override
+  Widget build(BuildContext context) {
+    final info = ticket.printInfo;
+    final paid = (info != null && info.paid) || ticket.isIssued;
+    return AxisCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Billet émis · ${ticket.reference}',
+            style: const TextStyle(
+              color: AxisColors.success,
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text('Passager : ${ticket.passengerName}'),
+          Text('Siège : ${ticket.seatNumber}'),
+          Text('Trajet : ${ticket.routeLabel}'),
+          if (ticket.boardingAt != null)
+            Text('Embarquement : ${formatFullDateTime(ticket.boardingAt!)}'),
+          if (ticket.departureAt != null)
+            Text('Départ : ${formatFullDateTime(ticket.departureAt!)}'),
+          Text(
+            'Prix du billet : ${formatMoney(ticket.amount, ticket.currency)}',
+          ),
+          if (paid) const Text('Statut : Payé'),
+          if (info != null && info.sale.trim().isNotEmpty)
+            Text(
+              info.sale.trim().startsWith('Vendeur') ||
+                      info.sale.trim().startsWith('Vente')
+                  ? info.sale.trim()
+                  : 'Vente : ${info.sale.trim()}',
+            ),
+          if (info != null && info.paymentMode.trim().isNotEmpty)
+            Text('Mode de paiement : ${info.paymentMode.trim()}'),
+          if (info != null && info.buyerIfu.trim().isNotEmpty)
+            Text('IFU de l\'acheteur : ${info.buyerIfu.trim()}'),
+          if (info != null &&
+              info.priceExclTax != null &&
+              info.taxLines.any((line) => line.amount > 0)) ...[
+            Text(
+              'Prix HT : ${formatMoney(info.priceExclTax!, ticket.currency)}',
+            ),
+            for (final line in info.taxLines)
+              if (line.amount > 0)
+                Text(
+                  '${line.name} ${line.rate} % (incluse) : ${formatMoney(line.amount, ticket.currency)}',
+                ),
+            Text(
+              'Prix TTC : ${formatMoney(info.priceInclTax > 0 ? info.priceInclTax : ticket.amount, ticket.currency)}',
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 

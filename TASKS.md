@@ -5,9 +5,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
-| Tâche | Branche | Outil | Statut |
-|---|---|---|---|
-| IFU de l'acheteur et partages de l'app du personnel | `ag/billet-personnel` | Antigravity | en cours (application des 3 corrections) |
+| IFU de l'acheteur et partages de l'app du personnel | `ag/billet-personnel` | Antigravity | corrigée, prête pour relecture Claude Code |
 | Bouton « Vérifier mon paiement », rattrapage automatique en local, vérification patiente | `confirmation-paiement` | Claude Code | fusionnée dans main |
 | Dates passées refusées (site, app et serveur), heure du Bénin | `cc/dates-passees` | Claude Code | fusionnée dans main |
 | Planning quotidien à sens alterné et départs vendables au guichet | `cc/planning-guichet` | Claude Code | fusionnée dans main |
