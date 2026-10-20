@@ -13,6 +13,7 @@ from .models import (
     PaymentIncident,
     PaymentReceipt,
     SegmentFareChange,
+    StaffInvitation,
     Passenger,
     RentalBooking,
     Route,
@@ -110,6 +111,32 @@ class PaymentIncidentAdmin(admin.ModelAdmin):
     list_filter = ("handled", "source", "provider")
     search_fields = ("external_id", "booking__reference", "reason")
     readonly_fields = ("source", "provider", "event", "external_id", "amount", "currency", "amount_verified", "booking", "reason")
+
+
+@admin.register(StaffInvitation)
+class StaffInvitationAdmin(admin.ModelAdmin):
+    list_display = ("email", "group", "expires_at", "is_used", "created_at", "invited_by")
+    list_filter = ("group", "is_used")
+    search_fields = ("email", "token")
+    readonly_fields = ("token", "is_used", "created_at", "invited_by")
+    actions = ["resend_invitation_email"]
+
+    def save_model(self, request, obj, form, change):
+        if not change and not obj.invited_by and request.user.is_authenticated:
+            obj.invited_by = request.user
+        super().save_model(request, obj, form, change)
+        if not change:
+            # Envoi réel de l'e-mail lors de la création
+            obj.send_invitation_email()
+
+    @admin.action(description="Renvoyer l'e-mail d'invitation")
+    def resend_invitation_email(self, request, queryset):
+        sent = 0
+        for invite in queryset:
+            if not invite.is_used:
+                invite.send_invitation_email()
+                sent += 1
+        self.message_user(request, f"{sent} invitation(s) renvoyée(s) avec succès.")
 
 
 admin.site.register(

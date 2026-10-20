@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 from django.conf import settings
 
+from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
 from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import Count, Q, Sum
@@ -49,6 +50,7 @@ from .models import (
     PaymentReceipt,
     SegmentFare,
     SegmentFareChange,
+    StaffInvitation,
 )
 from .permissions import (
     IsAxisAdmin,
@@ -428,6 +430,109 @@ class RegisterView(FrenchThrottleMixin, APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save(role=User.Role.CLIENT)
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+class AcceptStaffInvitationView(FrenchThrottleMixin, APIView):
+    """
+    Activation de compte suite à une invitation d'un membre du personnel.
+    GET  : vérifie la validité du token pour affichage dans le formulaire web.
+    POST : valide le token, crée l'utilisateur avec is_active=True, is_staff=True,
+           l'ajoute au groupe prévu, définit son mot de passe et marque l'invitation comme utilisée.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [RegisterAddressThrottle]
+
+    def get(self, request):
+        token_str = request.query_params.get("token") or request.data.get("token")
+        if not token_str:
+            return Response({"error": "Le jeton d'invitation est manquant."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            invitation = StaffInvitation.objects.select_related("group").get(token=token_str)
+        except (StaffInvitation.DoesNotExist, ValueError, DjangoValidationError):
+            return Response({"error": "Ce lien d'invitation est invalide ou inexistant."}, status=status.HTTP_404_NOT_FOUND)
+
+        if invitation.is_used:
+            return Response({"error": "Cette invitation a déjà été utilisée."}, status=status.HTTP_400_BAD_REQUEST)
+        if invitation.expires_at <= timezone.now():
+            return Response({"error": "Cette invitation a expiré. Veuillez contacter un administrateur."}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            "valid": True,
+            "email": invitation.email,
+            "group": invitation.group.name,
+        })
+
+    def post(self, request):
+        token_str = request.data.get("token")
+        password = request.data.get("password")
+
+        if not token_str:
+            return Response({"error": "Le jeton d'invitation est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
+        if not password:
+            return Response({"error": "Le mot de passe est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            invitation = StaffInvitation.objects.select_related("group").get(token=token_str)
+        except (StaffInvitation.DoesNotExist, ValueError, DjangoValidationError):
+            return Response({"error": "Ce lien d'invitation est invalide ou inexistant."}, status=status.HTTP_404_NOT_FOUND)
+
+        if invitation.is_used:
+            return Response({"error": "Cette invitation a déjà été utilisée."}, status=status.HTTP_400_BAD_REQUEST)
+        if invitation.expires_at <= timezone.now():
+            return Response({"error": "Cette invitation a expiré. Veuillez contacter un administrateur."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Validation de robustesse du mot de passe
+        try:
+            validate_password(password)
+        except DjangoValidationError as e:
+            return Response({"error": " ".join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Correspondance groupe -> rôle métier User
+        group_name = invitation.group.name
+        role_mapping = {
+            "Guichetier": User.Role.COUNTER,
+            "Contrôleur": User.Role.CONTROLLER,
+            "Superviseur": User.Role.ADMIN,
+        }
+        role = role_mapping.get(group_name, User.Role.COUNTER)
+
+        username = invitation.email
+        # Si un utilisateur existe déjà avec cet email ou username
+        user = User.objects.filter(Q(username=username) | Q(email=invitation.email)).first()
+        if user:
+            user.email = invitation.email
+            user.set_password(password)
+            user.role = role
+            user.is_staff = True
+            user.is_active = True
+            user.save()
+        else:
+            user = User.objects.create_user(
+                username=username,
+                email=invitation.email,
+                password=password,
+                role=role,
+                is_staff=True,
+                is_active=True,
+            )
+
+        # Ajout au groupe Django prévu
+        user.groups.add(invitation.group)
+
+        # Marquer l'invitation comme utilisée
+        invitation.is_used = True
+        invitation.save(update_fields=["is_used"])
+
+        return Response({
+            "success": True,
+            "message": "Votre compte AXIS Transport a été activé avec succès.",
+            "username": user.username,
+            "email": user.email,
+            "role": user.role,
+            "role_display": user.get_role_display(),
+            "group": invitation.group.name,
+        }, status=status.HTTP_200_OK)
 
 
 class PublicReadAdminWriteMixin:

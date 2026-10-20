@@ -125,3 +125,21 @@ test("guichet : seuls les départs à venir et vendables, du plus proche au plus
   ];
   assert.deepEqual(upcomingSellableTrips(trips, now).map((item) => item.id), [6, 3, 1]);
 });
+
+test("activation mot de passe : obligatoire, 8 caractères min, confirmation identique", async () => {
+  const { activationPasswordError } = await import(pathToFileURL(compiled).href);
+  assert.equal(activationPasswordError("", ""), "Saisissez un mot de passe.");
+  assert.equal(activationPasswordError("court", "court"), "Le mot de passe doit comporter au moins 8 caractères.");
+  assert.equal(activationPasswordError("motdepasse123", "motdepasse456"), "Les deux mots de passe ne correspondent pas.");
+  assert.equal(activationPasswordError("motdepasse123", "motdepasse123"), null);
+});
+
+test("redirection portail personnel : adapté selon le rôle assigné", async () => {
+  const { staffPortalLoginUrl } = await import(pathToFileURL(compiled).href);
+  assert.equal(staffPortalLoginUrl("COUNTER"), "/guichet");
+  assert.equal(staffPortalLoginUrl("CONTROLLER"), "/controleur");
+  assert.equal(staffPortalLoginUrl("ADMIN"), "/admin");
+  assert.equal(staffPortalLoginUrl(null), "/");
+  assert.equal(staffPortalLoginUrl("CLIENT"), "/");
+});
+

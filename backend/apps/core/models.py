@@ -1,5 +1,6 @@
-import uuid
+from datetime import timedelta
 from decimal import Decimal
+import uuid
 
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
@@ -831,3 +832,84 @@ class AgencySettingChange(models.Model):
 
     def __str__(self):
         return f"{self.changed_at:%Y-%m-%d %H:%M} {self.label}"
+
+
+def default_invitation_expiry():
+    return timezone.now() + timedelta(days=2)
+
+
+class StaffInvitation(TimeStampedModel):
+    """
+    Invitation par e-mail pour rejoindre le personnel d'AXIS (Guichetier, Contrôleur, Superviseur).
+    Expire à J+2 et ne peut être utilisée qu'une seule fois.
+    """
+
+    email = models.EmailField(verbose_name="Adresse e-mail")
+    group = models.ForeignKey(
+        "auth.Group",
+        on_delete=models.PROTECT,
+        related_name="staff_invitations",
+        verbose_name="Groupe de rôles",
+    )
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    expires_at = models.DateTimeField(default=default_invitation_expiry, verbose_name="Date d'expiration")
+    is_used = models.BooleanField(default=False, verbose_name="Utilisée")
+    invited_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sent_staff_invitations",
+        verbose_name="Invité par",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Invitation du personnel"
+        verbose_name_plural = "Invitations du personnel"
+
+    def __str__(self):
+        return f"Invitation pour {self.email} ({self.group.name})"
+
+    @property
+    def is_valid(self):
+        return not self.is_used and self.expires_at > timezone.now()
+
+    def send_invitation_email(self):
+        """Envoie l'e-mail d'invitation avec le lien d'activation et les liens mobile."""
+        from django.conf import settings
+        from django.core.mail import send_mail
+
+        base_url = (
+            getattr(settings, "FRONTEND_URL", "")
+            or getattr(settings, "PUBLIC_WEB_URL", "")
+            or "https://axistransportlogistique.com"
+        ).rstrip("/")
+        activation_url = f"{base_url}/activation?token={self.token}"
+
+        role_name = self.group.name
+        subject = f"Invitation à rejoindre l'équipe AXIS Transport ({role_name})"
+        body = (
+            f"Bonjour,\n\n"
+            f"Vous avez été invité(e) à rejoindre l'équipe AXIS Transport en tant que {role_name}.\n\n"
+            f"Pour activer votre compte et définir votre mot de passe, cliquez sur le lien ci-dessous :\n"
+            f"{activation_url}\n\n"
+            f"Ce lien est valable pendant 48 heures (jusqu'au {self.expires_at.strftime('%d/%m/%Y à %H:%M')}).\n\n"
+            f"--- Application mobile AXIS Transport ---\n"
+            f"Pour les opérations de terrain (guichet, contrôle), téléchargez également l'application mobile officielle sur le Google Play Store :\n"
+            f"Google Play Store : https://play.google.com/store/apps/details?id=com.axistransport.axis_transport_flutter\n\n"
+            f"Cordialement,\n"
+            f"L'équipe AXIS Transport\n"
+        )
+        from_email = (
+            getattr(settings, "DEFAULT_FROM_EMAIL", None)
+            or getattr(settings, "EMAIL_HOST_USER", None)
+            or "contact@axistransportlogistique.com"
+        )
+        send_mail(
+            subject=subject,
+            message=body,
+            from_email=from_email,
+            recipient_list=[self.email],
+            fail_silently=False,
+        )
