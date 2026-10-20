@@ -210,23 +210,13 @@ String saleShareText(SaleTicket ticket, String Function(DateTime) formatDate) {
     'Prix du billet : ${formatMoney(ticket.amount, ticket.currency)}',
     if (paid) 'Statut : Payé',
     if (info != null && info.sale.trim().isNotEmpty)
-      info.sale.trim().startsWith('Vendeur') ||
-              info.sale.trim().startsWith('Vente')
+      info.sale.trim().startsWith('Vendeur')
           ? info.sale.trim()
-          : 'Vente : ${info.sale.trim()}',
+          : 'Vendeur : ${info.sale.trim()}',
     if (info != null && info.paymentMode.trim().isNotEmpty)
       'Mode de paiement : ${info.paymentMode.trim()}',
     if (info != null && info.buyerIfu.trim().isNotEmpty)
       'IFU de l\'acheteur : ${info.buyerIfu.trim()}',
-    if (info != null &&
-        info.priceExclTax != null &&
-        info.taxLines.any((line) => line.amount > 0)) ...[
-      'Prix HT : ${formatMoney(info.priceExclTax!, ticket.currency)}',
-      for (final line in info.taxLines)
-        if (line.amount > 0)
-          '${line.name} ${line.rate} % (incluse) : ${formatMoney(line.amount, ticket.currency)}',
-      'Prix TTC : ${formatMoney(info.priceInclTax > 0 ? info.priceInclTax : ticket.amount, ticket.currency)}',
-    ],
     if (ticket.publicUrl.isNotEmpty) ...[
       '',
       'Votre billet : ${ticket.publicUrl}',

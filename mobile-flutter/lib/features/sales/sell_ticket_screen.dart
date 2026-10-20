@@ -453,30 +453,14 @@ class SaleIssuedCard extends StatelessWidget {
           if (paid) const Text('Statut : Payé'),
           if (info != null && info.sale.trim().isNotEmpty)
             Text(
-              info.sale.trim().startsWith('Vendeur') ||
-                      info.sale.trim().startsWith('Vente')
+              info.sale.trim().startsWith('Vendeur')
                   ? info.sale.trim()
-                  : 'Vente : ${info.sale.trim()}',
+                  : 'Vendeur : ${info.sale.trim()}',
             ),
           if (info != null && info.paymentMode.trim().isNotEmpty)
             Text('Mode de paiement : ${info.paymentMode.trim()}'),
           if (info != null && info.buyerIfu.trim().isNotEmpty)
             Text('IFU de l\'acheteur : ${info.buyerIfu.trim()}'),
-          if (info != null &&
-              info.priceExclTax != null &&
-              info.taxLines.any((line) => line.amount > 0)) ...[
-            Text(
-              'Prix HT : ${formatMoney(info.priceExclTax!, ticket.currency)}',
-            ),
-            for (final line in info.taxLines)
-              if (line.amount > 0)
-                Text(
-                  '${line.name} ${line.rate} % (incluse) : ${formatMoney(line.amount, ticket.currency)}',
-                ),
-            Text(
-              'Prix TTC : ${formatMoney(info.priceInclTax > 0 ? info.priceInclTax : ticket.amount, ticket.currency)}',
-            ),
-          ],
         ],
       ),
     );

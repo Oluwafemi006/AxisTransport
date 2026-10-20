@@ -355,7 +355,7 @@ void main() {
     );
   });
 
-  test('le texte de partage inclut les lignes HT et TVA seulement si price_excl_tax n\'est pas nul', () {
+  test('le texte de partage ne contient jamais de ligne de TVA ni de mention HT/TTC, même si présentes dans print_info', () {
     final withoutTaxes = SaleTicket.fromJson({
       ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
           as Map<String, dynamic>,
@@ -369,6 +369,8 @@ void main() {
     expect(textWithout, isNot(contains('Prix HT')));
     expect(textWithout, isNot(contains('TVA')));
     expect(textWithout, isNot(contains('Prix TTC')));
+    expect(textWithout, isNot(contains('XOF')));
+    expect(textWithout, contains('FCFA'));
 
     final withTaxes = SaleTicket.fromJson({
       ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
@@ -386,10 +388,12 @@ void main() {
     });
     final textWith = saleShareText(withTaxes, formatFullDateTime);
     expect(textWith, contains('IFU de l\'acheteur : TEST-IFU-123'));
-    final compacted = textWith.replaceAll(RegExp(r'\s'), '');
-    expect(compacted, contains('PrixHT:847FCFA'));
-    expect(compacted, contains('TVA18%(incluse):153FCFA'));
-    expect(compacted, contains('PrixTTC:1000FCFA'));
+    expect(textWith, isNot(contains('Prix HT')));
+    expect(textWith, isNot(contains('TVA')));
+    expect(textWith, isNot(contains('Prix TTC')));
+    expect(textWith.replaceAll(RegExp(r'\s'), ''), contains('Prixdubillet:1000FCFA'));
+    expect(textWith, isNot(contains('XOF')));
+    expect(textWith, contains('FCFA'));
   });
 
   test('le texte de partage ignore un IFU composé uniquement d\'espaces', () {
@@ -417,6 +421,7 @@ void main() {
     expect(text.replaceAll(RegExp(r'\s'), ''), contains('Prixdubillet:1000FCFA'));
     expect(text, contains('Raison sociale : À renseigner'));
     expect(text, isNot(contains('XOF')));
+    expect(text, contains('FCFA'));
   });
 
   test('le texte de partage inclut Statut Payé, Vendeur, Mode de paiement et bas de billet', () {
@@ -451,6 +456,7 @@ void main() {
     expect(text, contains('Contacts : +229 01 02 03 04 · contact@axis.test'));
     expect(text, contains('Conditions : Billet non échangeable'));
     expect(text, isNot(contains('XOF')));
+    expect(text, contains('FCFA'));
   });
 
   test('le texte de partage n\'affiche pas de lignes de TVA si la TVA est à zéro', () {
@@ -472,9 +478,11 @@ void main() {
     expect(text, isNot(contains('Prix HT')));
     expect(text, isNot(contains('Prix TTC')));
     expect(text.replaceAll(RegExp(r'\s'), ''), contains('Prixdubillet:1000FCFA'));
+    expect(text, isNot(contains('XOF')));
+    expect(text, contains('FCFA'));
   });
 
-  test('ne pas afficher « Prix TTC 0 FCFA » si price_excl_tax est présent sans price_incl_tax', () {
+  test('aucune ligne de TVA ni de Prix TTC n\'apparaît si price_excl_tax est présent sans price_incl_tax', () {
     final ticket = SaleTicket.fromJson({
       ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
           as Map<String, dynamic>,
@@ -488,8 +496,12 @@ void main() {
       },
     });
     final text = saleShareText(ticket, formatFullDateTime);
-    expect(text, isNot(contains('Prix TTC : 0 FCFA')));
-    expect(text.replaceAll(RegExp(r'\s'), ''), contains('PrixTTC:1000FCFA'));
+    expect(text, isNot(contains('TVA')));
+    expect(text, isNot(contains('Prix HT')));
+    expect(text, isNot(contains('Prix TTC')));
+    expect(text.replaceAll(RegExp(r'\s'), ''), contains('Prixdubillet:1000FCFA'));
+    expect(text, isNot(contains('XOF')));
+    expect(text, contains('FCFA'));
   });
 
   testWidgets('l\'écran de fin de vente affiche le récapitulatif sans XOF et avec mentions complètes', (tester) async {
@@ -525,7 +537,10 @@ void main() {
     expect(find.text('Vendeur : Agent Test'), findsOneWidget);
     expect(find.text('Mode de paiement : Espèces'), findsOneWidget);
     expect(find.text('IFU de l\'acheteur : TEST-IFU-123'), findsOneWidget);
+    expect(find.textContaining('FCFA'), findsWidgets);
     expect(find.textContaining('XOF'), findsNothing);
-    expect(find.textContaining('Prix TTC : 0 FCFA'), findsNothing);
+    expect(find.textContaining('TVA'), findsNothing);
+    expect(find.textContaining('Prix HT'), findsNothing);
+    expect(find.textContaining('Prix TTC'), findsNothing);
   });
 }
