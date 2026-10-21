@@ -18,6 +18,13 @@ export interface Location {
   active: boolean;
 }
 
+export interface RouteStop {
+  id: number;
+  position: number;
+  location_id: number;
+  name: string;
+}
+
 export interface Route {
   id: number;
   origin: number;
@@ -25,6 +32,7 @@ export interface Route {
   origin_detail: Location;
   destination_detail: Location;
   label: string;
+  stops?: RouteStop[];
   active: boolean;
 }
 

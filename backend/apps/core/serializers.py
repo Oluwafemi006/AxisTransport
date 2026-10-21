@@ -32,6 +32,7 @@ from .models import (
     PaymentReceipt,
     Tax,
     WeeklySchedule,
+    RouteStop,
 )
 from .payments import ONLINE_PROVIDERS, payment_quote
 from .services import boarding_lead_minutes, boarding_time, rental_is_available, trip_fare
@@ -82,15 +83,40 @@ class LocationSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at"]
 
 
+class RouteStopSerializer(serializers.ModelSerializer):
+    location_id = serializers.IntegerField(source="location.id", read_only=True)
+    name = serializers.CharField(source="location.name", read_only=True)
+
+    class Meta:
+        model = RouteStop
+        fields = ["id", "position", "location_id", "name"]
+
+
 class RouteSerializer(serializers.ModelSerializer):
     origin_detail = LocationSerializer(source="origin", read_only=True)
     destination_detail = LocationSerializer(source="destination", read_only=True)
     label = serializers.CharField(source="__str__", read_only=True)
+    stops = serializers.SerializerMethodField()
 
     class Meta:
         model = Route
-        fields = ["id", "origin", "destination", "origin_detail", "destination_detail", "label", "active", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "origin",
+            "destination",
+            "origin_detail",
+            "destination_detail",
+            "label",
+            "stops",
+            "active",
+            "created_at",
+            "updated_at",
+        ]
         read_only_fields = ["created_at", "updated_at"]
+
+    def get_stops(self, obj):
+        seq = obj.get_stops_sequence()
+        return [{"id": loc.id, "name": loc.name, "position": idx + 1} for idx, loc in enumerate(seq)]
 
     def validate(self, attrs):
         if attrs.get("origin", getattr(self.instance, "origin", None)) == attrs.get(
@@ -221,6 +247,20 @@ class TripSerializer(serializers.ModelSerializer):
         return serializers.DateTimeField().to_representation(boarding) if boarding else None
 
     def get_current_fare(self, obj):
+        request = self.context.get("request")
+        if request and hasattr(request, "query_params"):
+            origin_param = request.query_params.get("origin")
+            dest_param = request.query_params.get("destination")
+            if origin_param and dest_param:
+                from .services import resolve_location, resolve_segment_fare
+                try:
+                    origin_loc = resolve_location(origin_param)
+                    dest_loc = resolve_location(dest_param)
+                    if origin_loc and dest_loc and origin_loc.pk != dest_loc.pk:
+                        fare = resolve_segment_fare(origin_loc, dest_loc)
+                        return {"id": fare.id, "name": fare.label, "amount": fare.amount, "currency": fare.currency}
+                except Exception:
+                    pass
         try:
             fare = trip_fare(obj)
         except ImproperlyConfigured:
@@ -488,6 +528,8 @@ class BookingCreatePassengerSerializer(serializers.Serializer):
 
 class BookingCreateSerializer(serializers.Serializer):
     trip = serializers.PrimaryKeyRelatedField(queryset=Trip.objects.all())
+    origin = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    destination = serializers.CharField(max_length=120, required=False, allow_blank=True)
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
     buyer_ifu = serializers.CharField(max_length=30, required=False, allow_blank=True)

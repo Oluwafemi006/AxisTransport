@@ -283,10 +283,15 @@ class ApiClient {
   Future<List<PaymentQuote>> tripPaymentQuotes({
     required int tripId,
     int passengers = 1,
+    int? originId,
+    int? destinationId,
   }) async {
+    final params = {'passengers': '$passengers'};
+    if (originId != null) params['origin'] = '$originId';
+    if (destinationId != null) params['destination'] = '$destinationId';
     final payload = await _request<List<dynamic>>(
       '/client/trips/$tripId/payment-quotes/',
-      queryParameters: {'passengers': '$passengers'},
+      queryParameters: params,
     );
     return payload
         .map((item) => PaymentQuote.fromJson(item as Map<String, dynamic>))

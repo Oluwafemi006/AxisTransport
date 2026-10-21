@@ -30,6 +30,7 @@ from .models import (
     Trip,
     PaymentAttempt,
     LineStop,
+    Location,
     SegmentFare,
     SegmentFareChange,
     Tax,
@@ -290,6 +291,69 @@ def resolve_fare(trip, at=None):
     return standard
 
 
+def resolve_location(identifier):
+    """Résout une Location par son ID ou par son nom (insensible à la casse)."""
+    if isinstance(identifier, Location):
+        return identifier
+    if not identifier:
+        return None
+    val_str = str(identifier).strip()
+    if val_str.isdigit():
+        loc = Location.objects.filter(pk=int(val_str)).first()
+        if loc:
+            return loc
+    return Location.objects.filter(name__iexact=val_str).first()
+
+
+def find_trips_for_waypoint_direction(queryset, origin=None, destination=None):
+    """
+    Filtre un queryset de Trip selon la direction des escales.
+    - Si origin et destination sont fournis :
+      Vérifie que les deux villes existent sur l'itinéraire du bus prévu
+      et que l'index de départ est strictement inférieur à l'index d'arrivée
+      dans le sens de circulation de ce bus spécifique.
+    - Si seulement origin est fourni :
+      Vérifie que le bus dessert origin et n'est pas à son terminus.
+    - Si seulement destination est fourni :
+      Vérifie que le bus dessert destination et n'est pas à son départ.
+    """
+    origin_loc = resolve_location(origin) if origin else None
+    dest_loc = resolve_location(destination) if destination else None
+
+    if origin and not origin_loc:
+        return queryset.none()
+    if destination and not dest_loc:
+        return queryset.none()
+
+    if origin_loc and dest_loc:
+        if origin_loc.pk == dest_loc.pk:
+            return queryset.none()
+        valid_route_ids = [
+            route.pk
+            for route in Route.objects.filter(active=True).prefetch_related("stops__location")
+            if route.has_waypoint_direction(origin_loc, dest_loc)
+        ]
+        return queryset.filter(route_id__in=valid_route_ids)
+
+    if origin_loc:
+        valid_route_ids = [
+            route.pk
+            for route in Route.objects.filter(active=True).prefetch_related("stops__location")
+            if route.can_board_at(origin_loc)
+        ]
+        return queryset.filter(route_id__in=valid_route_ids)
+
+    if dest_loc:
+        valid_route_ids = [
+            route.pk
+            for route in Route.objects.filter(active=True).prefetch_related("stops__location")
+            if route.can_alight_at(dest_loc)
+        ]
+        return queryset.filter(route_id__in=valid_route_ids)
+
+    return queryset
+
+
 def _segment_bounds(origin, destination):
     """Les deux arrêts de la ligne correspondant à deux lieux, rangés dans l'ordre de la ligne."""
     stops = {stop.location_id: stop for stop in LineStop.objects.filter(location__in=[origin, destination])}
@@ -464,6 +528,8 @@ def reserve_booking(
     idempotency_key="",
     buyer_ifu="",
     allow_departed=False,
+    origin=None,
+    destination=None,
 ):
     """
     Reserve all seats for a group or none of them.
@@ -502,7 +568,18 @@ def reserve_booking(
                 f"Le siège {item['seat'].number} n'autorise pas ce type de passager."
             )
 
-    fare = trip_fare(locked_trip)
+    fare = None
+    if origin and destination:
+        origin_loc = resolve_location(origin)
+        dest_loc = resolve_location(destination)
+        if origin_loc and dest_loc and origin_loc != dest_loc:
+            try:
+                seg_fare = resolve_segment_fare(origin_loc, dest_loc)
+                fare = SimpleNamespace(id=seg_fare.id, name=seg_fare.label, amount=Decimal(seg_fare.amount), currency=seg_fare.currency)
+            except ImproperlyConfigured:
+                fare = None
+    if fare is None:
+        fare = trip_fare(locked_trip)
     expires_at = timezone.now() + configured_hold_duration()
     guest_token = secrets.token_urlsafe(32) if customer is None else None
     booking = Booking.objects.create(

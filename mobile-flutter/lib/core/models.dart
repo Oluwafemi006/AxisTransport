@@ -73,18 +73,46 @@ class Place {
   Map<String, dynamic> toJson() => {'id': id, 'name': name, 'address': address};
 }
 
+class RouteStopInfo {
+  const RouteStopInfo({
+    required this.id,
+    required this.name,
+    required this.position,
+  });
+
+  final int id;
+  final String name;
+  final int position;
+
+  factory RouteStopInfo.fromJson(Map<String, dynamic> json) {
+    return RouteStopInfo(
+      id: json['id'] as int? ?? 0,
+      name: json['name'] as String? ?? '',
+      position: json['position'] as int? ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'position': position,
+  };
+}
+
 class RouteInfo {
   const RouteInfo({
     required this.id,
     required this.label,
     this.origin,
     this.destination,
+    this.stops = const [],
   });
 
   final int id;
   final String label;
   final Place? origin;
   final Place? destination;
+  final List<RouteStopInfo> stops;
 
   factory RouteInfo.fromJson(Map<String, dynamic> json) {
     return RouteInfo(
@@ -96,6 +124,10 @@ class RouteInfo {
       destination: json['destination_detail'] is Map<String, dynamic>
           ? Place.fromJson(json['destination_detail'] as Map<String, dynamic>)
           : null,
+      stops: (json['stops'] as List<dynamic>?)
+              ?.map((item) => RouteStopInfo.fromJson(item as Map<String, dynamic>))
+              .toList() ??
+          const [],
     );
   }
 

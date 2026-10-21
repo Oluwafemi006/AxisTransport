@@ -59,6 +59,139 @@ class Route(TimeStampedModel):
     def __str__(self):
         return f"{self.origin} → {self.destination}"
 
+    @property
+    def label(self):
+        return str(self)
+
+    def get_stops_sequence(self):
+        """
+        Retourne la liste ordonnée des Location desservies sur cet itinéraire.
+        1. Utilise les RouteStop explicites si configurés pour cette route.
+        2. Sinon repli intelligent sur LineStop pour déterminer l'ordre croissant ou décroissant.
+        3. Sinon repli sur [origin, destination].
+        """
+        route_stops = list(self.stops.select_related("location").order_by("position"))
+        if route_stops:
+            return [rs.location for rs in route_stops]
+
+        from apps.core.models import LineStop
+
+        try:
+            origin_stop = LineStop.objects.filter(location=self.origin).first()
+            dest_stop = LineStop.objects.filter(location=self.destination).first()
+            if origin_stop and dest_stop:
+                if origin_stop.position < dest_stop.position:
+                    stops = LineStop.objects.filter(
+                        position__gte=origin_stop.position,
+                        position__lte=dest_stop.position,
+                    ).select_related("location").order_by("position")
+                else:
+                    stops = LineStop.objects.filter(
+                        position__gte=dest_stop.position,
+                        position__lte=origin_stop.position,
+                    ).select_related("location").order_by("-position")
+                return [s.location for s in stops]
+        except Exception:
+            pass
+
+        return [self.origin, self.destination]
+
+    def has_waypoint_direction(self, origin, destination):
+        """
+        Vérifie si les deux villes existent sur l'itinéraire et si l'index de départ
+        est strictement inférieur à l'index d'arrivée dans le sens de circulation de ce bus.
+        Accepte une instance de Location, un ID entier, ou un nom de ville (str).
+        """
+        def _resolve(val):
+            if isinstance(val, Location):
+                return val
+            if not val:
+                return None
+            val_str = str(val).strip()
+            if val_str.isdigit():
+                loc = Location.objects.filter(pk=int(val_str)).first()
+                if loc:
+                    return loc
+            return Location.objects.filter(name__iexact=val_str).first()
+
+        origin_loc = _resolve(origin)
+        dest_loc = _resolve(destination)
+        if not origin_loc or not dest_loc or origin_loc.pk == dest_loc.pk:
+            return False
+
+        seq = self.get_stops_sequence()
+        seq_ids = [loc.pk for loc in seq]
+
+        if origin_loc.pk not in seq_ids or dest_loc.pk not in seq_ids:
+            return False
+
+        return seq_ids.index(origin_loc.pk) < seq_ids.index(dest_loc.pk)
+
+    def can_board_at(self, origin):
+        """Vérifie si l'on peut monter à cet arrêt (présent et pas au terminus d'arrivée)."""
+        def _resolve(val):
+            if isinstance(val, Location):
+                return val
+            val_str = str(val).strip()
+            if val_str.isdigit():
+                loc = Location.objects.filter(pk=int(val_str)).first()
+                if loc:
+                    return loc
+            return Location.objects.filter(name__iexact=val_str).first()
+
+        loc = _resolve(origin)
+        if not loc:
+            return False
+        seq = self.get_stops_sequence()
+        seq_ids = [s.pk for s in seq]
+        if loc.pk not in seq_ids:
+            return False
+        return seq_ids.index(loc.pk) < len(seq_ids) - 1
+
+    def can_alight_at(self, destination):
+        """Vérifie si l'on peut descendre à cet arrêt (présent et pas au premier arrêt de départ)."""
+        def _resolve(val):
+            if isinstance(val, Location):
+                return val
+            val_str = str(val).strip()
+            if val_str.isdigit():
+                loc = Location.objects.filter(pk=int(val_str)).first()
+                if loc:
+                    return loc
+            return Location.objects.filter(name__iexact=val_str).first()
+
+        loc = _resolve(destination)
+        if not loc:
+            return False
+        seq = self.get_stops_sequence()
+        seq_ids = [s.pk for s in seq]
+        if loc.pk not in seq_ids:
+            return False
+        return seq_ids.index(loc.pk) > 0
+
+
+class RouteStop(TimeStampedModel):
+    """
+    Étape ordonnée d'un itinéraire (Route).
+    Définit la séquence des villes desservies par le bus sur cet itinéraire (position 1, 2, ...).
+    """
+
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name="stops")
+    location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="route_stops")
+    position = models.PositiveSmallIntegerField(help_text="Ordre de l'étape sur cet itinéraire (1, 2, ...)")
+
+    class Meta:
+        ordering = ["route", "position"]
+        verbose_name = "Étape d'itinéraire"
+        verbose_name_plural = "Étapes d'itinéraire"
+        constraints = [
+            models.UniqueConstraint(fields=["route", "position"], name="unique_route_stop_position"),
+            models.UniqueConstraint(fields=["route", "location"], name="unique_route_stop_location"),
+        ]
+
+    def __str__(self):
+        return f"{self.route} : #{self.position} {self.location.name}"
+
 
 class Vehicle(TimeStampedModel):
     class Category(models.TextChoices):
@@ -164,6 +297,10 @@ class Trip(TimeStampedModel):
             arrival_date = timezone.localtime(self.arrival_at).date()
             if departure_date != arrival_date:
                 raise ValidationError({"arrival_at": "Axis n'opère que des trajets de jour, sans trajet de nuit."})
+
+    def has_waypoint_direction(self, origin, destination):
+        """Vérifie si ce trajet dessert origin puis destination dans le bon sens de circulation."""
+        return self.route.has_waypoint_direction(origin, destination)
 
     def __str__(self):
         return f"{self.route} — {timezone.localtime(self.departure_at):%d/%m/%Y %H:%M}"
