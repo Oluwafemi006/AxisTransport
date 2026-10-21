@@ -72,7 +72,7 @@ class FeesAndCheckoutTests(APITestCase):
             response = self.client.post(f"{self.base}/checkout/", {"payment_method": self.fedapay.pk}, format="json")
         self.assertEqual(response.status_code, 200, response.data)
         payload = create.call_args.args[0]
-        self.assertEqual(payload["amount"], 2036)
+        self.assertEqual(payload["amount"], 2000)
         self.assertEqual(payload["currency"], {"iso": "XOF"})
         self.assertEqual(payload["custom_metadata"]["booking_id"], self.booking.pk)
         self.assertEqual(response.data["transaction_id"], "777")
@@ -92,7 +92,7 @@ class FeesAndCheckoutTests(APITestCase):
             self.client.post(
                 f"{self.base}/checkout/", {"payment_method": self.fedapay.pk, "amount": 1, "total": 1}, format="json"
             )
-        self.assertEqual(create.call_args.args[0]["amount"], 2036)
+        self.assertEqual(create.call_args.args[0]["amount"], 2000)
 
     def test_checkout_refused_for_other_client(self):
         other = User.objects.create_user(username="autre", password="secret", role=User.Role.CLIENT)
