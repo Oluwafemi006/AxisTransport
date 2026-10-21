@@ -116,8 +116,9 @@ class SaleController extends ChangeNotifier {
   }) async {
     if (_running) return;
     final currentTrip = trip, currentSeat = seat, currentQuote = quote;
-    if (currentTrip == null || currentSeat == null || currentQuote == null)
+    if (currentTrip == null || currentSeat == null || currentQuote == null) {
       return;
+    }
     _running = true;
     busy = true;
     error = null;
@@ -135,8 +136,9 @@ class SaleController extends ChangeNotifier {
       _apply(payload);
       final paymentError = payload['payment_error'];
       paymentFailed = paymentError is String && paymentError.isNotEmpty;
-      if (paymentFailed)
+      if (paymentFailed) {
         error = 'Le paiement n\'a pas pu démarrer : $paymentError';
+      }
     } on ApiException catch (e) {
       // Sans réponse du serveur, on ne sait pas si la vente est passée : la clé est gardée
       // et le prochain essai reprendra la même vente.

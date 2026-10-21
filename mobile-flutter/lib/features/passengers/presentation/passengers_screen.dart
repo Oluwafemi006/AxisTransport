@@ -29,19 +29,44 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
   late final List<TextEditingController> _names;
   late final List<TextEditingController> _phones;
   late final List<PassengerType> _types;
+  late int _count;
   Trip? _trip;
   bool _loading = true;
   String? _error;
 
-  int get _count => widget.passengerCount.clamp(1, 8);
-
   @override
   void initState() {
     super.initState();
+    final draft = ref.read(bookingDraftProvider);
+    _count = (draft.trip?.id == widget.tripId && draft.passengers.isNotEmpty)
+        ? draft.passengers.length
+        : widget.passengerCount.clamp(1, 8);
     _names = List.generate(_count, (_) => TextEditingController());
     _phones = List.generate(_count, (_) => TextEditingController());
     _types = List.generate(_count, (_) => PassengerType.adult);
     _load();
+  }
+
+  void _addPassenger() {
+    if (_count >= 8) return;
+    setState(() {
+      _count++;
+      _names.add(TextEditingController());
+      _phones.add(TextEditingController());
+      _types.add(PassengerType.adult);
+    });
+  }
+
+  void _removePassenger(int index) {
+    if (_count <= 1) return;
+    setState(() {
+      _names[index].dispose();
+      _names.removeAt(index);
+      _phones[index].dispose();
+      _phones.removeAt(index);
+      _types.removeAt(index);
+      _count--;
+    });
   }
 
   @override
@@ -121,17 +146,37 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
                   ],
                   if (_error != null) Notice(_error!, error: true),
                   const SizedBox(height: 22),
-                  const Text(
-                    'Qui voyage ?',
-                    style: TextStyle(
-                      color: AxisColors.navyDark,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Qui voyage ?',
+                        style: TextStyle(
+                          color: AxisColors.navyDark,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AxisColors.surfaceLow,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$_count passager${_count > 1 ? "s" : ""}',
+                          style: const TextStyle(
+                            color: AxisColors.navy,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Ces informations servent à appliquer les règles de placement avant le choix des sièges.',
+                    'Ces informations servent à attribuer les billets et préparer le placement.',
                     style: TextStyle(color: AxisColors.muted, height: 1.4),
                   ),
                   const SizedBox(height: 16),
@@ -143,13 +188,24 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Passager ${index + 1}',
-                              style: const TextStyle(
-                                color: AxisColors.navyDark,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                              ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Passager ${index + 1}',
+                                  style: const TextStyle(
+                                    color: AxisColors.navyDark,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                if (index > 0)
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, color: AxisColors.red, size: 22),
+                                    tooltip: 'Supprimer ce passager',
+                                    onPressed: () => _removePassenger(index),
+                                  ),
+                              ],
                             ),
                             const SizedBox(height: 12),
                             SegmentedButton<PassengerType>(
@@ -200,6 +256,14 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
                       ),
                     ),
                   ),
+                  if (_count < 8) ...[
+                    OutlinedButton.icon(
+                      onPressed: _addPassenger,
+                      icon: const Icon(Icons.person_add_outlined),
+                      label: const Text('Ajouter un passager'),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                   FilledButton.icon(
                     onPressed: trip == null ? null : _continue,
                     icon: const Icon(Icons.airline_seat_recline_normal),

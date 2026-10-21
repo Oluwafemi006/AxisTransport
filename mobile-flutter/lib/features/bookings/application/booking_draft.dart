@@ -73,6 +73,12 @@ class BookingDraftNotifier extends Notifier<BookingDraft> {
     state = state.copyWith(seatsByPassenger: Map.unmodifiable(assignments));
   }
 
+  void unassignSeat(String passengerId) {
+    final assignments = Map<String, Seat>.from(state.seatsByPassenger);
+    assignments.remove(passengerId);
+    state = state.copyWith(seatsByPassenger: Map.unmodifiable(assignments));
+  }
+
   void setBuyerIfu(String value) => state = state.copyWith(buyerIfu: value);
 
   void clear() => state = const BookingDraft();
