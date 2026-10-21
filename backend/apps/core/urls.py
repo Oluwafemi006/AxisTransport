@@ -27,6 +27,7 @@ from .views import (
     TripViewSet,
     UserViewSet,
     VehicleViewSet,
+    WeeklyScheduleViewSet,
     health,
 )
 
@@ -36,6 +37,7 @@ router.register("locations", LocationViewSet)
 router.register("routes", RouteViewSet)
 router.register("vehicles", VehicleViewSet)
 router.register("trips", TripViewSet)
+router.register("weekly-schedules", WeeklyScheduleViewSet)
 router.register("seats", SeatViewSet)
 router.register("fare-rules", FareRuleViewSet)
 router.register("feature-flags", FeatureFlagViewSet)

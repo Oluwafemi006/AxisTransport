@@ -51,6 +51,7 @@ from .models import (
     SegmentFare,
     SegmentFareChange,
     StaffInvitation,
+    WeeklySchedule,
 )
 from .permissions import (
     IsAxisAdmin,
@@ -90,6 +91,7 @@ from .serializers import (
     TripSerializer,
     UserSerializer,
     VehicleSerializer,
+    WeeklyScheduleSerializer,
 )
 from .payments import (
     ONLINE_PROVIDERS,
@@ -109,6 +111,7 @@ from .services import (
     ReservationsClosed,
     cancel_held_booking,
     generate_alternating_trips,
+    generate_trips_from_schedule,
     generate_trip_seats,
     hash_guest_token,
     release_expired_holds,
@@ -676,6 +679,43 @@ class TripViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
             raise service_validation_error(exc)
         return Response(
             {"created": len(created), "trips": TripSerializer(created, many=True, context={"request": request}).data, "skipped": skipped},
+            status=status.HTTP_201_CREATED,
+        )
+
+    def perform_update(self, serializer):
+        old_vehicle = serializer.instance.vehicle
+        trip = serializer.save()
+        if trip.vehicle != old_vehicle and trip.vehicle.seat_labels:
+            if not trip.seats.filter(status__in=[Seat.Status.BOOKED, Seat.Status.HELD]).exists():
+                trip.seats.all().delete()
+                generate_trip_seats(trip)
+
+
+class WeeklyScheduleViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
+    queryset = WeeklySchedule.objects.select_related("route__origin", "route__destination", "vehicle").all()
+    serializer_class = WeeklyScheduleSerializer
+    pagination_class = None
+
+    def get_permissions(self):
+        if self.action in {"list", "retrieve"}:
+            if self.request.query_params.get("all") == "true":
+                return [IsOperationsStaff()]
+            return [AllowAny()]
+        return [IsAxisAdmin()]
+
+    @action(detail=False, methods=["post"], url_path="generate-trips")
+    def generate_trips(self, request):
+        """Génère les trajets réels pour les prochaines semaines à partir du planning par défaut."""
+        try:
+            weeks = int(request.data.get("weeks", 4))
+        except (TypeError, ValueError):
+            weeks = 4
+        created = generate_trips_from_schedule(weeks=weeks)
+        return Response(
+            {
+                "created": len(created),
+                "trips": TripSerializer(created, many=True, context={"request": request}).data,
+            },
             status=status.HTTP_201_CREATED,
         )
 

@@ -5,7 +5,8 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
-| Multi-passagers, plan Yutong, retrait TVA et signature mobile | `ag/mobile-alignment` | Antigravity | terminée |
+| Planning hebdomadaire par défaut et validation des dates | `ag/fix-planning-and-dates` | Antigravity | terminée |
+| Multi-passagers, plan Yutong, retrait TVA et signature mobile | `ag/mobile-alignment` | Antigravity | fusionnée dans main |
 | Frais FedaPay supportés par l'agence (montant net FedaPay) | `ag/fedapay-fees` | Antigravity | fusionnée dans main |
 | Multi-passagers, alignement car Yutong et suppression TVA | `ag/seats-and-vat` | Antigravity | fusionnée dans main |
 | Flux complet d'invitations du personnel (SMTP, backend, frontend) | `ag/admin-invitations` | Antigravity | fusionnée dans main |

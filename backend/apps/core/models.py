@@ -146,6 +146,12 @@ class Trip(TimeStampedModel):
     class Meta:
         ordering = ["departure_at"]
         indexes = [models.Index(fields=["status", "departure_at"])]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(arrival_at__isnull=True) | models.Q(arrival_at__gt=models.F("departure_at")),
+                name="trip_arrival_after_departure",
+            ),
+        ]
 
     def clean(self):
         super().clean()
@@ -161,6 +167,36 @@ class Trip(TimeStampedModel):
 
     def __str__(self):
         return f"{self.route} — {timezone.localtime(self.departure_at):%d/%m/%Y %H:%M}"
+
+
+class WeeklySchedule(TimeStampedModel):
+    class DayOfWeek(models.IntegerChoices):
+        MONDAY = 0, "Lundi"
+        TUESDAY = 1, "Mardi"
+        WEDNESDAY = 2, "Mercredi"
+        THURSDAY = 3, "Jeudi"
+        FRIDAY = 4, "Vendredi"
+        SATURDAY = 5, "Samedi"
+        SUNDAY = 6, "Dimanche"
+
+    day_of_week = models.IntegerField(choices=DayOfWeek.choices, db_index=True)
+    departure_time = models.TimeField(null=True, blank=True)
+    route = models.ForeignKey(Route, on_delete=models.SET_NULL, null=True, blank=True, related_name="weekly_schedules")
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True, related_name="weekly_schedules")
+    is_active = models.BooleanField(default=True, help_text="Actif si un trajet est opéré ce jour, inactif si repos.")
+    notes = models.CharField(max_length=255, blank=True, help_text="Remarques (ex: Repos/Visite technique)")
+
+    class Meta:
+        ordering = ["day_of_week", "departure_time"]
+        verbose_name = "Planning hebdomadaire"
+        verbose_name_plural = "Plannings hebdomadaires"
+
+    def __str__(self):
+        day_label = self.get_day_of_week_display()
+        if not self.is_active or not self.route:
+            return f"{day_label} : Aucun trajet ({self.notes or 'Repos'})"
+        time_str = f"{self.departure_time:%H:%M}" if self.departure_time else "Heure à renseigner"
+        return f"{day_label} : {time_str} ({self.route})"
 
 
 class FareRule(TimeStampedModel):

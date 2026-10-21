@@ -31,6 +31,7 @@ from .models import (
     AgencySettingChange,
     PaymentReceipt,
     Tax,
+    WeeklySchedule,
 )
 from .payments import ONLINE_PROVIDERS, payment_quote
 from .services import boarding_lead_minutes, boarding_time, rental_is_available, trip_fare
@@ -230,7 +231,55 @@ class TripSerializer(serializers.ModelSerializer):
         instance = self.instance or Trip()
         for key, value in attrs.items():
             setattr(instance, key, value)
+        departure_at = attrs.get("departure_at") or getattr(instance, "departure_at", None)
+        arrival_at = attrs.get("arrival_at") or getattr(instance, "arrival_at", None)
+        if departure_at and arrival_at and arrival_at <= departure_at:
+            raise serializers.ValidationError({"arrival_at": "L'arrivée doit être postérieure au départ."})
+        if departure_at and arrival_at:
+            dep_date = timezone.localtime(departure_at).date()
+            arr_date = timezone.localtime(arrival_at).date()
+            if dep_date != arr_date:
+                raise serializers.ValidationError({"arrival_at": "Axis n'opère que des trajets de jour, sans trajet de nuit (même jour requis)."})
         instance.full_clean(exclude=[field for field in ("route", "vehicle") if not getattr(instance, f"{field}_id")])
+        return attrs
+
+
+class WeeklyScheduleSerializer(serializers.ModelSerializer):
+    day_of_week_display = serializers.CharField(source="get_day_of_week_display", read_only=True)
+    route_detail = RouteSerializer(source="route", read_only=True)
+    vehicle_detail = PublicVehicleSerializer(source="vehicle", read_only=True)
+    departure_time_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WeeklySchedule
+        fields = [
+            "id",
+            "day_of_week",
+            "day_of_week_display",
+            "route",
+            "route_detail",
+            "vehicle",
+            "vehicle_detail",
+            "departure_time",
+            "departure_time_display",
+            "is_active",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def get_departure_time_display(self, obj):
+        return f"{obj.departure_time:%H:%M}" if obj.departure_time else None
+
+    def validate(self, attrs):
+        is_active = attrs.get("is_active", getattr(self.instance, "is_active", True))
+        route = attrs.get("route", getattr(self.instance, "route", None))
+        departure_time = attrs.get("departure_time", getattr(self.instance, "departure_time", None))
+        if is_active and not route:
+            raise serializers.ValidationError({"route": "Un trajet actif doit être associé à un parcours."})
+        if is_active and not departure_time:
+            raise serializers.ValidationError({"departure_time": "Un trajet actif doit avoir une heure de départ."})
         return attrs
 
 

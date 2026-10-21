@@ -33,6 +33,8 @@ from .models import (
     SegmentFare,
     SegmentFareChange,
     Tax,
+    Vehicle,
+    WeeklySchedule,
 )
 
 
@@ -162,6 +164,81 @@ def generate_alternating_trips(*, route, vehicle, start_date, days, departure_ti
         generate_trip_seats(trip)
         created.append(trip)
     return created, skipped
+
+
+@transaction.atomic
+def generate_trips_from_schedule(*, start_date=None, weeks=4, vehicle_override=None):
+    """
+    Génère les trajets réels (Trip) pour les semaines à venir à partir des entrées actives de WeeklySchedule.
+    - Évite les doublons : ne crée rien si un départ identique existe déjà.
+    - Ne crée rien pour les dates/heures passées.
+    - Génère les sièges si le véhicule a une capacité configurée.
+    """
+    if start_date is None:
+        start_date = timezone.localdate()
+
+    total_days = max(1, min(weeks, 12)) * 7
+    schedules = list(
+        WeeklySchedule.objects.filter(is_active=True)
+        .exclude(route__isnull=True)
+        .exclude(departure_time__isnull=True)
+        .select_related("route", "vehicle")
+    )
+    if not schedules:
+        return []
+
+    fallback_bus = Vehicle.objects.filter(category=Vehicle.Category.BUS, state=Vehicle.State.ACTIVE).first()
+    created_trips = []
+
+    for day_offset in range(total_days):
+        current_date = start_date + timedelta(days=day_offset)
+        day_of_week = current_date.weekday()
+        matching_schedules = [s for s in schedules if s.day_of_week == day_of_week]
+
+        for schedule in matching_schedules:
+            departure_at = timezone.make_aware(datetime.combine(current_date, schedule.departure_time))
+            if departure_at <= timezone.now():
+                continue
+
+            vehicle = schedule.vehicle or vehicle_override or fallback_bus
+            if not vehicle:
+                continue
+
+            already_exists = (
+                Trip.objects.filter(
+                    route=schedule.route,
+                    departure_at=departure_at,
+                )
+                .exclude(status=Trip.Status.CANCELLED)
+                .exists()
+            )
+            if already_exists:
+                continue
+
+            # Si ce véhicule a déjà un autre départ ce jour-là à la même heure
+            vehicle_conflict = (
+                Trip.objects.filter(
+                    vehicle=vehicle,
+                    departure_at=departure_at,
+                )
+                .exclude(status=Trip.Status.CANCELLED)
+                .exists()
+            )
+            if vehicle_conflict:
+                continue
+
+            trip = Trip.objects.create(
+                route=schedule.route,
+                vehicle=vehicle,
+                departure_at=departure_at,
+                status=Trip.Status.SCHEDULED,
+                note=schedule.notes or "Généré selon planning hebdomadaire",
+            )
+            if vehicle.seat_labels:
+                generate_trip_seats(trip)
+            created_trips.append(trip)
+
+    return created_trips
 
 
 def generate_trip_seats(trip):
