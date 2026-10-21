@@ -69,6 +69,20 @@ export interface Trip {
   current_fare: Fare | null;
 }
 
+export interface WeeklySchedule {
+  id: number;
+  day_of_week: number;
+  day_of_week_display: string;
+  route: number | null;
+  route_detail: Route | null;
+  vehicle: number | null;
+  vehicle_detail: Vehicle | null;
+  departure_time: string | null;
+  departure_time_display: string | null;
+  is_active: boolean;
+  notes: string;
+}
+
 export interface Seat {
   id: number;
   trip: number;

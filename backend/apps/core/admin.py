@@ -26,6 +26,7 @@ from .models import (
     Trip,
     User,
     Vehicle,
+    WeeklySchedule,
 )
 
 
@@ -42,6 +43,12 @@ class TripAdmin(admin.ModelAdmin):
     list_display = ("route", "departure_at", "vehicle", "status")
     list_filter = ("status", "route", "vehicle")
     date_hierarchy = "departure_at"
+
+
+@admin.register(WeeklySchedule)
+class WeeklyScheduleAdmin(admin.ModelAdmin):
+    list_display = ("day_of_week", "route", "departure_time", "vehicle", "is_active")
+    list_filter = ("is_active", "day_of_week", "route")
 
 
 @admin.register(Ticket)
