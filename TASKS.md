@@ -5,7 +5,8 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
-| Multi-passagers, alignement car Yutong et suppression TVA | `ag/seats-and-vat` | Antigravity | à valider par Eddy |
+| Frais FedaPay supportés par l'agence (montant net FedaPay) | `ag/fedapay-fees` | Antigravity | terminée |
+| Multi-passagers, alignement car Yutong et suppression TVA | `ag/seats-and-vat` | Antigravity | fusionnée dans main |
 | Flux complet d'invitations du personnel (SMTP, backend, frontend) | `ag/admin-invitations` | Antigravity | fusionnée dans main |
 | IFU de l'acheteur et partages de l'app du personnel | `ag/billet-personnel` | Antigravity | terminée |
 | Bouton « Vérifier mon paiement », rattrapage automatique en local, vérification patiente | `confirmation-paiement` | Claude Code | fusionnée dans main |

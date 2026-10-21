@@ -159,6 +159,14 @@ class FinalPriceTests(APITestCase):
         (quote,) = self.client.get(f"/api/v1/client/trips/{self.trip.pk}/payment-quotes/").json()
         self.assertEqual(money(quote["total"]), Decimal("7635"))
 
+    def test_fedapay_payload_amount_is_strictly_net_ticket_price_without_fees(self):
+        self.set_price(7500)
+        PaymentMethod.objects.filter(pk=self.fedapay.pk).update(fee_percentage=Decimal("1.80"))
+        booking, token = self.book()
+        response, payload = self.checkout(booking, token, transaction_id=4009)
+        self.assertEqual(payload["amount"], 7500)
+        self.assertEqual(PaymentAttempt.objects.get(external_id="4009").amount, Decimal("7500"))
+
 
 class FirstStartTests(APITestCase):
     """Premier démarrage du serveur (procédure VPS) : grille chargée, nouvelles villes invisibles, aucun frais client."""
