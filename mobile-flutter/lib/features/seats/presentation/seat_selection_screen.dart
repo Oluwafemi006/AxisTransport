@@ -61,6 +61,11 @@ class _SeatSelectionScreenState extends ConsumerState<SeatSelectionScreen> {
     final passengerId = _activePassengerId;
     if (passengerId == null) return;
     final draft = ref.read(bookingDraftProvider);
+    final currentlyAssigned = draft.seatsByPassenger[passengerId];
+    if (currentlyAssigned?.id == seat.id) {
+      ref.read(bookingDraftProvider.notifier).unassignSeat(passengerId);
+      return;
+    }
     final passenger = draft.passengers.firstWhere(
       (item) => item.id == passengerId,
       orElse: () => draft.passengers.first,
@@ -271,6 +276,31 @@ class _LegendItem extends StatelessWidget {
   );
 }
 
+int _compareSeats(Seat a, Seat b) {
+  final byRow = (a.row ?? 9999).compareTo(b.row ?? 9999);
+  if (byRow != 0) return byRow;
+  final byColumn = (a.column ?? 9999).compareTo(b.column ?? 9999);
+  if (byColumn != 0) return byColumn;
+  final numA = int.tryParse(a.number);
+  final numB = int.tryParse(b.number);
+  if (numA != null && numB != null) return numA.compareTo(numB);
+  return a.number.compareTo(b.number);
+}
+
+class _BusRow {
+  final int rowNumber;
+  final List<Seat> left;
+  final Seat? aisleExtra;
+  final List<Seat> right;
+
+  const _BusRow({
+    required this.rowNumber,
+    required this.left,
+    this.aisleExtra,
+    required this.right,
+  });
+}
+
 class _SeatMap extends StatelessWidget {
   const _SeatMap({
     required this.seats,
@@ -284,25 +314,47 @@ class _SeatMap extends StatelessWidget {
   final Map<String, Seat> assignments;
   final ValueChanged<Seat> onSelect;
 
-  List<List<Seat>> get _rows {
-    final ordered = [...seats]
-      ..sort((a, b) {
-        final byRow = (a.row ?? 9999).compareTo(b.row ?? 9999);
-        if (byRow != 0) return byRow;
-        final byColumn = (a.column ?? 9999).compareTo(b.column ?? 9999);
-        return byColumn != 0 ? byColumn : a.number.compareTo(b.number);
-      });
+  List<_BusRow> get _rows {
+    final ordered = [...seats]..sort(_compareSeats);
     if (ordered.any((seat) => seat.row != null)) {
       final grouped = <int, List<Seat>>{};
       for (final seat in ordered) {
         grouped.putIfAbsent(seat.row ?? 9999, () => []).add(seat);
       }
-      return grouped.values.toList();
+      return grouped.entries.map((entry) {
+        final rowNumber = entry.key;
+        final rowSeats = entry.value;
+        if (rowSeats.length == 5) {
+          return _BusRow(
+            rowNumber: rowNumber,
+            left: rowSeats.sublist(0, 2),
+            aisleExtra: rowSeats[2],
+            right: rowSeats.sublist(3, 5),
+          );
+        }
+        return _BusRow(
+          rowNumber: rowNumber,
+          left: rowSeats.sublist(0, rowSeats.length.clamp(0, 2)),
+          right: rowSeats.length > 2
+              ? rowSeats.sublist(2, rowSeats.length.clamp(2, 4))
+              : const [],
+        );
+      }).toList();
     }
-    return [
-      for (var index = 0; index < ordered.length; index += 4)
-        ordered.sublist(index, (index + 4).clamp(0, ordered.length)),
-    ];
+    final result = <_BusRow>[];
+    for (var i = 0; i < ordered.length; i += 4) {
+      final slice = ordered.sublist(i, (i + 4).clamp(0, ordered.length));
+      result.add(
+        _BusRow(
+          rowNumber: (i ~/ 4) + 1,
+          left: slice.sublist(0, slice.length.clamp(0, 2)),
+          right: slice.length > 2
+              ? slice.sublist(2, slice.length.clamp(2, 4))
+              : const [],
+        ),
+      );
+    }
+    return result;
   }
 
   @override
@@ -314,26 +366,50 @@ class _SeatMap extends StatelessWidget {
             Icon(Icons.airline_seat_recline_normal, color: AxisColors.muted),
             Spacer(),
             Text(
-              'AVANT DU VÉHICULE',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+              'AVANT DU CAR (YUTONG)',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5,
+              ),
             ),
           ],
         ),
         const Divider(height: 26),
         ..._rows.map((row) {
-          final left = row.take(2).toList();
-          final right = row.skip(2).take(2).toList();
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Row(
               children: [
-                ...left.map((seat) => Expanded(child: _seatButton(seat))),
-                const SizedBox(width: 28),
-                ...right.map((seat) => Expanded(child: _seatButton(seat))),
-                if (right.length < 2)
-                  ...List.generate(
-                    2 - right.length,
-                    (_) => const Expanded(child: SizedBox()),
+                // 2 sièges à gauche
+                for (var i = 0; i < 2; i++)
+                  Expanded(
+                    child: i < row.left.length
+                        ? _seatButton(row.left[i])
+                        : const SizedBox(),
+                  ),
+                // Allée centrale (couloir Yutong) ou siège central au fond
+                SizedBox(
+                  width: 32,
+                  child: row.aisleExtra != null
+                      ? _seatButton(row.aisleExtra!)
+                      : Center(
+                          child: Text(
+                            '·',
+                            style: TextStyle(
+                              color: AxisColors.muted.withValues(alpha: 0.4),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                ),
+                // 2 sièges à droite
+                for (var i = 0; i < 2; i++)
+                  Expanded(
+                    child: i < row.right.length
+                        ? _seatButton(row.right[i])
+                        : const SizedBox(),
                   ),
               ],
             ),

@@ -99,11 +99,12 @@ class _Api extends ApiClient {
     keys.add(idempotencyKey);
     await Future<void>.delayed(const Duration(milliseconds: 20));
     if (sellError != null) throw sellError!;
-    if (paymentMethod == 1)
+    if (paymentMethod == 1) {
       return {
         'booking': _booking('CONFIRMED', ticketStatus: 'ISSUED'),
         'checkout': null,
       };
+    }
     if (paymentError != null) {
       return {
         'booking': _booking('HELD'),

@@ -391,7 +391,7 @@ class ApiClient {
       '/staff/tickets/validate/',
       data: {
         'qr_token': qrToken,
-        if (expectedTripId != null) 'expected_trip_id': expectedTripId,
+        '?expected_trip_id': expectedTripId,
       },
       auth: true,
     );
