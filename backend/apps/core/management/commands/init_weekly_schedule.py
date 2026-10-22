@@ -1,6 +1,6 @@
 from datetime import time
 from django.core.management.base import BaseCommand
-from apps.core.models import Location, Route, Vehicle, WeeklySchedule
+from apps.core.models import Location, Route, RouteStop, Vehicle, WeeklySchedule
 from apps.core.services import generate_trips_from_schedule
 
 
@@ -14,13 +14,49 @@ class Command(BaseCommand):
             default=4,
             help="Nombre de semaines de trajets à générer (défaut : 4)",
         )
+        parser.add_argument(
+            "--activate-stops",
+            action="store_true",
+            default=False,
+            help="Active immédiatement toutes les villes de la ligne pour la recherche client",
+        )
 
     def handle(self, *args, **options):
-        cotonou, _ = Location.objects.get_or_create(name="Cotonou")
-        parakou, _ = Location.objects.get_or_create(name="Parakou", defaults={"address": "Okédama"})
+        # Villes de la ligne : créées ou récupérées
+        stop_names = ["Parakou", "Savè", "Kétou", "Porto-Novo", "Cotonou"]
+        activate_stops = options.get("activate_stops", False)
+        locations = {}
+        for name in stop_names:
+            loc, _ = Location.objects.get_or_create(name=name)
+            if activate_stops and not loc.active:
+                loc.active = True
+                loc.save(update_fields=["active"])
+            locations[name] = loc
+
+        cotonou = locations["Cotonou"]
+        parakou = locations["Parakou"]
 
         route_cotonou_parakou, _ = Route.objects.get_or_create(origin=cotonou, destination=parakou)
         route_parakou_cotonou, _ = Route.objects.get_or_create(origin=parakou, destination=cotonou)
+
+        # Séquence ordonnée des étapes pour chaque itinéraire (RouteStop)
+        # Parakou → Cotonou (descente : 1=Parakou, 2=Savè, 3=Kétou, 4=Porto-Novo, 5=Cotonou)
+        descending_order = ["Parakou", "Savè", "Kétou", "Porto-Novo", "Cotonou"]
+        for pos, name in enumerate(descending_order, start=1):
+            RouteStop.objects.update_or_create(
+                route=route_parakou_cotonou,
+                position=pos,
+                defaults={"location": locations[name]},
+            )
+
+        # Cotonou → Parakou (montée : 1=Cotonou, 2=Porto-Novo, 3=Kétou, 4=Savè, 5=Parakou)
+        ascending_order = ["Cotonou", "Porto-Novo", "Kétou", "Savè", "Parakou"]
+        for pos, name in enumerate(ascending_order, start=1):
+            RouteStop.objects.update_or_create(
+                route=route_cotonou_parakou,
+                position=pos,
+                defaults={"location": locations[name]},
+            )
 
         # Bus Yutong par défaut
         yutong, _ = Vehicle.objects.get_or_create(

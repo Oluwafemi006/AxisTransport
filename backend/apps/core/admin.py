@@ -17,6 +17,7 @@ from .models import (
     Passenger,
     RentalBooking,
     Route,
+    RouteStop,
     Seat,
     SystemSetting,
     Ticket,
@@ -146,10 +147,29 @@ class StaffInvitationAdmin(admin.ModelAdmin):
         self.message_user(request, f"{sent} invitation(s) renvoyée(s) avec succès.")
 
 
+class RouteStopInline(admin.TabularInline):
+    model = RouteStop
+    extra = 1
+    ordering = ["position"]
+
+
+@admin.register(Route)
+class RouteAdmin(admin.ModelAdmin):
+    list_display = ("origin", "destination", "active", "created_at")
+    list_filter = ("active",)
+    inlines = [RouteStopInline]
+
+
+@admin.register(RouteStop)
+class RouteStopAdmin(admin.ModelAdmin):
+    list_display = ("route", "position", "location")
+    list_filter = ("route",)
+    ordering = ("route", "position")
+
+
 admin.site.register(
     [
         Location,
-        Route,
         Seat,
         FareRule,
         FeatureFlag,

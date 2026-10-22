@@ -227,15 +227,21 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
 
   // Formulaire d'ajout / modification exceptionnelle d'un trajet réel
   const [editingTripId, setEditingTripId] = useState<number | null>(null);
-  const [tripForm, setTripForm] = useState({
+  const emptyTripForm = {
     route: "",
     vehicle: "",
     departure_date: "",
-    departure_time: "08:00",
+    departure_time: "",
     arrival_time: "",
     status: "SCHEDULED",
     note: "",
-  });
+  };
+  const [tripForm, setTripForm] = useState(emptyTripForm);
+
+  function resetTripForm() {
+    setEditingTripId(null);
+    setTripForm(emptyTripForm);
+  }
 
   function startEditTrip(trip: Trip) {
     setEditingTripId(trip.id);
@@ -254,16 +260,7 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
   }
 
   function cancelEditTrip() {
-    setEditingTripId(null);
-    setTripForm({
-      route: "",
-      vehicle: "",
-      departure_date: "",
-      departure_time: "08:00",
-      arrival_time: "",
-      status: "SCHEDULED",
-      note: "",
-    });
+    resetTripForm();
   }
 
   async function submitTrip(event: FormEvent) {
@@ -299,8 +296,8 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
             note: tripForm.note,
           }),
         });
+        resetTripForm();
         feedback.success("Trajet mis à jour avec succès.");
-        cancelEditTrip();
       } else {
         await apiFetch<Trip>("/trips/", {
           method: "POST",
@@ -313,8 +310,8 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
             note: tripForm.note,
           }),
         });
-        feedback.success("Trajet exceptionnel ajouté au planning.");
-        cancelEditTrip();
+        resetTripForm();
+        feedback.success("Trajet ajouté au planning.");
       }
       await onChanged();
     } catch (reason) {

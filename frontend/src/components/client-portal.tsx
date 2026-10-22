@@ -92,22 +92,70 @@ export function ClientPortal() {
   const [searchDestination, setSearchDestination] = useState("");
   const [searchDate, setSearchDate] = useState("");
   const [searchMessage, setSearchMessage] = useState("");
+  const [preselectedTripId, setPreselectedTripId] = useState("");
 
   // Aujourd'hui au Bénin : date minimale du calendrier (les jours passés sont grisés).
   const beninToday = beninDateKey();
 
   // Rechercher sans les deux villes, sans date, ou avec une date passée : message, et rien n'est lancé.
-  function runSearch() {
+  async function runSearch() {
     const problem = searchError(searchOrigin, searchDestination) ?? searchDateError(searchDate, beninDateKey());
     setSearchMessage(problem ?? "");
-    if (!problem) setTab("billets");
+    if (!problem) {
+      try {
+        const query = new URLSearchParams({
+          origin: searchOrigin,
+          destination: searchDestination,
+          ...(searchDate ? { date: searchDate } : {}),
+        });
+        const serverTrips = await apiList<Trip>(`/client/trips/?${query.toString()}`, false);
+        if (serverTrips.length > 0) {
+          setTrips(current => {
+            const serverIds = new Set(serverTrips.map(t => t.id));
+            return [...serverTrips, ...current.filter(t => !serverIds.has(t.id))];
+          });
+          setPreselectedTripId(String(serverTrips[0].id));
+        }
+      } catch {
+        // En cas d'erreur de requête, le filtre local s'applique
+      }
+      setTab("billets");
+    }
   }
   
   // Derived state: Filtered Trips based on Search
   const filteredTrips = trips.filter(trip => {
     let match = true;
-    if (searchOrigin && trip.route_detail.origin !== Number(searchOrigin)) match = false;
-    if (searchDestination && trip.route_detail.destination !== Number(searchDestination)) match = false;
+    const stops = trip.route_detail?.stops || [];
+
+    if (searchOrigin && searchDestination) {
+      const origId = Number(searchOrigin);
+      const destId = Number(searchDestination);
+      const originIdx = stops.findIndex(s => s.id === origId || s.location_id === origId);
+      const destIdx = stops.findIndex(s => s.id === destId || s.location_id === destId);
+      if (originIdx !== -1 && destIdx !== -1) {
+        if (originIdx >= destIdx) match = false;
+      } else if (trip.route_detail.origin !== origId || trip.route_detail.destination !== destId) {
+        match = false;
+      }
+    } else if (searchOrigin) {
+      const origId = Number(searchOrigin);
+      const originIdx = stops.findIndex(s => s.id === origId || s.location_id === origId);
+      if (originIdx !== -1) {
+        if (originIdx === stops.length - 1) match = false;
+      } else if (trip.route_detail.origin !== origId) {
+        match = false;
+      }
+    } else if (searchDestination) {
+      const destId = Number(searchDestination);
+      const destIdx = stops.findIndex(s => s.id === destId || s.location_id === destId);
+      if (destIdx !== -1) {
+        if (destIdx === 0) match = false;
+      } else if (trip.route_detail.destination !== destId) {
+        match = false;
+      }
+    }
+
     if (searchDate) {
       // Date du départ au Bénin (et non en UTC : un départ à 00 h 30 tombe le bon jour).
       const tripDate = beninDateKey(new Date(trip.departure_at));
@@ -240,12 +288,11 @@ export function ClientPortal() {
                           <div className="d">Date : {formatDate(trip.departure_at)}</div>
                           <div className="times">
                             <span>Départ <b>{new Date(trip.departure_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</b></span>
-                            {/* Dummy arrival time for mockup, could calculate via duration */}
-                            <span>Arrivée <b>--:--</b></span>
+                            <span>Arrivée <b>{trip.arrival_at ? new Date(trip.arrival_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'}) : "--:--"}</b></span>
                           </div>
                           <div className="b">
                             <span className="price">{trip.current_fare ? money(trip.current_fare.amount, trip.current_fare.currency) : "Sur devis"}</span>
-                            <button className="btn p s" onClick={() => setTab("billets")}>Réserver</button>
+                            <button className="btn p s" onClick={() => { setPreselectedTripId(String(trip.id)); setTab("billets"); }}>Réserver</button>
                           </div>
                         </div>
                       ))}
@@ -315,7 +362,7 @@ export function ClientPortal() {
             <main className="wrap section-margin" style={{ paddingBottom: '60px' }}>
               <h2>Billetterie & Réservation</h2>
               <p className="sub">Trouvez un départ, choisissez votre siège et recevez votre billet électronique.</p>
-              <Tickets user={user} trips={trips} tickets={tickets} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} />
+              <Tickets user={user} trips={trips} tickets={tickets} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} />
             </main>
           )}
           
@@ -393,8 +440,32 @@ export function ClientPortal() {
 type Quote = Omit<Checkout, "transaction_id" | "payment_url" | "simulated">;
 type BookingPayload = { id: number; status: string; tickets: Ticket[]; payment_quotes: Quote[]; guest_access_token?: string };
 
-function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChanged }: { user: User | null; trips: Trip[]; tickets: Ticket[]; paymentMethods: PaymentMethod[]; onAuthenticated: () => Promise<void>; onChanged: () => Promise<void> }) {
-  const [tripId, setTripId] = useState("");
+function Tickets({
+  user,
+  trips,
+  tickets,
+  paymentMethods,
+  onAuthenticated,
+  onChanged,
+  preselectedTripId = "",
+  searchOrigin = "",
+  searchDestination = "",
+}: {
+  user: User | null;
+  trips: Trip[];
+  tickets: Ticket[];
+  paymentMethods: PaymentMethod[];
+  onAuthenticated: () => Promise<void>;
+  onChanged: () => Promise<void>;
+  preselectedTripId?: string;
+  searchOrigin?: string;
+  searchDestination?: string;
+}) {
+  const [tripId, setTripId] = useState(preselectedTripId || "");
+
+  useEffect(() => {
+    if (preselectedTripId) setTripId(preselectedTripId);
+  }, [preselectedTripId]);
   const [paymentCheck, setPaymentCheck] = useState<{ ticketId: number; busy: boolean; text: string } | null>(null);
   const [seats, setSeats] = useState<Seat[]>([]);
   const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([]);
@@ -474,9 +545,12 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
     if (!tripId) return;
     const count = Math.max(1, selectedSeatIds.length);
     let cancelled = false;
-    apiFetch<Quote[]>(`/client/trips/${tripId}/payment-quotes/?passengers=${count}`, {}, false).then((quotes) => { if (!cancelled) setTripQuotes(quotes); }).catch(() => undefined);
+    const params = new URLSearchParams({ passengers: String(count) });
+    if (searchOrigin) params.set("origin", searchOrigin);
+    if (searchDestination) params.set("destination", searchDestination);
+    apiFetch<Quote[]>(`/client/trips/${tripId}/payment-quotes/?${params.toString()}`, {}, false).then((quotes) => { if (!cancelled) setTripQuotes(quotes); }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [tripId, selectedSeatIds.length]);
+  }, [tripId, selectedSeatIds.length, searchOrigin, searchDestination]);
 
   function handleToggleSeat(seat: Seat) {
     setSelectedSeatIds((current) => {
@@ -569,6 +643,8 @@ function Tickets({ user, trips, tickets, paymentMethods, onAuthenticated, onChan
       trip: Number(tripId),
       contact_phone: contactPhone || passengers[0]?.phone || "",
       buyer_ifu: buyerIfu.trim(),
+      origin: searchOrigin || undefined,
+      destination: searchDestination || undefined,
       passengers: passengers.map((p) => ({
         full_name: p.fullName.trim(),
         phone: p.phone.trim() || contactPhone,

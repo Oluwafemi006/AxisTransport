@@ -623,10 +623,9 @@ class TripViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
         destination = self.request.query_params.get("destination")
         date_value = self.request.query_params.get("date")
         status_value = self.request.query_params.get("status")
-        if origin:
-            queryset = queryset.filter(route__origin_id=origin)
-        if destination:
-            queryset = queryset.filter(route__destination_id=destination)
+        if origin or destination:
+            from .services import find_trips_for_waypoint_direction
+            queryset = find_trips_for_waypoint_direction(queryset, origin=origin, destination=destination)
         if date_value:
             try:
                 selected_date = datetime.strptime(date_value, "%Y-%m-%d").date()
@@ -645,6 +644,11 @@ class TripViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
         trip = serializer.save()
         if trip.vehicle.seat_labels:
             generate_trip_seats(trip)
+
+    @action(detail=False, methods=["get"], url_path="search")
+    def search(self, request):
+        """Recherche directionnelle de trajets (/trips/search/?origin=...&destination=...&date=...)."""
+        return self.list(request)
 
     @action(detail=False, methods=["post"], url_path="generate")
     def generate(self, request):
