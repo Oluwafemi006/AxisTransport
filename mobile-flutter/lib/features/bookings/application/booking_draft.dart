@@ -9,6 +9,11 @@ class BookingDraft {
     this.passengers = const [],
     this.seatsByPassenger = const {},
     this.buyerIfu = '',
+    this.originId,
+    this.destinationId,
+    this.originName,
+    this.destinationName,
+    this.segmentLabel,
   });
 
   final Trip? trip;
@@ -17,6 +22,11 @@ class BookingDraft {
   final String buyerIfu;
   final List<Passenger> passengers;
   final Map<String, Seat> seatsByPassenger;
+  final int? originId;
+  final int? destinationId;
+  final String? originName;
+  final String? destinationName;
+  final String? segmentLabel;
 
   bool get hasAllPassengers =>
       passengers.isNotEmpty &&
@@ -33,11 +43,21 @@ class BookingDraft {
     List<Passenger>? passengers,
     Map<String, Seat>? seatsByPassenger,
     String? buyerIfu,
+    int? originId,
+    int? destinationId,
+    String? originName,
+    String? destinationName,
+    String? segmentLabel,
   }) => BookingDraft(
     trip: trip ?? this.trip,
     passengers: passengers ?? this.passengers,
     seatsByPassenger: seatsByPassenger ?? this.seatsByPassenger,
     buyerIfu: buyerIfu ?? this.buyerIfu,
+    originId: originId ?? this.originId,
+    destinationId: destinationId ?? this.destinationId,
+    originName: originName ?? this.originName,
+    destinationName: destinationName ?? this.destinationName,
+    segmentLabel: segmentLabel ?? this.segmentLabel,
   );
 }
 
@@ -45,12 +65,49 @@ class BookingDraftNotifier extends Notifier<BookingDraft> {
   @override
   BookingDraft build() => const BookingDraft();
 
-  void start(Trip trip) {
+  void start(
+    Trip trip, {
+    int? originId,
+    int? destinationId,
+    String? originName,
+    String? destinationName,
+    String? segmentLabel,
+  }) {
     if (state.trip?.id == trip.id) {
-      state = state.copyWith(trip: trip);
+      state = state.copyWith(
+        trip: trip,
+        originId: originId ?? state.originId,
+        destinationId: destinationId ?? state.destinationId,
+        originName: originName ?? state.originName,
+        destinationName: destinationName ?? state.destinationName,
+        segmentLabel: segmentLabel ?? state.segmentLabel,
+      );
       return;
     }
-    state = BookingDraft(trip: trip);
+    state = BookingDraft(
+      trip: trip,
+      originId: originId,
+      destinationId: destinationId,
+      originName: originName,
+      destinationName: destinationName,
+      segmentLabel: segmentLabel,
+    );
+  }
+
+  void setSegment({
+    int? originId,
+    int? destinationId,
+    String? originName,
+    String? destinationName,
+    String? segmentLabel,
+  }) {
+    state = state.copyWith(
+      originId: originId,
+      destinationId: destinationId,
+      originName: originName,
+      destinationName: destinationName,
+      segmentLabel: segmentLabel,
+    );
   }
 
   void setPassengers(List<Passenger> passengers) {

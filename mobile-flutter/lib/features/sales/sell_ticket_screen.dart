@@ -139,9 +139,11 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
   }
 
   Future<void> _share(SaleTicket ticket) {
-    return Share.share(
-      saleShareText(ticket, formatFullDateTime),
-      subject: 'Billet AXIS Transport ${ticket.reference}',
+    return SharePlus.instance.share(
+      ShareParams(
+        text: saleShareText(ticket, formatFullDateTime),
+        subject: 'Billet AXIS Transport ${ticket.reference}',
+      ),
     );
   }
 
