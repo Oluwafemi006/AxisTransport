@@ -1,6 +1,9 @@
 // Données de la vente par un agent, lues telles quelles dans les réponses du serveur.
 // L'application ne calcule ni prix, ni frais, ni disponibilité.
 
+import '../../core/formatters.dart';
+import '../../core/models.dart';
+
 num _num(Object? value) => value is num ? value : num.tryParse('$value') ?? 0;
 
 DateTime? _date(Object? value) =>
@@ -90,6 +93,7 @@ class SaleTicket {
     required this.amount,
     required this.currency,
     required this.publicUrl,
+    this.printInfo,
   });
 
   final String reference;
@@ -105,6 +109,9 @@ class SaleTicket {
 
   /// Adresse publique du billet ; vide tant que le serveur n'a pas d'adresse de site configurée.
   final String publicUrl;
+
+  /// Données imprimées sur le billet (fiscalité, IFU acheteur, mode de paiement).
+  final TicketPrintInfo? printInfo;
 
   bool get isIssued => status == 'ISSUED';
 
@@ -125,6 +132,9 @@ class SaleTicket {
       amount: _num(json['amount']),
       currency: json['currency'] as String? ?? 'XOF',
       publicUrl: json['public_url'] as String? ?? '',
+      printInfo: json['print_info'] is Map
+          ? TicketPrintInfo.fromJson(_map(json['print_info']))
+          : null,
     );
   }
 }
@@ -188,6 +198,8 @@ class SaleCheckout {
 
 /// Texte de partage du billet : uniquement des valeurs du serveur ; le lien n'apparaît que s'il existe.
 String saleShareText(SaleTicket ticket, String Function(DateTime) formatDate) {
+  final info = ticket.printInfo;
+  final paid = (info != null && info.paid) || ticket.isIssued;
   return [
     'AXIS Transport',
     'Billet : ${ticket.reference}',
@@ -198,9 +210,21 @@ String saleShareText(SaleTicket ticket, String Function(DateTime) formatDate) {
     if (ticket.departureAt != null)
       'Départ : ${formatDate(ticket.departureAt!)}',
     'Siège : ${ticket.seatNumber}',
+    'Prix du billet : ${formatMoney(ticket.amount, ticket.currency)}',
+    if (paid) 'Statut : Payé',
+    if (info != null && info.sale.trim().isNotEmpty)
+      info.sale.trim().startsWith('Vendeur')
+          ? info.sale.trim()
+          : 'Vendeur : ${info.sale.trim()}',
+    if (info != null && info.paymentMode.trim().isNotEmpty)
+      'Mode de paiement : ${info.paymentMode.trim()}',
+    if (info != null && info.buyerIfu.trim().isNotEmpty)
+      'IFU de l\'acheteur : ${info.buyerIfu.trim()}',
     if (ticket.publicUrl.isNotEmpty) ...[
       '',
       'Votre billet : ${ticket.publicUrl}',
     ],
+    '',
+    ...ticketFooterLines(info),
   ].join('\n');
 }
