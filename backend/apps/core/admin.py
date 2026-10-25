@@ -54,15 +54,15 @@ class WeeklyScheduleAdmin(admin.ModelAdmin):
 
 @admin.register(Ticket)
 class TicketAdmin(admin.ModelAdmin):
-    list_display = ("reference", "trip", "seat", "passenger_name", "status", "channel", "amount")
-    list_filter = ("status", "channel", "trip")
+    list_display = ("reference", "trip", "origin", "destination", "seat", "passenger_name", "status", "channel", "amount")
+    list_filter = ("status", "channel", "origin", "destination", "trip")
     search_fields = ("reference", "passenger_name", "passenger_phone")
 
 
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
-    list_display = ("reference", "trip", "customer", "status", "amount", "currency", "reservation_expires_at")
-    list_filter = ("status", "trip")
+    list_display = ("reference", "trip", "origin", "destination", "customer", "status", "amount", "currency", "reservation_expires_at")
+    list_filter = ("status", "origin", "destination", "trip")
     search_fields = ("reference", "contact_phone", "contact_email", "customer__username")
 
 
@@ -149,6 +149,7 @@ class StaffInvitationAdmin(admin.ModelAdmin):
 
 class RouteStopInline(admin.TabularInline):
     model = RouteStop
+    fields = ["position", "location", "offset_minutes"]
     extra = 1
     ordering = ["position"]
 
@@ -162,7 +163,7 @@ class RouteAdmin(admin.ModelAdmin):
 
 @admin.register(RouteStop)
 class RouteStopAdmin(admin.ModelAdmin):
-    list_display = ("route", "position", "location")
+    list_display = ("route", "position", "location", "offset_minutes")
     list_filter = ("route",)
     ordering = ("route", "position")
 

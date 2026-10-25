@@ -45,6 +45,8 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
           .loadQuotes(
             tripId: widget.tripId,
             passengers: draft.passengers.length,
+            originId: draft.originId,
+            destinationId: draft.destinationId,
           );
     });
   }
@@ -244,7 +246,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
           ),
           const SizedBox(height: 20),
           Text(
-            trip.route.label,
+            draft.segmentLabel ?? trip.route.label,
             style: const TextStyle(
               color: AxisColors.navyDark,
               fontSize: 22,

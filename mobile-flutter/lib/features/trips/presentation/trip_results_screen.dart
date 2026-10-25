@@ -236,6 +236,7 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
                   child: _TripResultCard(
                     trip: trip,
                     passengers: search.passengers,
+                    search: search,
                   ),
                 ),
               ),
@@ -253,10 +254,15 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
 }
 
 class _TripResultCard extends StatelessWidget {
-  const _TripResultCard({required this.trip, required this.passengers});
+  const _TripResultCard({
+    required this.trip,
+    required this.passengers,
+    this.search,
+  });
 
   final Trip trip;
   final int passengers;
+  final TripSearch? search;
 
   @override
   Widget build(BuildContext context) {
@@ -371,7 +377,7 @@ class _TripResultCard extends StatelessWidget {
             FilledButton(
               onPressed: bookable
                   ? () => context.push(
-                      '/billets/booking/${trip.id}/passagers?passagers=$passengers',
+                      '/billets/booking/${trip.id}/passagers?passagers=$passengers${search != null ? '&origin=${search!.originId}&destination=${search!.destinationId}' : ''}',
                     )
                   : null,
               child: Text(

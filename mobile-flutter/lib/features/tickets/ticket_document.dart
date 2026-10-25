@@ -19,24 +19,31 @@ String _orMissing(String? value) {
 /// Les lignes du billet, uniquement tirées de la réponse du serveur.
 /// Une information facultative absente (arrivée, lieu d'embarquement, IFU…) est masquée.
 List<(String, String)> ticketFields(Ticket ticket) {
-  final route = ticket.trip.route;
-  final origin = route.origin?.name;
-  final destination = route.destination?.name;
   final info = ticket.printInfo;
+  final origin = (info != null && info.origin.isNotEmpty)
+      ? info.origin
+      : ticket.originName ?? ticket.trip.route.origin?.name;
+  final destination = (info != null && info.destination.isNotEmpty)
+      ? info.destination
+      : ticket.destinationName ?? ticket.trip.route.destination?.name;
+  final label = (info != null && info.segmentLabel.isNotEmpty)
+      ? info.segmentLabel
+      : ticket.segmentLabel ?? (origin != null && destination != null ? '$origin → $destination' : ticket.trip.route.label);
+  final depLabel = (info != null && info.departureLabel.isNotEmpty)
+      ? info.departureLabel
+      : ticket.departureLabel ?? 'Départ';
+  final depTime = (info?.departureAt != null)
+      ? info!.departureAt!
+      : (ticket.effectiveDepartureAt ?? ticket.trip.departureAt);
   final paid = info?.paid ?? ticket.isConfirmed;
   return [
     ('Référence', _orMissing(ticket.reference)),
-    (
-      'Trajet',
-      origin != null && destination != null
-          ? '$origin → $destination'
-          : _orMissing(route.label),
-    ),
+    ('Trajet', _orMissing(label)),
     if (info != null && info.boardingPlace.trim().isNotEmpty)
       ('Lieu d\'embarquement', info.boardingPlace.trim()),
     if (ticket.trip.boardingAt != null)
       ('Embarquement', formatFullDateTime(ticket.trip.boardingAt!)),
-    ('Départ', formatFullDateTime(ticket.trip.departureAt)),
+    (depLabel, formatFullDateTime(depTime)),
     if (ticket.trip.arrivalAt != null)
       ('Arrivée prévue', formatFullDateTime(ticket.trip.arrivalAt!)),
     ('Siège', _orMissing(ticket.seat.number)),

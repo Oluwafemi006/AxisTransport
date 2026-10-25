@@ -428,6 +428,12 @@ class TicketPrintInfo {
     this.paymentMode = '',
     this.buyerIfu = '',
     this.boardingPlace = '',
+    this.origin = '',
+    this.destination = '',
+    this.segmentLabel = '',
+    this.departureLabel = '',
+    this.departureAt,
+    this.isOffset = false,
     this.priceInclTax = 0,
     this.priceExclTax,
     this.taxLines = const [],
@@ -440,6 +446,12 @@ class TicketPrintInfo {
   final String paymentMode;
   final String buyerIfu;
   final String boardingPlace;
+  final String origin;
+  final String destination;
+  final String segmentLabel;
+  final String departureLabel;
+  final DateTime? departureAt;
+  final bool isOffset;
   final num priceInclTax;
 
   /// Prix HT : fourni seulement si l'IFU de l'agence est renseigné.
@@ -455,6 +467,14 @@ class TicketPrintInfo {
         paymentMode: json['payment_mode'] as String? ?? '',
         buyerIfu: json['buyer_ifu'] as String? ?? '',
         boardingPlace: json['boarding_place'] as String? ?? '',
+        origin: json['origin'] as String? ?? '',
+        destination: json['destination'] as String? ?? '',
+        segmentLabel: json['segment_label'] as String? ?? '',
+        departureLabel: json['departure_label'] as String? ?? '',
+        departureAt: json['departure_at'] == null
+            ? null
+            : DateTime.parse(json['departure_at'] as String).toLocal(),
+        isOffset: json['is_offset'] as bool? ?? false,
         priceInclTax: asNum(json['price_incl_tax']),
         priceExclTax: json['price_excl_tax'] == null
             ? null
@@ -520,6 +540,11 @@ class Ticket {
     required this.qrToken,
     required this.amount,
     required this.currency,
+    this.originName,
+    this.destinationName,
+    this.segmentLabel,
+    this.departureLabel,
+    this.effectiveDepartureAt,
     this.reservationExpiresAt,
     this.publicUrl = '',
     this.printInfo,
@@ -540,6 +565,11 @@ class Ticket {
   final String qrToken;
   final num amount;
   final String currency;
+  final String? originName;
+  final String? destinationName;
+  final String? segmentLabel;
+  final String? departureLabel;
+  final DateTime? effectiveDepartureAt;
   final DateTime? reservationExpiresAt;
 
   /// Adresse publique du billet, fournie par le serveur (vide si absente).
@@ -572,6 +602,13 @@ class Ticket {
       qrToken: json['qr_token'] as String? ?? '',
       amount: asNum(json['amount']),
       currency: json['currency'] as String? ?? 'XOF',
+      originName: json['origin_name'] as String?,
+      destinationName: json['destination_name'] as String?,
+      segmentLabel: json['segment_label'] as String?,
+      departureLabel: json['departure_label'] as String?,
+      effectiveDepartureAt: json['effective_departure_at'] == null
+          ? null
+          : DateTime.parse(json['effective_departure_at'] as String).toLocal(),
       reservationExpiresAt: json['reservation_expires_at'] == null
           ? null
           : DateTime.parse(json['reservation_expires_at'] as String).toLocal(),

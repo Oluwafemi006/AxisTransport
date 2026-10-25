@@ -23,6 +23,7 @@ export interface RouteStop {
   position: number;
   location_id: number;
   name: string;
+  offset_minutes?: number | null;
 }
 
 export interface Route {
@@ -109,6 +110,15 @@ export interface Ticket {
   booking?: number | null;
   trip: number;
   trip_detail: Trip;
+  origin?: number | null;
+  destination?: number | null;
+  origin_name?: string;
+  destination_name?: string;
+  origin_detail?: Location;
+  destination_detail?: Location;
+  segment_label?: string;
+  departure_label?: string;
+  effective_departure_at?: string;
   seat: number;
   seat_detail: Seat;
   passenger_name: string;
@@ -269,6 +279,12 @@ export interface TicketPrintInfo {
   payment_mode: string;
   buyer_ifu: string;
   boarding_place: string;
+  origin?: string;
+  destination?: string;
+  segment_label?: string;
+  departure_label?: string;
+  departure_at?: string;
+  is_offset?: boolean;
   price_incl_tax: number;
   price_excl_tax: number | null;
   tax_lines: Array<{ name: string; rate: string; amount: number }>;

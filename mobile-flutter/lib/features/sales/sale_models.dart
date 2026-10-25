@@ -117,14 +117,17 @@ class SaleTicket {
 
   factory SaleTicket.fromJson(Map<String, dynamic> json) {
     final trip = _map(json['trip_detail']);
+    final segment = json['segment_label'] as String? ?? '';
     return SaleTicket(
       reference: json['reference'] as String? ?? '',
       status: json['status'] as String? ?? '',
       statusDisplay: json['status_display'] as String? ?? '',
       passengerName: json['passenger_name'] as String? ?? '',
       seatNumber: _map(json['seat_detail'])['number'] as String? ?? '',
-      routeLabel: _map(trip['route_detail'])['label'] as String? ?? '',
-      departureAt: _date(trip['departure_at']),
+      routeLabel: segment.isNotEmpty
+          ? segment
+          : (_map(trip['route_detail'])['label'] as String? ?? ''),
+      departureAt: _date(json['effective_departure_at'] ?? trip['departure_at']),
       boardingAt: _date(trip['boarding_at']),
       amount: _num(json['amount']),
       currency: json['currency'] as String? ?? 'XOF',

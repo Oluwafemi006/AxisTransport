@@ -263,6 +263,8 @@ class ApiClient {
     required String contactPhone,
     String contactEmail = '',
     String buyerIfu = '',
+    String? origin,
+    String? destination,
     required List<Map<String, dynamic>> passengers,
   }) async {
     final payload = await _request<Map<String, dynamic>>(
@@ -272,6 +274,8 @@ class ApiClient {
         'contact_phone': contactPhone,
         'contact_email': contactEmail,
         'buyer_ifu': buyerIfu.trim(),
+        if (origin != null && origin.isNotEmpty) 'origin': origin,
+        if (destination != null && destination.isNotEmpty) 'destination': destination,
         'passengers': passengers,
       },
       auth: true,
@@ -416,6 +420,8 @@ class ApiClient {
     required String passengerName,
     required String passengerPhone,
     required int paymentMethod,
+    String? origin,
+    String? destination,
   }) {
     return _request<Map<String, dynamic>>(
       '/staff/sales/sell/',
@@ -426,6 +432,8 @@ class ApiClient {
         'passenger_name': passengerName,
         'passenger_phone': passengerPhone,
         'payment_method': paymentMethod,
+        if (origin != null && origin.isNotEmpty) 'origin': origin,
+        if (destination != null && destination.isNotEmpty) 'destination': destination,
       },
       auth: true,
     );

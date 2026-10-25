@@ -124,11 +124,18 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
   Future<void> loadQuotes({
     required int tripId,
     required int passengers,
+    int? originId,
+    int? destinationId,
   }) async {
     try {
       final quotes = await ref
           .read(apiClientProvider)
-          .tripPaymentQuotes(tripId: tripId, passengers: passengers);
+          .tripPaymentQuotes(
+            tripId: tripId,
+            passengers: passengers,
+            originId: originId,
+            destinationId: destinationId,
+          );
       final current = state.value;
       if (current != null) {
         state = AsyncData(
@@ -219,6 +226,8 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
           trip: draft.trip!.id,
           contactPhone: contactPhone,
           buyerIfu: draft.buyerIfu,
+          origin: draft.originId != null ? '${draft.originId}' : null,
+          destination: draft.destinationId != null ? '${draft.destinationId}' : null,
           passengers: draft.passengers.map((passenger) {
             final seat = draft.seatsByPassenger[passenger.id]!;
             return {
@@ -248,6 +257,8 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
         trip: draft.trip!.id,
         contactPhone: contactPhone,
         buyerIfu: draft.buyerIfu,
+        origin: draft.originId != null ? '${draft.originId}' : null,
+        destination: draft.destinationId != null ? '${draft.destinationId}' : null,
         passengers: draft.passengers.map((passenger) {
           final seat = draft.seatsByPassenger[passenger.id]!;
           return {

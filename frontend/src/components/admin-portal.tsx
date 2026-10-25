@@ -686,6 +686,8 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
 export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; payments: PaymentMethod[]; onChanged: () => Promise<void> }) {
   const feedback = useActionFeedback();
   const [tripId, setTripId] = useState("");
+  const [originId, setOriginId] = useState("");
+  const [destinationId, setDestinationId] = useState("");
   const [seats, setSeats] = useState<Seat[]>([]);
   const [seat, setSeat] = useState("");
   const [name, setName] = useState("");
@@ -693,6 +695,9 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [notice, setNotice] = useState<NoticeState>(null);
   const [busy, setBusy] = useState(false);
+
+  const selectedTrip = trips.find((t) => String(t.id) === tripId);
+  const routeStops = selectedTrip?.route_detail?.stops || [];
 
   const loadSeats = useCallback(async (id: string) => {
     if (!id) { setSeats([]); return; }
@@ -705,7 +710,18 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
     event.preventDefault();
     setBusy(true);
     try {
-      const created = await apiFetch<Ticket>("/tickets/", { method: "POST", body: JSON.stringify({ trip: Number(tripId), seat: Number(seat), passenger_name: name, passenger_phone: phone, channel: "COUNTER" }) });
+      const created = await apiFetch<Ticket>("/tickets/", {
+        method: "POST",
+        body: JSON.stringify({
+          trip: Number(tripId),
+          seat: Number(seat),
+          passenger_name: name,
+          passenger_phone: phone,
+          channel: "COUNTER",
+          origin: originId || undefined,
+          destination: destinationId || undefined,
+        }),
+      });
       setTicket(created);
       feedback.success("Siège bloqué. Enregistrez maintenant l’encaissement.");
       setSeat("");
@@ -728,6 +744,7 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
 
   function reset() {
     setTicket(null); setNotice(null); setSeat(""); setName(""); setPhone("");
+    setOriginId(""); setDestinationId("");
   }
 
   // Départs à venir et vendables (itinéraire actif, pas encore partis), du plus proche au plus lointain.
@@ -751,7 +768,23 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
                     <td className="whitespace-nowrap">{trip.current_fare ? money(trip.current_fare.amount, trip.current_fare.currency) : "sans prix (non vendable)"}</td>
                     <td>{trip.available_seats}</td>
                     <td className="text-right">
-                      <button type="button" className="secondary-button" disabled={!trip.current_fare || trip.available_seats === 0} onClick={() => { setTripId(String(trip.id)); setSeat(""); }}>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={!trip.current_fare || trip.available_seats === 0}
+                        onClick={() => {
+                          setTripId(String(trip.id));
+                          setSeat("");
+                          const stops = trip.route_detail?.stops || [];
+                          if (stops.length >= 2) {
+                            setOriginId(String(stops[0].id));
+                            setDestinationId(String(stops[stops.length - 1].id));
+                          } else {
+                            setOriginId(String(trip.route_detail.origin));
+                            setDestinationId(String(trip.route_detail.destination));
+                          }
+                        }}
+                      >
                         {String(trip.id) === tripId ? "Sélectionné" : "Vendre"}
                       </button>
                     </td>
@@ -765,7 +798,51 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
       <section className="card">
         <SectionHeading eyebrow="Base commune" title="Vendre un billet" />
         <form onSubmit={sell} className="space-y-4">
-          <Select label="Voyage" value={tripId} onChange={(value) => { setTripId(value); setSeat(""); }} options={sellable.map((trip) => [String(trip.id), counterTripLabel(trip.route_detail.label, formatDate(trip.departure_at), trip.current_fare ? money(trip.current_fare.amount, trip.current_fare.currency) : null)])} />
+          <Select
+            label="Voyage"
+            value={tripId}
+            onChange={(value) => {
+              setTripId(value);
+              setSeat("");
+              const t = trips.find((item) => String(item.id) === value);
+              const stops = t?.route_detail?.stops || [];
+              if (stops.length >= 2) {
+                setOriginId(String(stops[0].id));
+                setDestinationId(String(stops[stops.length - 1].id));
+              } else if (t) {
+                setOriginId(String(t.route_detail.origin));
+                setDestinationId(String(t.route_detail.destination));
+              }
+            }}
+            options={sellable.map((trip) => [String(trip.id), counterTripLabel(trip.route_detail.label, formatDate(trip.departure_at), trip.current_fare ? money(trip.current_fare.amount, trip.current_fare.currency) : null)])}
+          />
+          {routeStops.length > 2 && (
+            <div className="grid grid-cols-2 gap-3">
+              <Select
+                label="Arrêt de départ (montée)"
+                value={originId}
+                onChange={(val) => {
+                  setOriginId(val);
+                  const origIdx = routeStops.findIndex((s) => String(s.id) === val);
+                  const destIdx = routeStops.findIndex((s) => String(s.id) === destinationId);
+                  if (destIdx <= origIdx && origIdx < routeStops.length - 1) {
+                    setDestinationId(String(routeStops[origIdx + 1].id));
+                  }
+                }}
+                options={routeStops.slice(0, -1).map((s) => [String(s.id), s.name])}
+              />
+              <Select
+                label="Arrêt d'arrivée (descente)"
+                value={destinationId}
+                onChange={setDestinationId}
+                options={(() => {
+                  const origIdx = routeStops.findIndex((s) => String(s.id) === originId);
+                  const validStops = origIdx >= 0 ? routeStops.slice(origIdx + 1) : routeStops.slice(1);
+                  return validStops.map((s) => [String(s.id), s.name]);
+                })()}
+              />
+            </div>
+          )}
           <Select label="Siège libre" value={seat} onChange={setSeat} options={seats.filter((item) => item.status === "AVAILABLE").map((item) => [String(item.id), item.number])} />
           <Input label="Nom du passager" value={name} onChange={setName} />
           <Input label="Téléphone" value={phone} onChange={setPhone} required={false} />
@@ -778,10 +855,10 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
           <div>
             <p className="text-lg font-extrabold text-axis-900">{ticket.reference}</p>
             <p className="mt-1 text-sm text-slate-500">{ticket.passenger_name} · siège {ticket.seat_detail.number}</p>
-            <p className="text-sm text-slate-500">{ticket.trip_detail.route_detail.label}</p>
+            <p className="text-sm font-semibold text-slate-700">{ticket.segment_label || ticket.trip_detail.route_detail.label}</p>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <div><dt className="field-label">Embarquement</dt><dd>{ticket.trip_detail.boarding_at ? formatDate(ticket.trip_detail.boarding_at) : "à confirmer"}</dd></div>
-              <div><dt className="field-label">Départ</dt><dd>{formatDate(ticket.trip_detail.departure_at)}</dd></div>
+              <div><dt className="field-label">{ticket.departure_label || "Départ"}</dt><dd>{formatDate(ticket.effective_departure_at || ticket.trip_detail.departure_at)}</dd></div>
             </dl>
             <p className="field-label mt-4">Prix du billet</p>
             <p className="price">{money(ticket.amount, ticket.currency)}</p>

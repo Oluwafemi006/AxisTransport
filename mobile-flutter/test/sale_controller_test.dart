@@ -96,6 +96,8 @@ class _Api extends ApiClient {
     required String passengerName,
     required String passengerPhone,
     required int paymentMethod,
+    String? origin,
+    String? destination,
   }) async {
     sells += 1;
     keys.add(idempotencyKey);

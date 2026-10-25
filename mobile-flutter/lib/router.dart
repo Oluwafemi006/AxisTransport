@@ -76,6 +76,8 @@ final axisRouter = GoRouter(
                           state.uri.queryParameters['passagers'] ?? '1',
                         ) ??
                         1,
+                    originId: int.tryParse(state.uri.queryParameters['origin'] ?? ''),
+                    destinationId: int.tryParse(state.uri.queryParameters['destination'] ?? ''),
                   ),
                 ),
                 GoRoute(

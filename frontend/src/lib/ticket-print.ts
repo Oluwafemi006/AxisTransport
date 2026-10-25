@@ -22,13 +22,17 @@ export interface PrintableTicket {
 
 export function ticketRows(ticket: PrintableTicket, formatDate: (iso: string) => string): Array<[string, string]> {
   const info = ticket.print_info;
+  const origin = info?.origin || ticket.origin;
+  const destination = info?.destination || ticket.destination;
   const rows: Array<[string, string]> = [
     ["Référence", ticket.reference],
-    ["Trajet", ticket.origin && ticket.destination ? `${ticket.origin} → ${ticket.destination}` : TO_FILL],
+    ["Trajet", origin && destination ? `${origin} → ${destination}` : TO_FILL],
   ];
   if (info?.boarding_place) rows.push(["Lieu d'embarquement", info.boarding_place]);
   if (ticket.boarding_at) rows.push(["Embarquement", formatDate(ticket.boarding_at)]);
-  if (ticket.departure_at) rows.push(["Départ", formatDate(ticket.departure_at)]);
+  const depLabel = info?.departure_label || "Départ";
+  const depTime = info?.departure_at || ticket.departure_at;
+  if (depTime) rows.push([depLabel, formatDate(depTime)]);
   if (ticket.arrival_at) rows.push(["Arrivée prévue", formatDate(ticket.arrival_at)]);
   rows.push(["Siège", ticket.seat_label && ticket.seat_label !== "N/A" ? ticket.seat_label : TO_FILL]);
   rows.push(["Passager", ticket.passenger_name || TO_FILL]);

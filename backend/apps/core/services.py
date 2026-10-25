@@ -568,18 +568,35 @@ def reserve_booking(
                 f"Le siège {item['seat'].number} n'autorise pas ce type de passager."
             )
 
-    fare = None
-    if origin and destination:
-        origin_loc = resolve_location(origin)
-        dest_loc = resolve_location(destination)
-        if origin_loc and dest_loc and origin_loc != dest_loc:
-            try:
-                seg_fare = resolve_segment_fare(origin_loc, dest_loc)
-                fare = SimpleNamespace(id=seg_fare.id, name=seg_fare.label, amount=Decimal(seg_fare.amount), currency=seg_fare.currency)
-            except ImproperlyConfigured:
-                fare = None
-    if fare is None:
-        fare = trip_fare(locked_trip)
+    origin_loc = resolve_location(origin) if origin else None
+    dest_loc = resolve_location(destination) if destination else None
+
+    if (origin and not origin_loc) or (destination and not dest_loc):
+        raise ValidationError("Arrêt de départ ou d'arrivée non reconnu.")
+
+    if (origin_loc and not dest_loc) or (dest_loc and not origin_loc):
+        raise ValidationError("Veuillez renseigner à la fois l'arrêt de montée et l'arrêt de descente.")
+
+    if not origin_loc and not dest_loc:
+        # Réservation sans tronçon spécifié : trajet complet par défaut
+        origin_loc = locked_trip.route.origin
+        dest_loc = locked_trip.route.destination
+
+    if origin_loc.pk == dest_loc.pk:
+        raise ValidationError("La ville de départ et la ville d'arrivée doivent être distinctes.")
+
+    # Validation stricte : les deux arrêts sont sur la ligne du trajet et la montée précède la descente dans le sens du bus
+    if not locked_trip.route.has_waypoint_direction(origin_loc, dest_loc):
+        raise ValidationError(
+            f"Le trajet {locked_trip.route.label} ne dessert pas le tronçon {origin_loc.name} vers {dest_loc.name} dans ce sens."
+        )
+
+    try:
+        seg_fare = resolve_segment_fare(origin_loc, dest_loc)
+        fare = SimpleNamespace(id=seg_fare.id, name=seg_fare.label, amount=Decimal(seg_fare.amount), currency=seg_fare.currency)
+    except ImproperlyConfigured as exc:
+        raise ValidationError(f"Aucun tarif n'est configuré pour le tronçon {origin_loc.name} → {dest_loc.name} : tronçon non vendable.") from exc
+
     expires_at = timezone.now() + configured_hold_duration()
     guest_token = secrets.token_urlsafe(32) if customer is None else None
     booking = Booking.objects.create(
@@ -591,6 +608,8 @@ def reserve_booking(
         sold_by=sold_by,
         idempotency_key=idempotency_key,
         buyer_ifu=buyer_ifu,
+        origin=origin_loc,
+        destination=dest_loc,
         reservation_expires_at=expires_at,
         amount=fare.amount * Decimal(len(passengers)),
         currency=fare.currency,
@@ -614,6 +633,8 @@ def reserve_booking(
             passenger_name=passenger.full_name,
             passenger_phone=passenger.phone,
             channel=channel,
+            origin=origin_loc,
+            destination=dest_loc,
             reservation_expires_at=expires_at,
             amount=fare.amount,
             currency=fare.currency,
@@ -667,7 +688,17 @@ def pay_and_issue_booking(booking, *, payment_method, receipt, actor=None, exter
 
 
 @transaction.atomic
-def reserve_ticket(*, trip, seat, customer, passenger_name, passenger_phone="", channel=Ticket.Channel.ONLINE):
+def reserve_ticket(
+    *,
+    trip,
+    seat,
+    customer,
+    passenger_name,
+    passenger_phone="",
+    channel=Ticket.Channel.ONLINE,
+    origin=None,
+    destination=None,
+):
     if trip.status not in {Trip.Status.SCHEDULED, Trip.Status.BOARDING}:
         raise ValidationError("Ce trajet n'accepte pas de nouvelle réservation.")
     if trip.departure_at <= timezone.now():
@@ -686,7 +717,34 @@ def reserve_ticket(*, trip, seat, customer, passenger_name, passenger_phone="", 
         locked_seat.refresh_from_db()
     if locked_seat.status != Seat.Status.AVAILABLE:
         raise ValidationError("Ce siège n'est plus disponible.")
-    fare = trip_fare(trip)
+
+    origin_loc = resolve_location(origin) if origin else None
+    dest_loc = resolve_location(destination) if destination else None
+
+    if (origin and not origin_loc) or (destination and not dest_loc):
+        raise ValidationError("Arrêt de départ ou d'arrivée non reconnu.")
+
+    if (origin_loc and not dest_loc) or (dest_loc and not origin_loc):
+        raise ValidationError("Veuillez renseigner à la fois l'arrêt de montée et l'arrêt de descente.")
+
+    if not origin_loc and not dest_loc:
+        origin_loc = trip.route.origin
+        dest_loc = trip.route.destination
+
+    if origin_loc.pk == dest_loc.pk:
+        raise ValidationError("La ville de départ et la ville d'arrivée doivent être distinctes.")
+
+    if not trip.route.has_waypoint_direction(origin_loc, dest_loc):
+        raise ValidationError(
+            f"Le trajet {trip.route.label} ne dessert pas le tronçon {origin_loc.name} vers {dest_loc.name} dans ce sens."
+        )
+
+    try:
+        seg_fare = resolve_segment_fare(origin_loc, dest_loc)
+        fare = SimpleNamespace(id=seg_fare.id, name=seg_fare.label, amount=Decimal(seg_fare.amount), currency=seg_fare.currency)
+    except ImproperlyConfigured as exc:
+        raise ValidationError(f"Aucun tarif n'est configuré pour le tronçon {origin_loc.name} → {dest_loc.name} : tronçon non vendable.") from exc
+
     expires_at = timezone.now() + configured_hold_duration()
     ticket = Ticket.objects.create(
         trip=trip,
@@ -695,6 +753,8 @@ def reserve_ticket(*, trip, seat, customer, passenger_name, passenger_phone="", 
         passenger_name=passenger_name,
         passenger_phone=passenger_phone,
         channel=channel,
+        origin=origin_loc,
+        destination=dest_loc,
         reservation_expires_at=expires_at,
         amount=fare.amount,
         currency=fare.currency,

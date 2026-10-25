@@ -53,6 +53,8 @@ class _Api extends ApiClient {
     required String contactPhone,
     String contactEmail = '',
     String buyerIfu = '',
+    String? origin,
+    String? destination,
     required List<Map<String, dynamic>> passengers,
   }) async {
     reservations += 1;

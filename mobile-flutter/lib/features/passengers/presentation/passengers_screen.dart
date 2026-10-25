@@ -15,10 +15,14 @@ class PassengersScreen extends ConsumerStatefulWidget {
     super.key,
     required this.tripId,
     this.passengerCount = 1,
+    this.originId,
+    this.destinationId,
   });
 
   final int tripId;
   final int passengerCount;
+  final int? originId;
+  final int? destinationId;
 
   @override
   ConsumerState<PassengersScreen> createState() => _PassengersScreenState();
@@ -97,7 +101,24 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
           // Guest booking starts with an empty passenger form.
         }
       }
-      ref.read(bookingDraftProvider.notifier).start(trip);
+      final origId = widget.originId ?? draft.originId ?? trip.route.origin?.id;
+      final destId = widget.destinationId ?? draft.destinationId ?? trip.route.destination?.id;
+      String? segLabel;
+      if (origId != null && destId != null) {
+        final origStop = trip.route.stops.where((s) => s.id == origId).firstOrNull;
+        final destStop = trip.route.stops.where((s) => s.id == destId).firstOrNull;
+        final oName = origStop?.name ?? trip.route.origin?.name;
+        final dName = destStop?.name ?? trip.route.destination?.name;
+        if (oName != null && dName != null) {
+          segLabel = '$oName → $dName';
+        }
+      }
+      ref.read(bookingDraftProvider.notifier).start(
+        trip,
+        originId: origId,
+        destinationId: destId,
+        segmentLabel: segLabel,
+      );
       if (!mounted) return;
       setState(() {
         _trip = trip;
