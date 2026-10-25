@@ -89,7 +89,7 @@ class RouteStopSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = RouteStop
-        fields = ["id", "position", "location_id", "name"]
+        fields = ["id", "position", "location_id", "name", "offset_minutes"]
 
 
 class RouteSerializer(serializers.ModelSerializer):
@@ -414,7 +414,9 @@ def ticket_print_info(ticket):
             method = PaymentMethod.objects.filter(code__iexact=receipt.provider).first()
             payment_mode = method.label if method else ""
     agency = public_agency_info()
-    origin = ticket.trip.route.origin if ticket.trip_id else None
+    origin = ticket.boarding_location
+    destination = ticket.alighting_location
+    dep_time, dep_label, is_offset = ticket.get_departure_time_and_label()
     # Décomposition HT / taxes : seulement si l'IFU de l'agence est renseigné et si le billet a ses taxes figées.
     show_taxes = bool(agency["ifu"]) and ticket.price_excl_tax is not None
     return {
@@ -424,6 +426,12 @@ def ticket_print_info(ticket):
         "payment_mode": payment_mode,
         "buyer_ifu": booking.buyer_ifu if booking else "",
         "boarding_place": (origin.address or "").strip() if origin else "",
+        "origin": origin.name if origin else "",
+        "destination": destination.name if destination else "",
+        "segment_label": ticket.segment_label,
+        "departure_label": dep_label,
+        "departure_at": dep_time.isoformat() if dep_time else (ticket.trip.departure_at.isoformat() if ticket.trip else None),
+        "is_offset": is_offset,
         "price_incl_tax": int(ticket.amount),
         "price_excl_tax": int(ticket.price_excl_tax) if show_taxes else None,
         "tax_lines": ticket.tax_lines if show_taxes else [],
@@ -442,6 +450,13 @@ class TicketSerializer(serializers.ModelSerializer):
     controls = TicketControlSerializer(many=True, read_only=True)
     public_url = serializers.SerializerMethodField()
     print_info = serializers.SerializerMethodField()
+    origin_detail = LocationSerializer(source="boarding_location", read_only=True)
+    destination_detail = LocationSerializer(source="alighting_location", read_only=True)
+    origin_name = serializers.CharField(source="boarding_location.name", read_only=True)
+    destination_name = serializers.CharField(source="alighting_location.name", read_only=True)
+    segment_label = serializers.CharField(read_only=True)
+    departure_label = serializers.SerializerMethodField()
+    effective_departure_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Ticket
@@ -453,6 +468,15 @@ class TicketSerializer(serializers.ModelSerializer):
             "public_url",
             "trip",
             "trip_detail",
+            "origin",
+            "destination",
+            "origin_name",
+            "destination_name",
+            "origin_detail",
+            "destination_detail",
+            "segment_label",
+            "departure_label",
+            "effective_departure_at",
             "seat",
             "seat_detail",
             "customer",
@@ -472,18 +496,28 @@ class TicketSerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
-
     def get_public_url(self, obj):
         return public_ticket_url(obj)
 
     def get_print_info(self, obj):
         return ticket_print_info(obj)
 
+    def get_departure_label(self, obj):
+        _, label, _ = obj.get_departure_time_and_label()
+        return label
+
+    def get_effective_departure_at(self, obj):
+        dep_time, _, _ = obj.get_departure_time_and_label()
+        return dep_time.isoformat() if dep_time else None
+
 
 class ControllerTicketSerializer(serializers.ModelSerializer):
     trip_detail = TripSerializer(source="trip", read_only=True)
     seat_detail = SeatSerializer(source="seat", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    origin_name = serializers.CharField(source="boarding_location.name", read_only=True)
+    destination_name = serializers.CharField(source="alighting_location.name", read_only=True)
+    segment_label = serializers.CharField(read_only=True)
 
     class Meta:
         model = Ticket
@@ -492,6 +526,9 @@ class ControllerTicketSerializer(serializers.ModelSerializer):
             "reference",
             "trip",
             "trip_detail",
+            "origin_name",
+            "destination_name",
+            "segment_label",
             "seat",
             "seat_detail",
             "passenger_name",
@@ -509,6 +546,8 @@ class TicketCreateSerializer(serializers.Serializer):
     passenger_name = serializers.CharField(max_length=160)
     passenger_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     channel = serializers.ChoiceField(choices=Ticket.Channel.choices, required=False)
+    origin = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    destination = serializers.CharField(max_length=120, required=False, allow_blank=True)
 
 
 class BookingPassengerSerializer(serializers.ModelSerializer):
@@ -553,6 +592,11 @@ class BookingSerializer(serializers.ModelSerializer):
     passengers = BookingPassengerSerializer(many=True, read_only=True)
     tickets = TicketSerializer(many=True, read_only=True)
     payment_quotes = serializers.SerializerMethodField()
+    origin_detail = LocationSerializer(source="boarding_location", read_only=True)
+    destination_detail = LocationSerializer(source="alighting_location", read_only=True)
+    origin_name = serializers.CharField(source="boarding_location.name", read_only=True)
+    destination_name = serializers.CharField(source="alighting_location.name", read_only=True)
+    segment_label = serializers.CharField(read_only=True)
 
     class Meta:
         model = Booking
@@ -561,6 +605,13 @@ class BookingSerializer(serializers.ModelSerializer):
             "reference",
             "trip",
             "trip_detail",
+            "origin",
+            "destination",
+            "origin_name",
+            "destination_name",
+            "origin_detail",
+            "destination_detail",
+            "segment_label",
             "customer",
             "customer_detail",
             "contact_phone",
@@ -694,6 +745,8 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
     origin = serializers.SerializerMethodField()
     destination = serializers.SerializerMethodField()
     departure_at = serializers.SerializerMethodField()
+    departure_label = serializers.SerializerMethodField()
+    segment_label = serializers.CharField(read_only=True)
     boarding_at = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     formatted_amount = serializers.SerializerMethodField()
@@ -714,6 +767,8 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
             "seat_label",
             "origin",
             "destination",
+            "segment_label",
+            "departure_label",
             "departure_at",
             "boarding_at",
             "amount",
@@ -736,13 +791,20 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
         return obj.seat.number if obj.seat else "N/A"
 
     def get_origin(self, obj):
-        return obj.trip.route.origin.name if obj.trip and obj.trip.route and obj.trip.route.origin else ""
+        loc = obj.boarding_location
+        return loc.name if loc else ""
 
     def get_destination(self, obj):
-        return obj.trip.route.destination.name if obj.trip and obj.trip.route and obj.trip.route.destination else ""
+        loc = obj.alighting_location
+        return loc.name if loc else ""
 
     def get_departure_at(self, obj):
-        return obj.trip.departure_at.isoformat() if obj.trip and obj.trip.departure_at else None
+        dep_time, _, _ = obj.get_departure_time_and_label()
+        return dep_time.isoformat() if dep_time else (obj.trip.departure_at.isoformat() if obj.trip else None)
+
+    def get_departure_label(self, obj):
+        _, label, _ = obj.get_departure_time_and_label()
+        return label
 
     def get_boarding_at(self, obj):
         boarding = serialized_boarding_at(self, obj.trip) if obj.trip else None

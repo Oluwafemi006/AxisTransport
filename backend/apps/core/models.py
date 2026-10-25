@@ -179,6 +179,11 @@ class RouteStop(TimeStampedModel):
     route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name="stops")
     location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="route_stops")
     position = models.PositiveSmallIntegerField(help_text="Ordre de l'étape sur cet itinéraire (1, 2, ...)")
+    offset_minutes = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Décalage en minutes depuis le départ du terminus pour cette escale (optionnel)",
+    )
 
     class Meta:
         ordering = ["route", "position"]
@@ -515,6 +520,22 @@ class Booking(TimeStampedModel):
     currency = models.CharField(max_length=3, default="XOF")
     # IFU de l'acheteur, facultatif, saisi à la réservation ; imprimé sur le billet s'il est rempli.
     buyer_ifu = models.CharField(max_length=30, blank=True)
+    origin = models.ForeignKey(
+        Location,
+        on_delete=models.PROTECT,
+        related_name="bookings_as_origin",
+        null=True,
+        blank=True,
+        help_text="Arrêt de montée du voyageur (null = départ du trajet complet)",
+    )
+    destination = models.ForeignKey(
+        Location,
+        on_delete=models.PROTECT,
+        related_name="bookings_as_destination",
+        null=True,
+        blank=True,
+        help_text="Arrêt de descente du voyageur (null = terminus du trajet complet)",
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -526,6 +547,22 @@ class Booking(TimeStampedModel):
                 name="unique_agent_sale_key",
             ),
         ]
+
+    @property
+    def boarding_location(self):
+        return self.origin or (self.trip.route.origin if self.trip_id and self.trip.route_id else None)
+
+    @property
+    def alighting_location(self):
+        return self.destination or (self.trip.route.destination if self.trip_id and self.trip.route_id else None)
+
+    @property
+    def segment_label(self):
+        orig = self.boarding_location
+        dest = self.alighting_location
+        if orig and dest:
+            return f"{orig.name} → {dest.name}"
+        return ""
 
     def save(self, *args, **kwargs):
         if not self.reference:
@@ -590,10 +627,64 @@ class Ticket(TimeStampedModel):
     # Vide pour un billet vendu avant l'enregistrement des taxes.
     price_excl_tax = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     tax_lines = models.JSONField(default=list, blank=True)
+    origin = models.ForeignKey(
+        Location,
+        on_delete=models.PROTECT,
+        related_name="tickets_as_origin",
+        null=True,
+        blank=True,
+        help_text="Arrêt de montée du passager (null = départ du trajet complet)",
+    )
+    destination = models.ForeignKey(
+        Location,
+        on_delete=models.PROTECT,
+        related_name="tickets_as_destination",
+        null=True,
+        blank=True,
+        help_text="Arrêt de descente du passager (null = terminus du trajet complet)",
+    )
 
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["trip", "status"])]
+
+    @property
+    def boarding_location(self):
+        return self.origin or (self.trip.route.origin if self.trip_id and self.trip.route_id else None)
+
+    @property
+    def alighting_location(self):
+        return self.destination or (self.trip.route.destination if self.trip_id and self.trip.route_id else None)
+
+    @property
+    def segment_label(self):
+        orig = self.boarding_location
+        dest = self.alighting_location
+        if orig and dest:
+            return f"{orig.name} → {dest.name}"
+        return ""
+
+    def get_departure_time_and_label(self):
+        """
+        Retourne (departure_time_datetime, departure_label_str, is_stop_offset_bool).
+        - Si le passager monte au terminus (ou sans escale spécifique) :
+          affiche l'heure de départ du terminus, libellée f"Départ de {terminus.name}".
+        - Si le passager monte à une escale intermédiaire :
+          * Avec décalage configuré : (trip.departure_at + timedelta(minutes=offset), f"Départ de {escale.name}", True)
+          * Sans décalage configuré : (trip.departure_at, f"Départ de {terminus.name}", False) — ne pas inventer d'heure.
+        """
+        if not self.trip_id or not self.trip.route_id:
+            return None, "", False
+        terminus = self.trip.route.origin
+        boarding = self.boarding_location
+        if not boarding or boarding.pk == terminus.pk:
+            return self.trip.departure_at, f"Départ de {terminus.name}", False
+
+        route_stop = self.trip.route.stops.filter(location=boarding).first()
+        if route_stop and route_stop.offset_minutes is not None:
+            est_time = self.trip.departure_at + timedelta(minutes=route_stop.offset_minutes)
+            return est_time, f"Départ de {boarding.name}", True
+        return self.trip.departure_at, f"Départ de {terminus.name}", False
 
     def save(self, *args, **kwargs):
         if not self.reference:

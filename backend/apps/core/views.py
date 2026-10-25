@@ -964,6 +964,8 @@ class TicketViewSet(viewsets.ModelViewSet):
                 passenger_name=data["passenger_name"],
                 passenger_phone=data.get("passenger_phone", ""),
                 channel=channel,
+                origin=data.get("origin") or None,
+                destination=data.get("destination") or None,
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc, staff=request.user.role in {User.Role.COUNTER, User.Role.ADMIN})
@@ -1117,6 +1119,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                 contact_phone=data.get("contact_phone", ""),
                 contact_email=data.get("contact_email", ""),
                 buyer_ifu=data.get("buyer_ifu", ""),
+                origin=data.get("origin") or None,
+                destination=data.get("destination") or None,
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc, staff=request.user.is_authenticated and request.user.role != User.Role.CLIENT)
@@ -1491,6 +1495,9 @@ class StaffTicketViewSet(viewsets.GenericViewSet):
         if not payment_method:
             raise ValidationError({"payment_method": "Moyen de paiement introuvable ou inactif."})
 
+        origin = request.data.get("origin")
+        destination = request.data.get("destination")
+
         try:
             with transaction.atomic():
                 booking, _ = reserve_booking(
@@ -1503,6 +1510,8 @@ class StaffTicketViewSet(viewsets.GenericViewSet):
                         }
                     ],
                     channel=Ticket.Channel.COUNTER,
+                    origin=origin,
+                    destination=destination,
                 )
                 settlement = settle_booking_payment(
                     booking,
@@ -1627,6 +1636,8 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                     seat = Seat.objects.filter(pk=seat_id, trip=trip).first()
                     if not seat:
                         raise ValidationError({"seat": "Siège introuvable pour ce départ."})
+                    origin = request.data.get("origin")
+                    destination = request.data.get("destination")
                     booking, _ = reserve_booking(
                         trip=trip,
                         passengers=[
@@ -1643,6 +1654,8 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                         # Le contrôleur vend à l'arrêt, y compris après l'heure (départs du jour : _sellable_trips).
                         allow_departed=request.user.role == User.Role.CONTROLLER,
                         buyer_ifu=str(request.data.get("buyer_ifu") or ""),
+                        origin=origin,
+                        destination=destination,
                     )
                 # Espèces : réservation et émission dans la même transaction, donc jamais de billet à moitié créé.
                 if not online and booking.status == Booking.Status.HELD:
