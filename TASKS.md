@@ -5,6 +5,12 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Escales ordonnées, sens de circulation et recherche multi-tronçons | `ag/feature-waypoint-direction-search` | Antigravity | terminée |
+| Planning hebdomadaire par défaut et validation des dates | `ag/fix-planning-and-dates` | Antigravity | fusionnée dans main |
+| Multi-passagers, plan Yutong, retrait TVA et signature mobile | `ag/mobile-alignment` | Antigravity | fusionnée dans main |
+| Frais FedaPay supportés par l'agence (montant net FedaPay) | `ag/fedapay-fees` | Antigravity | fusionnée dans main |
+| Multi-passagers, alignement car Yutong et suppression TVA | `ag/seats-and-vat` | Antigravity | fusionnée dans main |
+| Flux complet d'invitations du personnel (SMTP, backend, frontend) | `ag/admin-invitations` | Antigravity | fusionnée dans main |
 | IFU de l'acheteur et partages de l'app du personnel | `ag/billet-personnel` | Antigravity | corrigée, prête pour relecture Claude Code |
 | Bouton « Vérifier mon paiement », rattrapage automatique en local, vérification patiente | `confirmation-paiement` | Claude Code | fusionnée dans main |
 | Dates passées refusées (site, app et serveur), heure du Bénin | `cc/dates-passees` | Claude Code | fusionnée dans main |

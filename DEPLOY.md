@@ -75,6 +75,13 @@ Points d'attention :
 | `AXIS_CACHE_DIR` | Dossier du cache (compteurs de limite de requêtes). | Dossier accessible en écriture ; par défaut le dossier temporaire du système |
 | `AXIS_NUM_PROXIES` | Nombre de proxys devant l'API, pour lire la vraie adresse IP du client. | `1` derrière un seul proxy |
 | `AXIS_PAYMENT_SIMULATION` | Paiement simulé. Sans effet quand `DJANGO_DEBUG` est faux. | absente |
+| `EMAIL_HOST` | Hôte SMTP pour l'envoi d'e-mails (invitations du personnel). | `smtp.gmail.com` |
+| `EMAIL_PORT` | Port SMTP. | `587` |
+| `EMAIL_USE_TLS` | Activation du chiffrement TLS. | `true` |
+| `EMAIL_HOST_USER` | Compte d'expédition Gmail pour les invitations. | `contact@exemple.test` |
+| `EMAIL_HOST_PASSWORD` | Mot de passe d'application Gmail (16 caractères générés par Google). | Mot de passe d'application |
+| `DEFAULT_FROM_EMAIL` | Adresse de l'expéditeur des e-mails. Par défaut `EMAIL_HOST_USER`. | `contact@exemple.test` |
+| `FRONTEND_URL` | Adresse publique du site web utilisée pour les liens d'activation. Par défaut `PUBLIC_WEB_URL`. | `https://axis.exemple.test` |
 | `USE_SQLITE` | Base SQLite pour les tests. | absente |
 
 URL du webhook à déclarer chez FedaPay : `https://api.exemple.test/api/v1/client/webhooks/fedapay/`.

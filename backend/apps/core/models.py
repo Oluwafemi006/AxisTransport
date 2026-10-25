@@ -1,5 +1,6 @@
-import uuid
+from datetime import timedelta
 from decimal import Decimal
+import uuid
 
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
@@ -57,6 +58,139 @@ class Route(TimeStampedModel):
 
     def __str__(self):
         return f"{self.origin} → {self.destination}"
+
+    @property
+    def label(self):
+        return str(self)
+
+    def get_stops_sequence(self):
+        """
+        Retourne la liste ordonnée des Location desservies sur cet itinéraire.
+        1. Utilise les RouteStop explicites si configurés pour cette route.
+        2. Sinon repli intelligent sur LineStop pour déterminer l'ordre croissant ou décroissant.
+        3. Sinon repli sur [origin, destination].
+        """
+        route_stops = list(self.stops.select_related("location").order_by("position"))
+        if route_stops:
+            return [rs.location for rs in route_stops]
+
+        from apps.core.models import LineStop
+
+        try:
+            origin_stop = LineStop.objects.filter(location=self.origin).first()
+            dest_stop = LineStop.objects.filter(location=self.destination).first()
+            if origin_stop and dest_stop:
+                if origin_stop.position < dest_stop.position:
+                    stops = LineStop.objects.filter(
+                        position__gte=origin_stop.position,
+                        position__lte=dest_stop.position,
+                    ).select_related("location").order_by("position")
+                else:
+                    stops = LineStop.objects.filter(
+                        position__gte=dest_stop.position,
+                        position__lte=origin_stop.position,
+                    ).select_related("location").order_by("-position")
+                return [s.location for s in stops]
+        except Exception:
+            pass
+
+        return [self.origin, self.destination]
+
+    def has_waypoint_direction(self, origin, destination):
+        """
+        Vérifie si les deux villes existent sur l'itinéraire et si l'index de départ
+        est strictement inférieur à l'index d'arrivée dans le sens de circulation de ce bus.
+        Accepte une instance de Location, un ID entier, ou un nom de ville (str).
+        """
+        def _resolve(val):
+            if isinstance(val, Location):
+                return val
+            if not val:
+                return None
+            val_str = str(val).strip()
+            if val_str.isdigit():
+                loc = Location.objects.filter(pk=int(val_str)).first()
+                if loc:
+                    return loc
+            return Location.objects.filter(name__iexact=val_str).first()
+
+        origin_loc = _resolve(origin)
+        dest_loc = _resolve(destination)
+        if not origin_loc or not dest_loc or origin_loc.pk == dest_loc.pk:
+            return False
+
+        seq = self.get_stops_sequence()
+        seq_ids = [loc.pk for loc in seq]
+
+        if origin_loc.pk not in seq_ids or dest_loc.pk not in seq_ids:
+            return False
+
+        return seq_ids.index(origin_loc.pk) < seq_ids.index(dest_loc.pk)
+
+    def can_board_at(self, origin):
+        """Vérifie si l'on peut monter à cet arrêt (présent et pas au terminus d'arrivée)."""
+        def _resolve(val):
+            if isinstance(val, Location):
+                return val
+            val_str = str(val).strip()
+            if val_str.isdigit():
+                loc = Location.objects.filter(pk=int(val_str)).first()
+                if loc:
+                    return loc
+            return Location.objects.filter(name__iexact=val_str).first()
+
+        loc = _resolve(origin)
+        if not loc:
+            return False
+        seq = self.get_stops_sequence()
+        seq_ids = [s.pk for s in seq]
+        if loc.pk not in seq_ids:
+            return False
+        return seq_ids.index(loc.pk) < len(seq_ids) - 1
+
+    def can_alight_at(self, destination):
+        """Vérifie si l'on peut descendre à cet arrêt (présent et pas au premier arrêt de départ)."""
+        def _resolve(val):
+            if isinstance(val, Location):
+                return val
+            val_str = str(val).strip()
+            if val_str.isdigit():
+                loc = Location.objects.filter(pk=int(val_str)).first()
+                if loc:
+                    return loc
+            return Location.objects.filter(name__iexact=val_str).first()
+
+        loc = _resolve(destination)
+        if not loc:
+            return False
+        seq = self.get_stops_sequence()
+        seq_ids = [s.pk for s in seq]
+        if loc.pk not in seq_ids:
+            return False
+        return seq_ids.index(loc.pk) > 0
+
+
+class RouteStop(TimeStampedModel):
+    """
+    Étape ordonnée d'un itinéraire (Route).
+    Définit la séquence des villes desservies par le bus sur cet itinéraire (position 1, 2, ...).
+    """
+
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name="stops")
+    location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="route_stops")
+    position = models.PositiveSmallIntegerField(help_text="Ordre de l'étape sur cet itinéraire (1, 2, ...)")
+
+    class Meta:
+        ordering = ["route", "position"]
+        verbose_name = "Étape d'itinéraire"
+        verbose_name_plural = "Étapes d'itinéraire"
+        constraints = [
+            models.UniqueConstraint(fields=["route", "position"], name="unique_route_stop_position"),
+            models.UniqueConstraint(fields=["route", "location"], name="unique_route_stop_location"),
+        ]
+
+    def __str__(self):
+        return f"{self.route} : #{self.position} {self.location.name}"
 
 
 class Vehicle(TimeStampedModel):
@@ -145,6 +279,12 @@ class Trip(TimeStampedModel):
     class Meta:
         ordering = ["departure_at"]
         indexes = [models.Index(fields=["status", "departure_at"])]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(arrival_at__isnull=True) | models.Q(arrival_at__gt=models.F("departure_at")),
+                name="trip_arrival_after_departure",
+            ),
+        ]
 
     def clean(self):
         super().clean()
@@ -158,8 +298,42 @@ class Trip(TimeStampedModel):
             if departure_date != arrival_date:
                 raise ValidationError({"arrival_at": "Axis n'opère que des trajets de jour, sans trajet de nuit."})
 
+    def has_waypoint_direction(self, origin, destination):
+        """Vérifie si ce trajet dessert origin puis destination dans le bon sens de circulation."""
+        return self.route.has_waypoint_direction(origin, destination)
+
     def __str__(self):
         return f"{self.route} — {timezone.localtime(self.departure_at):%d/%m/%Y %H:%M}"
+
+
+class WeeklySchedule(TimeStampedModel):
+    class DayOfWeek(models.IntegerChoices):
+        MONDAY = 0, "Lundi"
+        TUESDAY = 1, "Mardi"
+        WEDNESDAY = 2, "Mercredi"
+        THURSDAY = 3, "Jeudi"
+        FRIDAY = 4, "Vendredi"
+        SATURDAY = 5, "Samedi"
+        SUNDAY = 6, "Dimanche"
+
+    day_of_week = models.IntegerField(choices=DayOfWeek.choices, db_index=True)
+    departure_time = models.TimeField(null=True, blank=True)
+    route = models.ForeignKey(Route, on_delete=models.SET_NULL, null=True, blank=True, related_name="weekly_schedules")
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.SET_NULL, null=True, blank=True, related_name="weekly_schedules")
+    is_active = models.BooleanField(default=True, help_text="Actif si un trajet est opéré ce jour, inactif si repos.")
+    notes = models.CharField(max_length=255, blank=True, help_text="Remarques (ex: Repos/Visite technique)")
+
+    class Meta:
+        ordering = ["day_of_week", "departure_time"]
+        verbose_name = "Planning hebdomadaire"
+        verbose_name_plural = "Plannings hebdomadaires"
+
+    def __str__(self):
+        day_label = self.get_day_of_week_display()
+        if not self.is_active or not self.route:
+            return f"{day_label} : Aucun trajet ({self.notes or 'Repos'})"
+        time_str = f"{self.departure_time:%H:%M}" if self.departure_time else "Heure à renseigner"
+        return f"{day_label} : {time_str} ({self.route})"
 
 
 class FareRule(TimeStampedModel):
@@ -831,3 +1005,84 @@ class AgencySettingChange(models.Model):
 
     def __str__(self):
         return f"{self.changed_at:%Y-%m-%d %H:%M} {self.label}"
+
+
+def default_invitation_expiry():
+    return timezone.now() + timedelta(days=2)
+
+
+class StaffInvitation(TimeStampedModel):
+    """
+    Invitation par e-mail pour rejoindre le personnel d'AXIS (Guichetier, Contrôleur, Superviseur).
+    Expire à J+2 et ne peut être utilisée qu'une seule fois.
+    """
+
+    email = models.EmailField(verbose_name="Adresse e-mail")
+    group = models.ForeignKey(
+        "auth.Group",
+        on_delete=models.PROTECT,
+        related_name="staff_invitations",
+        verbose_name="Groupe de rôles",
+    )
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    expires_at = models.DateTimeField(default=default_invitation_expiry, verbose_name="Date d'expiration")
+    is_used = models.BooleanField(default=False, verbose_name="Utilisée")
+    invited_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sent_staff_invitations",
+        verbose_name="Invité par",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Invitation du personnel"
+        verbose_name_plural = "Invitations du personnel"
+
+    def __str__(self):
+        return f"Invitation pour {self.email} ({self.group.name})"
+
+    @property
+    def is_valid(self):
+        return not self.is_used and self.expires_at > timezone.now()
+
+    def send_invitation_email(self):
+        """Envoie l'e-mail d'invitation avec le lien d'activation et les liens mobile."""
+        from django.conf import settings
+        from django.core.mail import send_mail
+
+        base_url = (
+            getattr(settings, "FRONTEND_URL", "")
+            or getattr(settings, "PUBLIC_WEB_URL", "")
+            or "https://axistransportlogistique.com"
+        ).rstrip("/")
+        activation_url = f"{base_url}/activation?token={self.token}"
+
+        role_name = self.group.name
+        subject = f"Invitation à rejoindre l'équipe AXIS Transport ({role_name})"
+        body = (
+            f"Bonjour,\n\n"
+            f"Vous avez été invité(e) à rejoindre l'équipe AXIS Transport en tant que {role_name}.\n\n"
+            f"Pour activer votre compte et définir votre mot de passe, cliquez sur le lien ci-dessous :\n"
+            f"{activation_url}\n\n"
+            f"Ce lien est valable pendant 48 heures (jusqu'au {self.expires_at.strftime('%d/%m/%Y à %H:%M')}).\n\n"
+            f"--- Application mobile AXIS Transport ---\n"
+            f"Pour les opérations de terrain (guichet, contrôle), téléchargez également l'application mobile officielle sur le Google Play Store :\n"
+            f"Google Play Store : https://play.google.com/store/apps/details?id=com.axistransport.axis_transport_flutter\n\n"
+            f"Cordialement,\n"
+            f"L'équipe AXIS Transport\n"
+        )
+        from_email = (
+            getattr(settings, "DEFAULT_FROM_EMAIL", None)
+            or getattr(settings, "EMAIL_HOST_USER", None)
+            or "contact@axistransportlogistique.com"
+        )
+        send_mail(
+            subject=subject,
+            message=body,
+            from_email=from_email,
+            recipient_list=[self.email],
+            fail_silently=False,
+        )

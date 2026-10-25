@@ -25,7 +25,7 @@ export function holdMinutesConfigured(settings: Array<{ key: string; value: unkn
   return Number.isInteger(minutes) && minutes > 0;
 }
 
-// Libellé d'un départ dans la vente au guichet : parcours, date et heure, prix TTC (ou son absence).
+// Libellé d'un départ dans la vente au guichet : parcours, date et heure, prix (ou son absence).
 export function counterTripLabel(routeLabel: string, departure: string, price: string | null): string {
   return `${routeLabel} · ${departure} · ${price ?? "sans prix (non vendable)"}`;
 }
@@ -99,3 +99,86 @@ export function upcomingSellableTrips<T extends SellableTrip>(trips: T[], now: D
     .filter((trip) => trip.route_detail.active && ["SCHEDULED", "BOARDING"].includes(trip.status) && Date.parse(trip.departure_at) > now.getTime())
     .sort((a, b) => Date.parse(a.departure_at) - Date.parse(b.departure_at));
 }
+
+// ─── Activation du compte du personnel ───────────────────────────────────────
+// Validation du mot de passe choisi par l'invité.
+export function activationPasswordError(password: string, confirm: string): string | null {
+  if (!password) return "Saisissez un mot de passe.";
+  if (password.length < 8) return "Le mot de passe doit comporter au moins 8 caractères.";
+  if (password !== confirm) return "Les deux mots de passe ne correspondent pas.";
+  return null;
+}
+
+// Redirection vers le portail adapté selon le rôle assigné.
+export function staffPortalLoginUrl(role?: string | null): string {
+  if (role === "COUNTER") return "/guichet";
+  if (role === "CONTROLLER") return "/controleur";
+  if (role === "ADMIN") return "/admin";
+  return "/";
+}
+
+// ─── Disposition car Yutong (2 sièges - allée centrale - 2 sièges) ──────────
+export interface SeatLayoutItem {
+  id: number;
+  number: string;
+  row?: number | null;
+  column?: number | null;
+  status: string;
+  status_display?: string;
+}
+
+export interface BusRow<T extends SeatLayoutItem> {
+  rowNumber: number;
+  left: T[];
+  right: T[];
+  aisleExtra?: T;
+}
+
+export function groupSeatsYutong<T extends SeatLayoutItem>(seats: T[]): BusRow<T>[] {
+  const ordered = [...seats].sort((a, b) => {
+    const rowA = a.row ?? 9999;
+    const rowB = b.row ?? 9999;
+    if (rowA !== rowB) return rowA - rowB;
+    const colA = a.column ?? 9999;
+    const colB = b.column ?? 9999;
+    if (colA !== colB) return colA - colB;
+    return a.number.localeCompare(b.number, undefined, { numeric: true });
+  });
+
+  if (ordered.some((s) => s.row !== null && s.row !== undefined)) {
+    const map = new Map<number, T[]>();
+    for (const seat of ordered) {
+      const r = seat.row ?? 9999;
+      if (!map.has(r)) map.set(r, []);
+      map.get(r)!.push(seat);
+    }
+    return Array.from(map.entries()).map(([rowNumber, rowSeats]) => {
+      if (rowSeats.length === 5) {
+        return {
+          rowNumber,
+          left: rowSeats.slice(0, 2),
+          aisleExtra: rowSeats[2],
+          right: rowSeats.slice(3, 5),
+        };
+      }
+      return {
+        rowNumber,
+        left: rowSeats.slice(0, 2),
+        right: rowSeats.slice(2, 4),
+      };
+    });
+  }
+
+  const rows: BusRow<T>[] = [];
+  for (let i = 0; i < ordered.length; i += 4) {
+    const slice = ordered.slice(i, i + 4);
+    rows.push({
+      rowNumber: Math.floor(i / 4) + 1,
+      left: slice.slice(0, 2),
+      right: slice.slice(2, 4),
+    });
+  }
+  return rows;
+}
+
+

@@ -176,9 +176,10 @@ void main() {
       expect(labels, isNot(contains('Statut')));
     });
 
-    test('IFU de l\'agence renseigné : HT, TVA et TTC imprimés tels que donnés par le serveur', () async {
+    test('IFU de l\'agence renseigné : TVA/HT/TTC ne sont plus affichés, seul le montant net apparaît', () async {
       final ticket = Ticket.fromJson({
         ..._ticket().toJson(),
+        'amount': 7500,
         'status': 'ISSUED',
         'qr_token': 'qr-test',
         'print_info': {
@@ -206,12 +207,10 @@ void main() {
       final fields = Map.fromEntries(
         ticketFields(ticket).map((item) => MapEntry(item.$1, item.$2)),
       );
-      expect(fields['Prix HT']!.replaceAll(RegExp(r'\s'), ''), '6356FCFA');
-      expect(
-        fields['TVA 18 % (incluse)']!.replaceAll(RegExp(r'\s'), ''),
-        '1144FCFA',
-      );
-      expect(fields['Prix TTC']!.replaceAll(RegExp(r'\s'), ''), '7500FCFA');
+      expect(fields.containsKey('Prix HT'), isFalse);
+      expect(fields.containsKey('Prix TTC'), isFalse);
+      expect(fields.keys.any((k) => k.contains('TVA')), isFalse);
+      expect(fields['Prix du billet']!.replaceAll(RegExp(r'\s'), ''), '7500FCFA');
       // Toutes les lignes tiennent sur la page du PDF.
       final bytes = await buildTicketPdf(ticket);
       expect(ascii.decode(bytes.sublist(0, 5)), '%PDF-');

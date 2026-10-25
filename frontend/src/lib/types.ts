@@ -18,6 +18,13 @@ export interface Location {
   active: boolean;
 }
 
+export interface RouteStop {
+  id: number;
+  position: number;
+  location_id: number;
+  name: string;
+}
+
 export interface Route {
   id: number;
   origin: number;
@@ -25,6 +32,7 @@ export interface Route {
   origin_detail: Location;
   destination_detail: Location;
   label: string;
+  stops?: RouteStop[];
   active: boolean;
 }
 
@@ -67,6 +75,20 @@ export interface Trip {
   note: string;
   available_seats: number;
   current_fare: Fare | null;
+}
+
+export interface WeeklySchedule {
+  id: number;
+  day_of_week: number;
+  day_of_week_display: string;
+  route: number | null;
+  route_detail: Route | null;
+  vehicle: number | null;
+  vehicle_detail: Vehicle | null;
+  departure_time: string | null;
+  departure_time_display: string | null;
+  is_active: boolean;
+  notes: string;
 }
 
 export interface Seat {

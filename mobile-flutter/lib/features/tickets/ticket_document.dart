@@ -41,7 +41,7 @@ List<(String, String)> ticketFields(Ticket ticket) {
       ('Arrivée prévue', formatFullDateTime(ticket.trip.arrivalAt!)),
     ('Siège', _orMissing(ticket.seat.number)),
     ('Passager', _orMissing(ticket.passengerName)),
-    // Prix du billet TTC : c'est le montant payé, rien ne s'y ajoute.
+    // Prix net du billet : seul le montant net est affiché, aucune mention de TVA/HT/TTC.
     ('Prix du billet', formatMoney(ticket.amount, ticket.currency)),
     if (paid) ('Statut', 'Payé'),
     if (info != null && info.sale.isNotEmpty) ('Vente', info.sale),
@@ -49,16 +49,6 @@ List<(String, String)> ticketFields(Ticket ticket) {
       ('Mode de paiement', info.paymentMode),
     if (info != null && info.buyerIfu.trim().isNotEmpty)
       ('IFU de l\'acheteur', info.buyerIfu.trim()),
-    // HT / taxes / TTC : seulement si l'IFU de l'agence est renseigné (le serveur ne l'envoie que dans ce cas).
-    if (info != null && info.priceExclTax != null) ...[
-      ('Prix HT', formatMoney(info.priceExclTax!, ticket.currency)),
-      for (final line in info.taxLines)
-        (
-          '${line.name} ${line.rate} % (incluse)',
-          formatMoney(line.amount, ticket.currency),
-        ),
-      ('Prix TTC', formatMoney(info.priceInclTax, ticket.currency)),
-    ],
   ];
 }
 

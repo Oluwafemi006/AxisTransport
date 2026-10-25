@@ -13,9 +13,11 @@ from .models import (
     PaymentIncident,
     PaymentReceipt,
     SegmentFareChange,
+    StaffInvitation,
     Passenger,
     RentalBooking,
     Route,
+    RouteStop,
     Seat,
     SystemSetting,
     Ticket,
@@ -25,6 +27,7 @@ from .models import (
     Trip,
     User,
     Vehicle,
+    WeeklySchedule,
 )
 
 
@@ -41,6 +44,12 @@ class TripAdmin(admin.ModelAdmin):
     list_display = ("route", "departure_at", "vehicle", "status")
     list_filter = ("status", "route", "vehicle")
     date_hierarchy = "departure_at"
+
+
+@admin.register(WeeklySchedule)
+class WeeklyScheduleAdmin(admin.ModelAdmin):
+    list_display = ("day_of_week", "route", "departure_time", "vehicle", "is_active")
+    list_filter = ("is_active", "day_of_week", "route")
 
 
 @admin.register(Ticket)
@@ -112,10 +121,55 @@ class PaymentIncidentAdmin(admin.ModelAdmin):
     readonly_fields = ("source", "provider", "event", "external_id", "amount", "currency", "amount_verified", "booking", "reason")
 
 
+@admin.register(StaffInvitation)
+class StaffInvitationAdmin(admin.ModelAdmin):
+    list_display = ("email", "group", "expires_at", "is_used", "created_at", "invited_by")
+    list_filter = ("group", "is_used")
+    search_fields = ("email", "token")
+    readonly_fields = ("token", "is_used", "created_at", "invited_by")
+    actions = ["resend_invitation_email"]
+
+    def save_model(self, request, obj, form, change):
+        if not change and not obj.invited_by and request.user.is_authenticated:
+            obj.invited_by = request.user
+        super().save_model(request, obj, form, change)
+        if not change:
+            # Envoi réel de l'e-mail lors de la création
+            obj.send_invitation_email()
+
+    @admin.action(description="Renvoyer l'e-mail d'invitation")
+    def resend_invitation_email(self, request, queryset):
+        sent = 0
+        for invite in queryset:
+            if not invite.is_used:
+                invite.send_invitation_email()
+                sent += 1
+        self.message_user(request, f"{sent} invitation(s) renvoyée(s) avec succès.")
+
+
+class RouteStopInline(admin.TabularInline):
+    model = RouteStop
+    extra = 1
+    ordering = ["position"]
+
+
+@admin.register(Route)
+class RouteAdmin(admin.ModelAdmin):
+    list_display = ("origin", "destination", "active", "created_at")
+    list_filter = ("active",)
+    inlines = [RouteStopInline]
+
+
+@admin.register(RouteStop)
+class RouteStopAdmin(admin.ModelAdmin):
+    list_display = ("route", "position", "location")
+    list_filter = ("route",)
+    ordering = ("route", "position")
+
+
 admin.site.register(
     [
         Location,
-        Route,
         Seat,
         FareRule,
         FeatureFlag,

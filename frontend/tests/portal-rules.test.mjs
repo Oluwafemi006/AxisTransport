@@ -125,3 +125,59 @@ test("guichet : seuls les départs à venir et vendables, du plus proche au plus
   ];
   assert.deepEqual(upcomingSellableTrips(trips, now).map((item) => item.id), [6, 3, 1]);
 });
+
+test("activation mot de passe : obligatoire, 8 caractères min, confirmation identique", async () => {
+  const { activationPasswordError } = await import(pathToFileURL(compiled).href);
+  assert.equal(activationPasswordError("", ""), "Saisissez un mot de passe.");
+  assert.equal(activationPasswordError("court", "court"), "Le mot de passe doit comporter au moins 8 caractères.");
+  assert.equal(activationPasswordError("motdepasse123", "motdepasse456"), "Les deux mots de passe ne correspondent pas.");
+  assert.equal(activationPasswordError("motdepasse123", "motdepasse123"), null);
+});
+
+test("redirection portail personnel : adapté selon le rôle assigné", async () => {
+  const { staffPortalLoginUrl } = await import(pathToFileURL(compiled).href);
+  assert.equal(staffPortalLoginUrl("COUNTER"), "/guichet");
+  assert.equal(staffPortalLoginUrl("CONTROLLER"), "/controleur");
+  assert.equal(staffPortalLoginUrl("ADMIN"), "/admin");
+  assert.equal(staffPortalLoginUrl(null), "/");
+  assert.equal(staffPortalLoginUrl("CLIENT"), "/");
+});
+
+test("alignement car Yutong : 2 sièges à gauche, couloir central, 2 sièges à droite", async () => {
+  const { groupSeatsYutong } = await import(pathToFileURL(compiled).href);
+  const seats = [
+    { id: 1, number: "1", status: "AVAILABLE" },
+    { id: 2, number: "2", status: "AVAILABLE" },
+    { id: 3, number: "3", status: "AVAILABLE" },
+    { id: 4, number: "4", status: "AVAILABLE" },
+    { id: 5, number: "5", status: "AVAILABLE" },
+    { id: 6, number: "6", status: "AVAILABLE" },
+    { id: 7, number: "7", status: "AVAILABLE" },
+    { id: 8, number: "8", status: "AVAILABLE" },
+  ];
+  const rows = groupSeatsYutong(seats);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[0].left.map((s) => s.number), ["1", "2"]);
+  assert.deepEqual(rows[0].right.map((s) => s.number), ["3", "4"]);
+  assert.deepEqual(rows[1].left.map((s) => s.number), ["5", "6"]);
+  assert.deepEqual(rows[1].right.map((s) => s.number), ["7", "8"]);
+});
+
+test("alignement car Yutong : tri naturel des numéros sans décalage 10 après 1", async () => {
+  const { groupSeatsYutong } = await import(pathToFileURL(compiled).href);
+  const seats = [
+    { id: 10, number: "10", status: "AVAILABLE" },
+    { id: 2, number: "2", status: "AVAILABLE" },
+    { id: 1, number: "1", status: "AVAILABLE" },
+    { id: 3, number: "3", status: "AVAILABLE" },
+    { id: 4, number: "4", status: "AVAILABLE" },
+  ];
+  const rows = groupSeatsYutong(seats);
+  assert.equal(rows[0].left[0].number, "1");
+  assert.equal(rows[0].left[1].number, "2");
+  assert.equal(rows[0].right[0].number, "3");
+  assert.equal(rows[0].right[1].number, "4");
+  assert.equal(rows[1].left[0].number, "10");
+});
+
+

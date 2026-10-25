@@ -191,3 +191,14 @@ LOGGING = {
     "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "axis"}},
     "loggers": {"axis.payments": {"handlers": ["console"], "level": "INFO", "propagate": False}},
 }
+
+# --- Messagerie SMTP (Gmail) ---
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() == "true"
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "contact@axistransportlogistique.com")
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL", PUBLIC_WEB_URL).rstrip("/")

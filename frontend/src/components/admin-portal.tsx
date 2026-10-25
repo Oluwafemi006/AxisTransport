@@ -5,7 +5,7 @@ import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHea
 import { LoginCard } from "./login-card";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import { actionErrorText, counterTripLabel, holdMinutesConfigured, upcomingSellableTrips } from "@/lib/portal-rules";
-import type { AgencyProfile, AgencySettingChange, FareRule, FeatureFlag, Location, ManualTicketChange, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle } from "@/lib/types";
+import type { AgencyProfile, AgencySettingChange, FareRule, FeatureFlag, Location, ManualTicketChange, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
 type AdminTab = "dashboard" | "planning" | "guichet" | "colis" | "flotte" | "tarifs" | "troncons" | "agence" | "paiements" | "equipe";
 type Dashboard = {
@@ -45,6 +45,7 @@ export function AdminPortal() {
   const [payments, setPayments] = useState<PaymentMethod[]>([]);
   const [settings, setSettings] = useState<SystemSetting[]>([]);
   const [incidents, setIncidents] = useState<PaymentIncident[]>([]);
+  const [weeklySchedules, setWeeklySchedules] = useState<WeeklySchedule[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -55,14 +56,15 @@ export function AdminPortal() {
     try {
       const currentUser = await apiFetch<User>("/auth/me/");
       if (currentUser.role !== "ADMIN") { setMe(currentUser); setAccessDenied(true); return; }
-      const [dash, allLocations, allRoutes, allTrips, allVehicles, allFares, allFlags, team, allParcels, methods, allSettings, allIncidents] = await Promise.all([
+      const [dash, allLocations, allRoutes, allTrips, allVehicles, allFares, allFlags, team, allParcels, methods, allSettings, allIncidents, allWeekly] = await Promise.all([
         apiFetch<Dashboard>("/dashboard/"), apiList<Location>("/locations/?all=true"), apiList<Route>("/routes/?all=true"),
         apiList<Trip>("/trips/?all=true"), apiList<Vehicle>("/vehicles/"), apiList<FareRule>("/fare-rules/?all=true"),
         apiList<FeatureFlag>("/feature-flags/"), apiList<User>("/users/"), apiList<Parcel>("/parcels/"), apiList<PaymentMethod>("/payment-methods/?all=true"), apiList<SystemSetting>("/settings/"),
-        apiList<PaymentIncident>("/payment-incidents/"),
+        apiList<PaymentIncident>("/payment-incidents/"), apiList<WeeklySchedule>("/weekly-schedules/"),
       ]);
       setMe(currentUser); setDashboard(dash); setLocations(allLocations); setRoutes(allRoutes); setTrips(allTrips); setVehicles(allVehicles);
       setFares(allFares); setFlags(allFlags); setUsers(team); setParcels(allParcels); setPayments(methods); setSettings(allSettings); setIncidents(allIncidents);
+      setWeeklySchedules(allWeekly);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Chargement impossible."); if ((reason as { status?: number }).status === 401) { clearTokens(); setMe(null); } }
     finally { setLoading(false); }
   }, []);
@@ -91,7 +93,7 @@ export function AdminPortal() {
       {!dashboard ? <Loading /> : (
         <>
           {tab === "dashboard" && <DashboardPanel data={dashboard} trips={trips} />}
-          {tab === "planning" && <PlanningPanel routes={routes} vehicles={vehicles.filter((v) => v.category === "BUS")} trips={trips} onChanged={load} />}
+          {tab === "planning" && <PlanningPanel routes={routes} vehicles={vehicles.filter((v) => v.category === "BUS")} trips={trips} weeklySchedules={weeklySchedules} onChanged={load} />}
           {tab === "guichet" && <CounterPanel trips={trips} payments={payments} onChanged={load} />}
           {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
           {tab === "flotte" && <FleetPanel locations={locations} vehicles={vehicles} onChanged={load} />}
@@ -159,24 +161,172 @@ function Metric({ label, value }: { label: string; value: number }) {
   return <div className="metric"><span>{label}</span><b>{value}</b></div>;
 }
 
-function PlanningPanel({ routes, vehicles, trips, onChanged }: { routes: Route[]; vehicles: Vehicle[]; trips: Trip[]; onChanged: () => Promise<void> }) {
+function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: { routes: Route[]; vehicles: Vehicle[]; trips: Trip[]; weeklySchedules: WeeklySchedule[]; onChanged: () => Promise<void> }) {
   const feedback = useActionFeedback();
-  const [form, setForm] = useState({ route: "", vehicle: "", departure_at: "", arrival_at: "", status: "SCHEDULED", note: "" });
+  const [busy, setBusy] = useState(false);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    try {
-      await apiFetch<Trip>("/trips/", { method: "POST", body: JSON.stringify({ ...form, route: Number(form.route), vehicle: Number(form.vehicle), arrival_at: form.arrival_at || null }) });
-      feedback.success("Trajet ajouté au planning.");
-      await onChanged();
-    } catch (reason) { feedback.failure(reason, "Le trajet n’a pas été ajouté."); }
+  // Édition d'un jour du planning hebdomadaire par défaut
+  const [editingSchedule, setEditingSchedule] = useState<WeeklySchedule | null>(null);
+  const [scheduleForm, setScheduleForm] = useState({ is_active: true, route: "", vehicle: "", departure_time: "08:00", notes: "" });
+
+  function openEditSchedule(sched: WeeklySchedule) {
+    setEditingSchedule(sched);
+    setScheduleForm({
+      is_active: sched.is_active,
+      route: sched.route ? String(sched.route) : "",
+      vehicle: sched.vehicle ? String(sched.vehicle) : "",
+      departure_time: sched.departure_time ? sched.departure_time.slice(0, 5) : "08:00",
+      notes: sched.notes || "",
+    });
   }
 
-  // Planning quotidien : un départ par jour à heure fixe, sens alterné (Parakou → Cotonou, puis l'inverse…).
+  async function saveSchedule(event: FormEvent) {
+    event.preventDefault();
+    if (!editingSchedule) return;
+    setBusy(true);
+    try {
+      await apiFetch<WeeklySchedule>(`/weekly-schedules/${editingSchedule.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          is_active: scheduleForm.is_active,
+          route: scheduleForm.is_active && scheduleForm.route ? Number(scheduleForm.route) : null,
+          vehicle: scheduleForm.is_active && scheduleForm.vehicle ? Number(scheduleForm.vehicle) : null,
+          departure_time: scheduleForm.is_active ? scheduleForm.departure_time : null,
+          notes: scheduleForm.notes,
+        }),
+      });
+      feedback.success(`Planning du ${editingSchedule.day_of_week_display} mis à jour.`);
+      setEditingSchedule(null);
+      await onChanged();
+    } catch (reason) {
+      feedback.failure(reason, "La modification du planning hebdomadaire a échoué.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function generateFromWeekly() {
+    setBusy(true);
+    try {
+      const result = await apiFetch<{ created: number; trips: Trip[] }>("/weekly-schedules/generate-trips/", {
+        method: "POST",
+        body: JSON.stringify({ weeks: 4 }),
+      });
+      if (result.created === 0) {
+        feedback.info("Tous les trajets des 4 prochaines semaines existent déjà dans le planning réel.");
+      } else {
+        feedback.success(`${result.created} trajet(s) réel(s) généré(s) pour les 4 prochaines semaines.`);
+      }
+      await onChanged();
+    } catch (reason) {
+      feedback.failure(reason, "La génération des trajets a échoué.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Formulaire d'ajout / modification exceptionnelle d'un trajet réel
+  const [editingTripId, setEditingTripId] = useState<number | null>(null);
+  const emptyTripForm = {
+    route: "",
+    vehicle: "",
+    departure_date: "",
+    departure_time: "",
+    arrival_time: "",
+    status: "SCHEDULED",
+    note: "",
+  };
+  const [tripForm, setTripForm] = useState(emptyTripForm);
+
+  function resetTripForm() {
+    setEditingTripId(null);
+    setTripForm(emptyTripForm);
+  }
+
+  function startEditTrip(trip: Trip) {
+    setEditingTripId(trip.id);
+    const depDate = trip.departure_at.slice(0, 10);
+    const depTime = trip.departure_at.slice(11, 16);
+    const arrTime = trip.arrival_at ? trip.arrival_at.slice(11, 16) : "";
+    setTripForm({
+      route: String(trip.route),
+      vehicle: String(trip.vehicle),
+      departure_date: depDate,
+      departure_time: depTime,
+      arrival_time: arrTime,
+      status: trip.status,
+      note: trip.note || "",
+    });
+  }
+
+  function cancelEditTrip() {
+    resetTripForm();
+  }
+
+  async function submitTrip(event: FormEvent) {
+    event.preventDefault();
+    if (!tripForm.departure_date || !tripForm.departure_time) {
+      feedback.failure(null, "La date et l'heure de départ sont obligatoires.");
+      return;
+    }
+
+    // Validation stricte : arrivée même jour et strictement postérieure au départ
+    if (tripForm.arrival_time && tripForm.arrival_time <= tripForm.departure_time) {
+      feedback.failure(
+        null,
+        `L’heure d’arrivée (${tripForm.arrival_time}) doit être strictement postérieure à l’heure de départ (${tripForm.departure_time}) sur la même journée.`
+      );
+      return;
+    }
+
+    const departure_at = `${tripForm.departure_date}T${tripForm.departure_time}:00`;
+    const arrival_at = tripForm.arrival_time ? `${tripForm.departure_date}T${tripForm.arrival_time}:00` : null;
+
+    setBusy(true);
+    try {
+      if (editingTripId) {
+        await apiFetch<Trip>(`/trips/${editingTripId}/`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            route: Number(tripForm.route),
+            vehicle: Number(tripForm.vehicle),
+            departure_at,
+            arrival_at,
+            status: tripForm.status,
+            note: tripForm.note,
+          }),
+        });
+        resetTripForm();
+        feedback.success("Trajet mis à jour avec succès.");
+      } else {
+        await apiFetch<Trip>("/trips/", {
+          method: "POST",
+          body: JSON.stringify({
+            route: Number(tripForm.route),
+            vehicle: Number(tripForm.vehicle),
+            departure_at,
+            arrival_at,
+            status: "SCHEDULED",
+            note: tripForm.note,
+          }),
+        });
+        resetTripForm();
+        feedback.success("Trajet ajouté au planning.");
+      }
+      await onChanged();
+    } catch (reason) {
+      feedback.failure(reason, editingTripId ? "La mise à jour du trajet a échoué." : "Le trajet n’a pas été ajouté.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Planning quotidien sens alterné (outil d'assistance existant)
   const [plan, setPlan] = useState({ route: "", vehicle: "", start_date: "", days: "", departure_time: "09:00" });
 
-  async function generate(event: FormEvent) {
+  async function generateAlternating(event: FormEvent) {
     event.preventDefault();
+    setBusy(true);
     try {
       const result = await apiFetch<{ created: number; skipped: Array<{ date: string; reason: string }> }>("/trips/generate/", {
         method: "POST",
@@ -186,67 +336,349 @@ function PlanningPanel({ routes, vehicles, trips, onChanged }: { routes: Route[]
       if (result.created === 0) feedback.info(`Aucun départ créé.${skipped}`);
       else feedback.success(`${result.created} départ(s) créé(s) à ${plan.departure_time}, sens alterné.${skipped}`);
       await onChanged();
-    } catch (reason) { feedback.failure(reason, "Le planning n’a pas été créé."); }
+    } catch (reason) {
+      feedback.failure(reason, "Le planning n’a pas été créé.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function cancel(trip: Trip) {
+    if (!window.confirm(`Confirmez-vous l'annulation du départ du ${formatDate(trip.departure_at)} ?`)) return;
     try {
       await apiFetch(`/trips/${trip.id}/`, { method: "PATCH", body: JSON.stringify({ status: "CANCELLED" }) });
       feedback.success(`Trajet du ${formatDate(trip.departure_at)} annulé.`);
       await onChanged();
-    } catch (reason) { feedback.failure(reason, "Le trajet n’a pas été annulé."); }
+    } catch (reason) {
+      feedback.failure(reason, "Le trajet n’a pas été annulé.");
+    }
   }
 
+  // Tri des jours de semaine dans l'ordre Lundi (0) -> Dimanche (6)
+  const sortedWeekly = [...weeklySchedules].sort((a, b) => a.day_of_week - b.day_of_week);
+
   return (
-    <div className="grid gap-5 xl:grid-cols-[1.45fr_.55fr]">
+    <div className="space-y-6">
+      {/* ── Section 1 : Planning hebdomadaire par défaut ── */}
       <section className="card">
-        <SectionHeading eyebrow="Table modifiable" title="Planning réel" />
-        {trips.length ? (
+        <SectionHeading
+          eyebrow="Horaires réels de référence"
+          title="Planning hebdomadaire par défaut"
+          action={
+            <button onClick={() => void generateFromWeekly()} className="secondary-button" disabled={busy}>
+              {busy ? "Génération en cours…" : "Générer les trajets réels (4 prochaines semaines)"}
+            </button>
+          }
+        />
+        <p className="mb-4 text-sm text-slate-500">
+          Ces horaires de base définissent les départs réguliers de l'agence pour chaque jour de la semaine. Cliquez sur « Générer les trajets réels » pour instancier automatiquement les départs des semaines à venir.
+        </p>
+
+        {sortedWeekly.length ? (
           <div className="table-scroll">
             <table className="staff-table min-w-[720px]">
-              <thead><tr><th>Date</th><th>Parcours</th><th>Bus</th><th>Places</th><th>Statut</th><th /></tr></thead>
+              <thead>
+                <tr>
+                  <th>Jour</th>
+                  <th>Statut</th>
+                  <th>Parcours</th>
+                  <th>Départ</th>
+                  <th>Bus assigné</th>
+                  <th>Remarques</th>
+                  <th className="text-right">Action</th>
+                </tr>
+              </thead>
               <tbody>
-                {trips.map((trip) => (
-                  <tr key={trip.id}>
-                    <td>{formatDate(trip.departure_at)}</td>
-                    <td className="strong">{trip.route_detail.label}</td>
-                    <td>{trip.vehicle_detail.name}</td>
-                    <td>{trip.vehicle_detail.capacity ?? "À configurer"}</td>
+                {sortedWeekly.map((item) => (
+                  <tr key={item.id} className={!item.is_active ? "opacity-60 bg-slate-50/50" : undefined}>
+                    <td className="strong">{item.day_of_week_display}</td>
                     <td>
-                      <span className="flex flex-wrap gap-1.5">
-                        <StatusBadge tone={tripTone(trip.status)}>{trip.status_display}</StatusBadge>
-                        {!trip.route_detail.active && <StatusBadge tone="grey">Itinéraire inactif</StatusBadge>}
-                      </span>
+                      <StatusBadge tone={item.is_active ? "green" : "grey"}>
+                        {item.is_active ? "Trajet régulier" : "Repos / Aucun"}
+                      </StatusBadge>
                     </td>
-                    <td className="text-right">{trip.status !== "CANCELLED" && <button onClick={() => void cancel(trip)} className="text-button danger">Annuler</button>}</td>
+                    <td>{item.is_active && item.route_detail ? item.route_detail.label : "—"}</td>
+                    <td>{item.is_active && item.departure_time_display ? `${item.departure_time_display}` : "—"}</td>
+                    <td>{item.is_active && item.vehicle_detail ? item.vehicle_detail.name : (item.is_active ? "Yutong (défaut)" : "—")}</td>
+                    <td className="text-sm text-slate-500">{item.notes || "—"}</td>
+                    <td className="text-right">
+                      <button onClick={() => openEditSchedule(item)} className="text-button">
+                        Modifier
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        ) : <EmptyState title="Planning vide" text="Ajoutez chaque trajet et chaque exception comme un enregistrement indépendant." />}
+        ) : (
+          <EmptyState title="Aucun planning hebdomadaire" text="Exécutez le script d'initialisation pour charger la grille par défaut." />
+        )}
+
+        {/* Modal/Formulaire d'édition d'un jour du planning de base */}
+        {editingSchedule && (
+          <div className="mt-5 rounded-lg border border-[var(--brand)] bg-sky-50/30 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="font-semibold text-slate-800">
+                Modifier l’horaire du {editingSchedule.day_of_week_display}
+              </h4>
+              <button type="button" onClick={() => setEditingSchedule(null)} className="text-sm text-slate-500 hover:text-slate-800">
+                Fermer ✕
+              </button>
+            </div>
+            <form onSubmit={saveSchedule} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="block">
+                <span className="field-label">Statut du jour</span>
+                <select
+                  className="field"
+                  value={scheduleForm.is_active ? "1" : "0"}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, is_active: e.target.value === "1" })}
+                >
+                  <option value="1">Trajet régulier assuré</option>
+                  <option value="0">Aucun départ (Repos / Maintenance)</option>
+                </select>
+              </label>
+
+              {scheduleForm.is_active && (
+                <>
+                  <Select
+                    label="Parcours"
+                    value={scheduleForm.route}
+                    onChange={(value) => setScheduleForm({ ...scheduleForm, route: value })}
+                    options={routes.map((r) => [String(r.id), r.label])}
+                  />
+                  <Input
+                    label="Heure de départ"
+                    type="time"
+                    value={scheduleForm.departure_time}
+                    onChange={(value) => setScheduleForm({ ...scheduleForm, departure_time: value })}
+                  />
+                  <Select
+                    label="Bus"
+                    value={scheduleForm.vehicle}
+                    onChange={(value) => setScheduleForm({ ...scheduleForm, vehicle: value })}
+                    options={vehicles.map((v) => [String(v.id), v.name])}
+                    required={false}
+                  />
+                </>
+              )}
+
+              <div className={scheduleForm.is_active ? "sm:col-span-2 lg:col-span-3" : "sm:col-span-2"}>
+                <Input
+                  label="Remarques (ex: Repos/Visite technique)"
+                  value={scheduleForm.notes}
+                  onChange={(value) => setScheduleForm({ ...scheduleForm, notes: value })}
+                  required={false}
+                />
+              </div>
+
+              <div className="flex items-end gap-2">
+                <button className="primary-button w-full" disabled={busy}>
+                  Enregistrer
+                </button>
+                <button type="button" onClick={() => setEditingSchedule(null)} className="secondary-button" disabled={busy}>
+                  Annuler
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </section>
-      <section className="card">
-        <SectionHeading eyebrow="Horaire administrable" title="Ajouter un trajet" />
-        <form onSubmit={submit} className="space-y-4">
-          <Select label="Parcours" value={form.route} onChange={(value) => setForm({ ...form, route: value })} options={routes.map((r) => [String(r.id), r.label])} />
-          <Select label="Véhicule" value={form.vehicle} onChange={(value) => setForm({ ...form, vehicle: value })} options={vehicles.map((v) => [String(v.id), `${v.name} · ${v.capacity ?? "capacité requise"}`])} />
-          <Input label="Départ" type="datetime-local" value={form.departure_at} onChange={(value) => setForm({ ...form, departure_at: value })} />
-          <Input label="Arrivée (même jour)" type="datetime-local" value={form.arrival_at} onChange={(value) => setForm({ ...form, arrival_at: value })} required={false} />
-          <button className="primary-button w-full">Ajouter au planning</button>
-        </form>
-        <hr className="my-6 border-[var(--line)]" />
-        <SectionHeading eyebrow="Un départ par jour" title="Planning quotidien (sens alterné)" />
-        <p className="mb-4 text-sm text-slate-500">Le 1er jour suit le parcours choisi, le lendemain le parcours inverse, et ainsi de suite. Les jours où ce bus a déjà un départ sont laissés tels quels. Heure d’arrivée laissée vide.</p>
-        <form onSubmit={generate} className="space-y-4">
-          <Select label="Parcours du premier jour" value={plan.route} onChange={(value) => setPlan({ ...plan, route: value })} options={routes.map((r) => [String(r.id), r.label])} />
-          <Select label="Bus" value={plan.vehicle} onChange={(value) => setPlan({ ...plan, vehicle: value })} options={vehicles.map((v) => [String(v.id), `${v.name} · ${v.capacity ?? "capacité requise"}`])} />
-          <Input label="Date du premier jour" type="date" value={plan.start_date} onChange={(value) => setPlan({ ...plan, start_date: value })} />
-          <Input label="Nombre de jours (1 à 90)" type="number" value={plan.days} onChange={(value) => setPlan({ ...plan, days: value })} />
-          <Input label="Heure de départ" type="time" value={plan.departure_time} onChange={(value) => setPlan({ ...plan, departure_time: value })} />
-          <button className="primary-button w-full">Créer le planning</button>
-        </form>
-      </section>
+
+      {/* ── Section 2 : Planning réel et Formulaire d'ajustement ── */}
+      <div className="grid gap-5 xl:grid-cols-[1.4fr_.6fr]">
+        <section className="card">
+          <SectionHeading eyebrow="Trajets opérationnels" title="Planning réel" />
+          {trips.length ? (
+            <div className="table-scroll">
+              <table className="staff-table min-w-[720px]">
+                <thead>
+                  <tr>
+                    <th>Date & Départ</th>
+                    <th>Arrivée</th>
+                    <th>Parcours</th>
+                    <th>Bus</th>
+                    <th>Places</th>
+                    <th>Statut</th>
+                    <th>Notes</th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trips.map((trip) => (
+                    <tr key={trip.id} className={editingTripId === trip.id ? "bg-amber-50/60" : undefined}>
+                      <td className="strong">{formatDate(trip.departure_at)}</td>
+                      <td>{trip.arrival_at ? formatDate(trip.arrival_at) : "—"}</td>
+                      <td className="strong">{trip.route_detail.label}</td>
+                      <td>{trip.vehicle_detail.name}</td>
+                      <td>{trip.vehicle_detail.capacity ?? "À configurer"}</td>
+                      <td>
+                        <span className="flex flex-wrap gap-1.5">
+                          <StatusBadge tone={tripTone(trip.status)}>{trip.status_display}</StatusBadge>
+                          {!trip.route_detail.active && <StatusBadge tone="grey">Itinéraire inactif</StatusBadge>}
+                        </span>
+                      </td>
+                      <td className="text-xs text-slate-500">{trip.note || "—"}</td>
+                      <td className="text-right whitespace-nowrap">
+                        <button onClick={() => startEditTrip(trip)} className="text-button mr-2">
+                          Modifier
+                        </button>
+                        {trip.status !== "CANCELLED" && (
+                          <button onClick={() => void cancel(trip)} className="text-button danger">
+                            Annuler
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState
+              title="Planning vide"
+              text="Cliquez sur « Générer les trajets réels » en haut pour créer les départs selon la grille hebdomadaire."
+            />
+          )}
+        </section>
+
+        <section className="card">
+          <div className="flex items-center justify-between">
+            <SectionHeading
+              eyebrow={editingTripId ? "Ajustement ponctuel" : "Horaire administrable"}
+              title={editingTripId ? `Modifier le départ #${editingTripId}` : "Ajouter un trajet"}
+            />
+            {editingTripId && (
+              <button onClick={cancelEditTrip} className="text-xs text-slate-500 hover:text-slate-800 underline">
+                Annuler l'édition
+              </button>
+            )}
+          </div>
+
+          {editingTripId && (
+            <div className="mb-4 rounded border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+              Vous modifiez un trajet existant (retard, changement de bus, note d'information).
+            </div>
+          )}
+
+          <form onSubmit={submitTrip} className="space-y-4">
+            <Select
+              label="Parcours"
+              value={tripForm.route}
+              onChange={(value) => setTripForm({ ...tripForm, route: value })}
+              options={routes.map((r) => [String(r.id), r.label])}
+            />
+            <Select
+              label="Véhicule"
+              value={tripForm.vehicle}
+              onChange={(value) => setTripForm({ ...tripForm, vehicle: value })}
+              options={vehicles.map((v) => [String(v.id), `${v.name} · ${v.capacity ?? "capacité requise"}`])}
+            />
+
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Date de départ"
+                type="date"
+                value={tripForm.departure_date}
+                onChange={(value) => setTripForm({ ...tripForm, departure_date: value })}
+              />
+              <Input
+                label="Heure de départ"
+                type="time"
+                value={tripForm.departure_time}
+                onChange={(value) => setTripForm({ ...tripForm, departure_time: value })}
+              />
+            </div>
+
+            <div>
+              <Input
+                label="Heure d'arrivée (MÊME JOUR)"
+                type="time"
+                value={tripForm.arrival_time}
+                onChange={(value) => setTripForm({ ...tripForm, arrival_time: value })}
+                required={false}
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                La date d'arrivée est automatiquement verrouillée sur la date de départ. Seule l'heure est demandée.
+              </p>
+            </div>
+
+            {editingTripId && (
+              <Select
+                label="Statut du trajet"
+                value={tripForm.status}
+                onChange={(value) => setTripForm({ ...tripForm, status: value })}
+                options={[
+                  ["SCHEDULED", "Planifié"],
+                  ["BOARDING", "Embarquement"],
+                  ["IN_PROGRESS", "En cours"],
+                  ["COMPLETED", "Terminé"],
+                  ["CANCELLED", "Annulé"],
+                ]}
+              />
+            )}
+
+            <Input
+              label="Remarque / Motif de modification"
+              value={tripForm.note}
+              onChange={(value) => setTripForm({ ...tripForm, note: value })}
+              required={false}
+            />
+
+            <button className="primary-button w-full" disabled={busy}>
+              {editingTripId ? "Enregistrer les modifications" : "Ajouter au planning"}
+            </button>
+            {editingTripId && (
+              <button type="button" onClick={cancelEditTrip} className="secondary-button w-full mt-2" disabled={busy}>
+                Revenir à l'ajout de trajet
+              </button>
+            )}
+          </form>
+
+          <hr className="my-6 border-[var(--line)]" />
+          <SectionHeading eyebrow="Outil auxiliaire" title="Générateur sens alterné" />
+          <p className="mb-4 text-xs text-slate-500">
+            Alterne entre le parcours choisi et le parcours inverse sur une période libre.
+          </p>
+          <form onSubmit={generateAlternating} className="space-y-3">
+            <Select
+              label="Parcours du 1er jour"
+              value={plan.route}
+              onChange={(value) => setPlan({ ...plan, route: value })}
+              options={routes.map((r) => [String(r.id), r.label])}
+            />
+            <Select
+              label="Bus"
+              value={plan.vehicle}
+              onChange={(value) => setPlan({ ...plan, vehicle: value })}
+              options={vehicles.map((v) => [String(v.id), `${v.name} · ${v.capacity ?? "capacité requise"}`])}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="1er jour"
+                type="date"
+                value={plan.start_date}
+                onChange={(value) => setPlan({ ...plan, start_date: value })}
+              />
+              <Input
+                label="Nombre de jours"
+                type="number"
+                value={plan.days}
+                onChange={(value) => setPlan({ ...plan, days: value })}
+              />
+            </div>
+            <Input
+              label="Heure de départ"
+              type="time"
+              value={plan.departure_time}
+              onChange={(value) => setPlan({ ...plan, departure_time: value })}
+            />
+            <button className="secondary-button w-full" disabled={busy}>
+              Lancer l'alternance
+            </button>
+          </form>
+        </section>
+      </div>
     </div>
   );
 }
@@ -799,7 +1231,7 @@ function AgencyPanel() {
         {profile.updated_by_name && <p className="mt-3 text-sm text-slate-500">Dernière modification : {formatDate(profile.updated_at)} par {profile.updated_by_name}.</p>}
       </section>
       <section className="card">
-        <SectionHeading eyebrow="Comprises dans le prix affiché (TTC)" title="Taxes" />
+        <SectionHeading eyebrow="Comprises dans le prix affiché" title="Taxes" />
         <p className="mb-4 text-sm text-slate-500">Taux modifiable : la valeur de 18 % a été transmise et n’est pas vérifiée pour le transport de voyageurs. Un billet déjà vendu garde son taux.</p>
         <div className="table-scroll">
           <table className="staff-table min-w-[620px]">

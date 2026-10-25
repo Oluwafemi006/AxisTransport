@@ -43,6 +43,8 @@ class _Api extends ApiClient {
   Future<List<PaymentQuote>> tripPaymentQuotes({
     required int tripId,
     int passengers = 1,
+    int? originId,
+    int? destinationId,
   }) async => [_quote];
 
   @override

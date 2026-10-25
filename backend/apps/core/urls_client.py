@@ -16,6 +16,7 @@ SURFACES À VENIR (non implémentées ici) :
 from types import SimpleNamespace
 import hmac
 
+from django.db import models
 from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
 from django.urls import include, path
@@ -102,8 +103,11 @@ def _is_client_or_guest(user):
 class ClientLocationViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Villes et arrêts actifs. Lecture publique. Pas d'écriture (Admin uniquement).
+    Ordonnés selon l'ordre de la ligne de car (1=Parakou, 2=Savè, ...), puis par nom.
     """
-    queryset = Location.objects.filter(active=True)
+    queryset = Location.objects.filter(active=True).order_by(
+        models.F("line_stop__position").asc(nulls_last=True), "name"
+    )
     serializer_class = LocationSerializer
     permission_classes = [AllowAny]
 
@@ -120,6 +124,7 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         from django.utils import timezone
         from datetime import datetime
+        from .services import find_trips_for_waypoint_direction
         release_expired_holds()
         queryset = Trip.objects.select_related(
             "route__origin", "route__destination", "vehicle"
@@ -130,10 +135,8 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
         origin = self.request.query_params.get("origin")
         destination = self.request.query_params.get("destination")
         date_value = self.request.query_params.get("date")
-        if origin:
-            queryset = queryset.filter(route__origin_id=origin)
-        if destination:
-            queryset = queryset.filter(route__destination_id=destination)
+        if origin or destination:
+            queryset = find_trips_for_waypoint_direction(queryset, origin=origin, destination=destination)
         if date_value:
             try:
                 selected_date = datetime.strptime(date_value, "%Y-%m-%d").date()
@@ -142,11 +145,17 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(departure_at__date=selected_date)
         return queryset
 
+    @action(detail=False, methods=["get"], url_path="search")
+    def search(self, request):
+        """Recherche directionnelle de trajets (/client/trips/search/?origin=...&destination=...&date=...)."""
+        return self.list(request)
+
     @action(detail=True, methods=["get"], url_path="payment-quotes")
     def payment_quotes(self, request, pk=None):
         """
         Montant à payer AVANT toute réservation, par moyen de paiement en ligne actif :
         prix du billet (grille par tronçon) × nombre de passagers, plus les frais client (0 par défaut). Calculé ici, jamais dans le navigateur.
+        Prend en compte l'origine et la destination de la recherche pour tarifer au tronçon exact si spécifié.
         """
         trip = self.get_object()
         try:
@@ -155,10 +164,23 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
             raise ValidationError({"passengers": "Nombre de passagers invalide."}) from exc
         if not 1 <= passengers <= 8:
             raise ValidationError({"passengers": "Nombre de passagers invalide."})
-        try:
-            fare = trip_fare(trip)
-        except ImproperlyConfigured as exc:
-            raise ValidationError({"detail": str(exc)}) from exc
+        origin_val = request.query_params.get("origin")
+        dest_val = request.query_params.get("destination")
+        fare = None
+        if origin_val and dest_val:
+            from .services import resolve_location, resolve_segment_fare
+            origin_loc = resolve_location(origin_val)
+            dest_loc = resolve_location(dest_val)
+            if origin_loc and dest_loc and origin_loc.pk != dest_loc.pk:
+                try:
+                    fare = resolve_segment_fare(origin_loc, dest_loc)
+                except ImproperlyConfigured:
+                    fare = None
+        if fare is None:
+            try:
+                fare = trip_fare(trip)
+            except ImproperlyConfigured as exc:
+                raise ValidationError({"detail": str(exc)}) from exc
         target = SimpleNamespace(amount=fare.amount * passengers, currency=fare.currency)
         methods = [
             method
@@ -398,6 +420,8 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
                 contact_phone=data.get("contact_phone", ""),
                 contact_email=data.get("contact_email", ""),
                 buyer_ifu=data.get("buyer_ifu", ""),
+                origin=data.get("origin"),
+                destination=data.get("destination"),
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc)

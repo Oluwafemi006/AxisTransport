@@ -302,9 +302,12 @@ def create_checkout(target, *, payment_method):
         raise ValidationError("Paiement FedaPay indisponible : la clé secrète n'est pas configurée.")
     if target.currency != "XOF":
         raise ValidationError("FedaPay n'est configuré que pour les paiements en XOF.")
+    # Les frais FedaPay sont intégralement à la charge de l'agence (marchand) :
+    # le montant envoyé à FedaPay est exactement le montant net de la réservation ou du billet,
+    # sans pourcentage ni frais de passerelle supplémentaires.
     payload = {
         "description": f"Axis Transport {target.reference}",
-        "amount": int(quote["total"]),
+        "amount": int(target.amount),
         "currency": {"iso": "XOF"},
         "custom_metadata": _binding_keys(target),
     }
@@ -318,7 +321,7 @@ def create_checkout(target, *, payment_method):
         provider=FEDAPAY,
         external_id=str(data["id"]),
         defaults={
-            "amount": quote["total"],
+            "amount": target.amount,
             "currency": target.currency,
             **({"booking": target} if isinstance(target, Booking) else {"ticket": target}),
         },

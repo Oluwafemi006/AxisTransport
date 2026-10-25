@@ -31,6 +31,8 @@ from .models import (
     AgencySettingChange,
     PaymentReceipt,
     Tax,
+    WeeklySchedule,
+    RouteStop,
 )
 from .payments import ONLINE_PROVIDERS, payment_quote
 from .services import boarding_lead_minutes, boarding_time, rental_is_available, trip_fare
@@ -81,15 +83,40 @@ class LocationSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at"]
 
 
+class RouteStopSerializer(serializers.ModelSerializer):
+    location_id = serializers.IntegerField(source="location.id", read_only=True)
+    name = serializers.CharField(source="location.name", read_only=True)
+
+    class Meta:
+        model = RouteStop
+        fields = ["id", "position", "location_id", "name"]
+
+
 class RouteSerializer(serializers.ModelSerializer):
     origin_detail = LocationSerializer(source="origin", read_only=True)
     destination_detail = LocationSerializer(source="destination", read_only=True)
     label = serializers.CharField(source="__str__", read_only=True)
+    stops = serializers.SerializerMethodField()
 
     class Meta:
         model = Route
-        fields = ["id", "origin", "destination", "origin_detail", "destination_detail", "label", "active", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "origin",
+            "destination",
+            "origin_detail",
+            "destination_detail",
+            "label",
+            "stops",
+            "active",
+            "created_at",
+            "updated_at",
+        ]
         read_only_fields = ["created_at", "updated_at"]
+
+    def get_stops(self, obj):
+        seq = obj.get_stops_sequence()
+        return [{"id": loc.id, "name": loc.name, "position": idx + 1} for idx, loc in enumerate(seq)]
 
     def validate(self, attrs):
         if attrs.get("origin", getattr(self.instance, "origin", None)) == attrs.get(
@@ -220,6 +247,20 @@ class TripSerializer(serializers.ModelSerializer):
         return serializers.DateTimeField().to_representation(boarding) if boarding else None
 
     def get_current_fare(self, obj):
+        request = self.context.get("request")
+        if request and hasattr(request, "query_params"):
+            origin_param = request.query_params.get("origin")
+            dest_param = request.query_params.get("destination")
+            if origin_param and dest_param:
+                from .services import resolve_location, resolve_segment_fare
+                try:
+                    origin_loc = resolve_location(origin_param)
+                    dest_loc = resolve_location(dest_param)
+                    if origin_loc and dest_loc and origin_loc.pk != dest_loc.pk:
+                        fare = resolve_segment_fare(origin_loc, dest_loc)
+                        return {"id": fare.id, "name": fare.label, "amount": fare.amount, "currency": fare.currency}
+                except Exception:
+                    pass
         try:
             fare = trip_fare(obj)
         except ImproperlyConfigured:
@@ -230,7 +271,55 @@ class TripSerializer(serializers.ModelSerializer):
         instance = self.instance or Trip()
         for key, value in attrs.items():
             setattr(instance, key, value)
+        departure_at = attrs.get("departure_at") or getattr(instance, "departure_at", None)
+        arrival_at = attrs.get("arrival_at") or getattr(instance, "arrival_at", None)
+        if departure_at and arrival_at and arrival_at <= departure_at:
+            raise serializers.ValidationError({"arrival_at": "L'arrivée doit être postérieure au départ."})
+        if departure_at and arrival_at:
+            dep_date = timezone.localtime(departure_at).date()
+            arr_date = timezone.localtime(arrival_at).date()
+            if dep_date != arr_date:
+                raise serializers.ValidationError({"arrival_at": "Axis n'opère que des trajets de jour, sans trajet de nuit (même jour requis)."})
         instance.full_clean(exclude=[field for field in ("route", "vehicle") if not getattr(instance, f"{field}_id")])
+        return attrs
+
+
+class WeeklyScheduleSerializer(serializers.ModelSerializer):
+    day_of_week_display = serializers.CharField(source="get_day_of_week_display", read_only=True)
+    route_detail = RouteSerializer(source="route", read_only=True)
+    vehicle_detail = PublicVehicleSerializer(source="vehicle", read_only=True)
+    departure_time_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WeeklySchedule
+        fields = [
+            "id",
+            "day_of_week",
+            "day_of_week_display",
+            "route",
+            "route_detail",
+            "vehicle",
+            "vehicle_detail",
+            "departure_time",
+            "departure_time_display",
+            "is_active",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def get_departure_time_display(self, obj):
+        return f"{obj.departure_time:%H:%M}" if obj.departure_time else None
+
+    def validate(self, attrs):
+        is_active = attrs.get("is_active", getattr(self.instance, "is_active", True))
+        route = attrs.get("route", getattr(self.instance, "route", None))
+        departure_time = attrs.get("departure_time", getattr(self.instance, "departure_time", None))
+        if is_active and not route:
+            raise serializers.ValidationError({"route": "Un trajet actif doit être associé à un parcours."})
+        if is_active and not departure_time:
+            raise serializers.ValidationError({"departure_time": "Un trajet actif doit avoir une heure de départ."})
         return attrs
 
 
@@ -439,6 +528,8 @@ class BookingCreatePassengerSerializer(serializers.Serializer):
 
 class BookingCreateSerializer(serializers.Serializer):
     trip = serializers.PrimaryKeyRelatedField(queryset=Trip.objects.all())
+    origin = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    destination = serializers.CharField(max_length=120, required=False, allow_blank=True)
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
     buyer_ifu = serializers.CharField(max_length=30, required=False, allow_blank=True)
