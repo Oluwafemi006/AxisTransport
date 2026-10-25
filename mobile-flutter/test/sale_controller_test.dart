@@ -4,6 +4,8 @@ import 'package:axis_transport_flutter/core/models.dart';
 import 'package:axis_transport_flutter/core/session_store.dart';
 import 'package:axis_transport_flutter/features/sales/sale_controller.dart';
 import 'package:axis_transport_flutter/features/sales/sale_models.dart';
+import 'package:axis_transport_flutter/features/sales/sell_ticket_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
@@ -98,7 +100,9 @@ class _Api extends ApiClient {
     sells += 1;
     keys.add(idempotencyKey);
     await Future<void>.delayed(const Duration(milliseconds: 20));
-    if (sellError != null) throw sellError!;
+    if (sellError != null) {
+      throw sellError!;
+    }
     if (paymentMethod == 1) {
       return {
         'booking': _booking('CONFIRMED', ticketStatus: 'ISSUED'),
@@ -317,5 +321,226 @@ void main() {
       saleShareText(withLink, formatFullDateTime),
       contains('https://site.exemple.test/t/AX-20261012-ABCDEF12'),
     );
+  });
+
+  test('le texte de partage inclut le prix en FCFA', () {
+    final ticket = SaleTicket.fromJson(
+      (_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+    );
+    final text = saleShareText(ticket, formatFullDateTime);
+    expect(text.replaceAll(RegExp(r'\s'), ''), contains('Prixdubillet:1000FCFA'));
+  });
+
+  test('le texte de partage inclut l\'IFU de l\'acheteur seulement s\'il est renseigné', () {
+    final withoutIfu = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'print_info': {
+        'buyer_ifu': '',
+      },
+    });
+    expect(saleShareText(withoutIfu, formatFullDateTime), isNot(contains("IFU de l'acheteur")));
+
+    final withIfu = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'print_info': {
+        'buyer_ifu': 'TEST-IFU-ACHETEUR',
+      },
+    });
+    expect(
+      saleShareText(withIfu, formatFullDateTime),
+      contains('IFU de l\'acheteur : TEST-IFU-ACHETEUR'),
+    );
+  });
+
+  test('le texte de partage ne contient jamais de ligne de TVA ni de mention HT/TTC, même si présentes dans print_info', () {
+    final withoutTaxes = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'print_info': {
+        'price_incl_tax': 1000,
+        'price_excl_tax': null,
+        'tax_lines': [],
+      },
+    });
+    final textWithout = saleShareText(withoutTaxes, formatFullDateTime);
+    expect(textWithout, isNot(contains('Prix HT')));
+    expect(textWithout, isNot(contains('TVA')));
+    expect(textWithout, isNot(contains('Prix TTC')));
+    expect(textWithout, isNot(contains('XOF')));
+    expect(textWithout, contains('FCFA'));
+
+    final withTaxes = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'amount': 1000,
+      'currency': 'XOF',
+      'print_info': {
+        'buyer_ifu': 'TEST-IFU-123',
+        'price_incl_tax': 1000,
+        'price_excl_tax': 847,
+        'tax_lines': [
+          {'name': 'TVA', 'rate': '18', 'amount': 153},
+        ],
+      },
+    });
+    final textWith = saleShareText(withTaxes, formatFullDateTime);
+    expect(textWith, contains('IFU de l\'acheteur : TEST-IFU-123'));
+    expect(textWith, isNot(contains('Prix HT')));
+    expect(textWith, isNot(contains('TVA')));
+    expect(textWith, isNot(contains('Prix TTC')));
+    expect(textWith.replaceAll(RegExp(r'\s'), ''), contains('Prixdubillet:1000FCFA'));
+    expect(textWith, isNot(contains('XOF')));
+    expect(textWith, contains('FCFA'));
+  });
+
+  test('le texte de partage ignore un IFU composé uniquement d\'espaces', () {
+    final ticket = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'print_info': {
+        'buyer_ifu': '   ',
+      },
+    });
+    final text = saleShareText(ticket, formatFullDateTime);
+    expect(text, isNot(contains("IFU de l'acheteur")));
+  });
+
+  test('le texte de partage gère un print_info nul sans erreur et sans XOF', () {
+    final ticket = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'print_info': null,
+    });
+    final text = saleShareText(ticket, formatFullDateTime);
+    expect(text, contains('Billet : AX-20261012-ABCDEF12'));
+    expect(text, contains('Passager : Awa Test'));
+    expect(text, contains('Statut : Payé'));
+    expect(text.replaceAll(RegExp(r'\s'), ''), contains('Prixdubillet:1000FCFA'));
+    expect(text, contains('Raison sociale : À renseigner'));
+    expect(text, isNot(contains('XOF')));
+    expect(text, contains('FCFA'));
+  });
+
+  test('le texte de partage inclut Statut Payé, Vendeur, Mode de paiement et bas de billet', () {
+    final ticket = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'currency': 'XOF',
+      'print_info': {
+        'paid': true,
+        'sale': 'Vendeur : Agent Test',
+        'payment_mode': 'Espèces',
+        'buyer_ifu': 'TEST-IFU-123',
+        'agency': {
+          'legal_name': 'AXIS Transport SARL',
+          'ifu': 'TEST-IFU-0000',
+          'rccm': 'TEST-RCCM-0000',
+          'address': 'Cotonou, Bénin',
+          'phones': '+229 01 02 03 04',
+          'email': 'contact@axis.test',
+        },
+        'conditions': 'Billet non échangeable',
+      },
+    });
+    final text = saleShareText(ticket, formatFullDateTime);
+    expect(text, contains('Statut : Payé'));
+    expect(text, contains('Vendeur : Agent Test'));
+    expect(text, contains('Mode de paiement : Espèces'));
+    expect(text, contains('IFU de l\'acheteur : TEST-IFU-123'));
+    expect(text, contains('Raison sociale : AXIS Transport SARL'));
+    expect(text, contains('IFU : TEST-IFU-0000 · RCCM : TEST-RCCM-0000'));
+    expect(text, contains('Adresse : Cotonou, Bénin'));
+    expect(text, contains('Contacts : +229 01 02 03 04 · contact@axis.test'));
+    expect(text, contains('Conditions : Billet non échangeable'));
+    expect(text, isNot(contains('XOF')));
+    expect(text, contains('FCFA'));
+  });
+
+  test('le texte de partage n\'affiche pas de lignes de TVA si la TVA est à zéro', () {
+    final zeroTax = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'amount': 1000,
+      'currency': 'XOF',
+      'print_info': {
+        'price_incl_tax': 1000,
+        'price_excl_tax': 1000,
+        'tax_lines': [
+          {'name': 'TVA', 'rate': '0', 'amount': 0},
+        ],
+      },
+    });
+    final text = saleShareText(zeroTax, formatFullDateTime);
+    expect(text, isNot(contains('TVA')));
+    expect(text, isNot(contains('Prix HT')));
+    expect(text, isNot(contains('Prix TTC')));
+    expect(text.replaceAll(RegExp(r'\s'), ''), contains('Prixdubillet:1000FCFA'));
+    expect(text, isNot(contains('XOF')));
+    expect(text, contains('FCFA'));
+  });
+
+  test('aucune ligne de TVA ni de Prix TTC n\'apparaît si price_excl_tax est présent sans price_incl_tax', () {
+    final ticket = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'amount': 1000,
+      'currency': 'XOF',
+      'print_info': {
+        'price_excl_tax': 847,
+        'tax_lines': [
+          {'name': 'TVA', 'rate': '18', 'amount': 153},
+        ],
+      },
+    });
+    final text = saleShareText(ticket, formatFullDateTime);
+    expect(text, isNot(contains('TVA')));
+    expect(text, isNot(contains('Prix HT')));
+    expect(text, isNot(contains('Prix TTC')));
+    expect(text.replaceAll(RegExp(r'\s'), ''), contains('Prixdubillet:1000FCFA'));
+    expect(text, isNot(contains('XOF')));
+    expect(text, contains('FCFA'));
+  });
+
+  testWidgets('l\'écran de fin de vente affiche le récapitulatif sans XOF et avec mentions complètes', (tester) async {
+    final ticket = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'amount': 1000,
+      'currency': 'XOF',
+      'print_info': {
+        'paid': true,
+        'sale': 'Vendeur : Agent Test',
+        'payment_mode': 'Espèces',
+        'buyer_ifu': 'TEST-IFU-123',
+      },
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: SaleIssuedCard(ticket: ticket),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Billet émis · AX-20261012-ABCDEF12'), findsOneWidget);
+    expect(find.text('Passager : Awa Test'), findsOneWidget);
+    expect(find.text('Siège : 2A'), findsOneWidget);
+    expect(find.text('Trajet : Cotonou → Parakou'), findsOneWidget);
+    expect(find.text('Prix du billet : ${formatMoney(ticket.amount, ticket.currency)}'), findsOneWidget);
+    expect(find.text('Statut : Payé'), findsOneWidget);
+    expect(find.text('Vendeur : Agent Test'), findsOneWidget);
+    expect(find.text('Mode de paiement : Espèces'), findsOneWidget);
+    expect(find.text('IFU de l\'acheteur : TEST-IFU-123'), findsOneWidget);
+    expect(find.textContaining('FCFA'), findsWidgets);
+    expect(find.textContaining('XOF'), findsNothing);
+    expect(find.textContaining('TVA'), findsNothing);
+    expect(find.textContaining('Prix HT'), findsNothing);
+    expect(find.textContaining('Prix TTC'), findsNothing);
   });
 }

@@ -139,9 +139,11 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
   }
 
   Future<void> _share(SaleTicket ticket) {
-    return Share.share(
-      saleShareText(ticket, formatFullDateTime),
-      subject: 'Billet AXIS Transport ${ticket.reference}',
+    return SharePlus.instance.share(
+      ShareParams(
+        text: saleShareText(ticket, formatFullDateTime),
+        subject: 'Billet AXIS Transport ${ticket.reference}',
+      ),
     );
   }
 
@@ -400,32 +402,7 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
 
   List<Widget> _issued(SaleTicket ticket) {
     return [
-      AxisCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Billet émis · ${ticket.reference}',
-              style: const TextStyle(
-                color: AxisColors.success,
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text('Passager : ${ticket.passengerName}'),
-            Text('Siège : ${ticket.seatNumber}'),
-            Text('Trajet : ${ticket.routeLabel}'),
-            if (ticket.boardingAt != null)
-              Text('Embarquement : ${formatFullDateTime(ticket.boardingAt!)}'),
-            if (ticket.departureAt != null)
-              Text('Départ : ${formatFullDateTime(ticket.departureAt!)}'),
-            Text(
-              'Prix du billet : ${formatMoney(ticket.amount, ticket.currency)}',
-            ),
-          ],
-        ),
-      ),
+      SaleIssuedCard(ticket: ticket),
       const SizedBox(height: 12),
       FilledButton.icon(
         key: const Key('sale-share'),
@@ -436,6 +413,57 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
       const SizedBox(height: 8),
       OutlinedButton(onPressed: _newSale, child: const Text('Nouvelle vente')),
     ];
+  }
+}
+
+/// Carte de confirmation d'un billet émis par le personnel (guichet ou contrôleur).
+/// Affiche uniquement des données réelles du serveur ; montants en FCFA, aucune mention inventée.
+class SaleIssuedCard extends StatelessWidget {
+  const SaleIssuedCard({super.key, required this.ticket});
+
+  final SaleTicket ticket;
+
+  @override
+  Widget build(BuildContext context) {
+    final info = ticket.printInfo;
+    final paid = (info != null && info.paid) || ticket.isIssued;
+    return AxisCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Billet émis · ${ticket.reference}',
+            style: const TextStyle(
+              color: AxisColors.success,
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text('Passager : ${ticket.passengerName}'),
+          Text('Siège : ${ticket.seatNumber}'),
+          Text('Trajet : ${ticket.routeLabel}'),
+          if (ticket.boardingAt != null)
+            Text('Embarquement : ${formatFullDateTime(ticket.boardingAt!)}'),
+          if (ticket.departureAt != null)
+            Text('Départ : ${formatFullDateTime(ticket.departureAt!)}'),
+          Text(
+            'Prix du billet : ${formatMoney(ticket.amount, ticket.currency)}',
+          ),
+          if (paid) const Text('Statut : Payé'),
+          if (info != null && info.sale.trim().isNotEmpty)
+            Text(
+              info.sale.trim().startsWith('Vendeur')
+                  ? info.sale.trim()
+                  : 'Vendeur : ${info.sale.trim()}',
+            ),
+          if (info != null && info.paymentMode.trim().isNotEmpty)
+            Text('Mode de paiement : ${info.paymentMode.trim()}'),
+          if (info != null && info.buyerIfu.trim().isNotEmpty)
+            Text('IFU de l\'acheteur : ${info.buyerIfu.trim()}'),
+        ],
+      ),
+    );
   }
 }
 

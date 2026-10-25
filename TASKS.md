@@ -11,7 +11,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 | Frais FedaPay supportés par l'agence (montant net FedaPay) | `ag/fedapay-fees` | Antigravity | fusionnée dans main |
 | Multi-passagers, alignement car Yutong et suppression TVA | `ag/seats-and-vat` | Antigravity | fusionnée dans main |
 | Flux complet d'invitations du personnel (SMTP, backend, frontend) | `ag/admin-invitations` | Antigravity | fusionnée dans main |
-| IFU de l'acheteur et partages de l'app du personnel | `ag/billet-personnel` | Antigravity | terminée |
+| IFU de l'acheteur et partages de l'app du personnel | `ag/billet-personnel` | Antigravity | corrigée, prête pour relecture Claude Code |
 | Bouton « Vérifier mon paiement », rattrapage automatique en local, vérification patiente | `confirmation-paiement` | Claude Code | fusionnée dans main |
 | Dates passées refusées (site, app et serveur), heure du Bénin | `cc/dates-passees` | Claude Code | fusionnée dans main |
 | Planning quotidien à sens alterné et départs vendables au guichet | `cc/planning-guichet` | Claude Code | fusionnée dans main |

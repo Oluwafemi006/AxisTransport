@@ -483,6 +483,30 @@ class TicketPrintInfo {
   };
 }
 
+const ticketMissingValue = 'À renseigner';
+
+String _orMissingTicketValue(String? value) {
+  final text = value?.trim() ?? '';
+  return text.isEmpty ? ticketMissingValue : text;
+}
+
+/// Bas du billet (mentions légales et conditions de l'agence) : vide = « À renseigner ».
+/// Jamais de comptes bancaires.
+List<String> ticketFooterLines(TicketPrintInfo? info) {
+  final agency = info?.agency ?? const AgencyInfo();
+  final contacts = [
+    agency.phones,
+    agency.email,
+  ].map((item) => item.trim()).where((item) => item.isNotEmpty).join(' · ');
+  return [
+    'Raison sociale : ${_orMissingTicketValue(agency.legalName)}',
+    'IFU : ${_orMissingTicketValue(agency.ifu)} · RCCM : ${_orMissingTicketValue(agency.rccm)}',
+    'Adresse : ${_orMissingTicketValue(agency.address)}',
+    'Contacts : ${_orMissingTicketValue(contacts)}',
+    'Conditions : ${_orMissingTicketValue(info?.conditions)}',
+  ];
+}
+
 class Ticket {
   const Ticket({
     required this.id,
