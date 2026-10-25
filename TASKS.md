@@ -5,6 +5,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Vente par tronçon : réservation, tarification, montée/descente et billets de bout en bout | `ag/vente-par-troncon` | Antigravity | terminée |
 | Escales ordonnées, sens de circulation et recherche multi-tronçons | `ag/feature-waypoint-direction-search` | Antigravity | terminée |
 | Planning hebdomadaire par défaut et validation des dates | `ag/fix-planning-and-dates` | Antigravity | fusionnée dans main |
 | Multi-passagers, plan Yutong, retrait TVA et signature mobile | `ag/mobile-alignment` | Antigravity | fusionnée dans main |
@@ -55,6 +56,7 @@ Billetterie en ligne de bus Yutong (Parakou–Savè–Kétou–Porto-Novo–Coto
 - Expiration du blocage de siège : 5 minutes (réglé dans l'admin).
 - Paiement en ligne : FedaPay seulement (KKiaPay est inactif et non intégré). Le personnel encaisse en Espèces ou par Mobile Money.
 - Comptes du personnel créés par l'admin, une seule application mobile, tableau de bord admin uniquement. Le boss aura un compte administrateur nominatif (pas de rôle « boss »).
+- **Limite connue (vente par tronçon)** : le blocage et la vente de sièges restent globaux par trajet entier (un siège vendu sur un tronçon, ex. Parakou–Savè, bloque le siège pour tout le voyage du car et ne peut pas être revendu sur un autre tronçon du même départ). La réutilisation d'un même siège sur des tronçons disjoints fera l'objet d'une étape ultérieure.
 - Aujourd'hui, seul Parakou ↔ Cotonou est réservable (parcours Cotonou→Parakou et Parakou→Cotonou). Savè, Kétou et Porto-Novo sont inactifs : ne pas les activer avant la vente par tronçon (étape 3, non construite).
 
 ### 4. BRANCHES ET STATUTS
