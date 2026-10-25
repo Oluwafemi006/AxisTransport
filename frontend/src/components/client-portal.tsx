@@ -462,10 +462,17 @@ function Tickets({
   searchDestination?: string;
 }) {
   const [tripId, setTripId] = useState(preselectedTripId || "");
+  const [originId, setOriginId] = useState(searchOrigin || "");
+  const [destinationId, setDestinationId] = useState(searchDestination || "");
 
   useEffect(() => {
     if (preselectedTripId) setTripId(preselectedTripId);
   }, [preselectedTripId]);
+
+  useEffect(() => {
+    if (searchOrigin) setOriginId(searchOrigin);
+    if (searchDestination) setDestinationId(searchDestination);
+  }, [searchOrigin, searchDestination]);
   const [paymentCheck, setPaymentCheck] = useState<{ ticketId: number; busy: boolean; text: string } | null>(null);
   const [seats, setSeats] = useState<Seat[]>([]);
   const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([]);
@@ -546,11 +553,13 @@ function Tickets({
     const count = Math.max(1, selectedSeatIds.length);
     let cancelled = false;
     const params = new URLSearchParams({ passengers: String(count) });
-    if (searchOrigin) params.set("origin", searchOrigin);
-    if (searchDestination) params.set("destination", searchDestination);
+    const orig = originId || searchOrigin;
+    const dest = destinationId || searchDestination;
+    if (orig) params.set("origin", orig);
+    if (dest) params.set("destination", dest);
     apiFetch<Quote[]>(`/client/trips/${tripId}/payment-quotes/?${params.toString()}`, {}, false).then((quotes) => { if (!cancelled) setTripQuotes(quotes); }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [tripId, selectedSeatIds.length, searchOrigin, searchDestination]);
+  }, [tripId, selectedSeatIds.length, originId, destinationId, searchOrigin, searchDestination]);
 
   function handleToggleSeat(seat: Seat) {
     setSelectedSeatIds((current) => {
@@ -639,12 +648,14 @@ function Tickets({
         throw new Error(`Veuillez renseigner le nom du passager pour le siège N° ${passengers[i].seatNumber}.`);
       }
     }
+    const orig = originId || searchOrigin;
+    const dest = destinationId || searchDestination;
     const payload = {
       trip: Number(tripId),
       contact_phone: contactPhone || passengers[0]?.phone || "",
       buyer_ifu: buyerIfu.trim(),
-      origin: searchOrigin || undefined,
-      destination: searchDestination || undefined,
+      origin: orig || undefined,
+      destination: dest || undefined,
       passengers: passengers.map((p) => ({
         full_name: p.fullName.trim(),
         phone: p.phone.trim() || contactPhone,
@@ -768,10 +779,69 @@ function Tickets({
         {trips.length === 0 ? <p>Aucun trajet disponible.</p> : (
           <form onSubmit={singleQuote ? payNow : reserveOnly} className="f">
             <label style={{ marginTop: '10px' }}>Voyage</label>
-            <select value={tripId} onChange={(e) => { setTripId(e.target.value); setSelectedSeatIds([]); setPassengers([]); }} required>
+            <select
+              value={tripId}
+              onChange={(e) => {
+                const newId = e.target.value;
+                setTripId(newId);
+                setSelectedSeatIds([]);
+                setPassengers([]);
+                const found = trips.find((t) => String(t.id) === newId);
+                const stops = found?.route_detail?.stops || [];
+                if (stops.length >= 2) {
+                  setOriginId(String(stops[0].id));
+                  setDestinationId(String(stops[stops.length - 1].id));
+                } else if (found) {
+                  setOriginId(String(found.route_detail.origin));
+                  setDestinationId(String(found.route_detail.destination));
+                }
+              }}
+              required
+            >
               <option value="">Choisir un départ</option>
               {trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.route_detail.label} — {formatDate(trip.departure_at)}</option>)}
             </select>
+
+            {selectedTrip?.route_detail?.stops && selectedTrip.route_detail.stops.length > 2 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '13px' }}>Arrêt de montée</label>
+                  <select
+                    value={originId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setOriginId(val);
+                      const stops = selectedTrip.route_detail.stops || [];
+                      const origIdx = stops.findIndex((s) => String(s.id) === val);
+                      const destIdx = stops.findIndex((s) => String(s.id) === destinationId);
+                      if (destIdx <= origIdx && origIdx < stops.length - 1) {
+                        setDestinationId(String(stops[origIdx + 1].id));
+                      }
+                    }}
+                  >
+                    {selectedTrip.route_detail.stops.slice(0, -1).map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: '13px' }}>Arrêt de descente</label>
+                  <select
+                    value={destinationId}
+                    onChange={(e) => setDestinationId(e.target.value)}
+                  >
+                    {(() => {
+                      const stops = selectedTrip.route_detail.stops || [];
+                      const origIdx = stops.findIndex((s) => String(s.id) === originId);
+                      const validStops = origIdx >= 0 ? stops.slice(origIdx + 1) : stops.slice(1);
+                      return validStops.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ));
+                    })()}
+                  </select>
+                </div>
+              </div>
+            )}
             
             {seats.length > 0 && (
               <BusSeatMap
@@ -816,7 +886,7 @@ function Tickets({
           <div style={{ background: 'var(--warnbg)', color: 'var(--warn)', padding: '20px', borderRadius: '12px', marginTop: '20px', border: '1px solid #f2dfb6' }}>
             <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>Réservation en cours · {pending.reference}</p>
             <p style={{ fontSize: '14px' }}>
-              Siège(s) : <b>{pendingTickets.map((t) => t.seat_detail?.number ?? t.seat).join(", ")}</b> · {pending.trip_detail.route_detail.label}
+              Siège(s) : <b>{pendingTickets.map((t) => t.seat_detail?.number ?? t.seat).join(", ")}</b> · {pending.segment_label || pending.trip_detail.route_detail.label}
             </p>
             {expired ? (
               <>
@@ -880,7 +950,7 @@ function Tickets({
                    <div>
                      <div style={{ fontWeight: 700, color: 'var(--ink)' }}>{ticket.passenger_name}</div>
                      <div style={{ fontSize: '12px', color: 'var(--mute)' }}>
-                       Siège N° {ticket.seat_detail?.number ?? ticket.seat} · Réf. {ticket.reference}
+                       Siège N° {ticket.seat_detail?.number ?? ticket.seat} · {ticket.segment_label || ticket.trip_detail.route_detail.label} · Réf. {ticket.reference}
                      </div>
                    </div>
                    <a
@@ -919,8 +989,8 @@ function Tickets({
               <div key={ticket.id} style={{ border: '1px solid var(--line)', borderRadius: '12px', padding: '16px', background: 'var(--bg)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                   <div>
-                    <h4 style={{ color: 'var(--navy)', marginBottom: '4px' }}>{ticket.trip_detail.route_detail.label}</h4>
-                    <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Départ : {formatDate(ticket.trip_detail.departure_at)}</p>
+                    <h4 style={{ color: 'var(--navy)', marginBottom: '4px' }}>{ticket.segment_label || ticket.trip_detail.route_detail.label}</h4>
+                    <p style={{ fontSize: '13px', color: 'var(--mute)' }}>{ticket.departure_label || "Départ"} : {formatDate(ticket.effective_departure_at || ticket.trip_detail.departure_at)}</p>
                     {ticket.trip_detail.boarding_at && <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Embarquement : {formatDate(ticket.trip_detail.boarding_at)}</p>}
                   </div>
                   <span className={ticket.status === "ISSUED" ? "pill" : "pill ex"} style={{ alignSelf: 'flex-start' }}>{ticket.status_display}</span>

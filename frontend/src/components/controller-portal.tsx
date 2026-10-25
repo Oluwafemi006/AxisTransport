@@ -82,10 +82,10 @@ export function ControllerPortal() {
                 <div>
                   <p className="eyebrow">{result.ticket.reference}</p>
                   <h2 className="mt-1">{result.ticket.passenger_name}</h2>
-                  <p className="text-sm text-slate-500">Siège {result.ticket.seat_detail.number} · {result.ticket.trip_detail.route_detail.label}</p>
+                  <p className="text-sm text-slate-500">Siège {result.ticket.seat_detail.number} · {result.ticket.segment_label || result.ticket.trip_detail.route_detail.label}</p>
                   <p className="text-sm text-slate-500">
                     {result.ticket.trip_detail.boarding_at && <>Embarquement : {formatDate(result.ticket.trip_detail.boarding_at)} · </>}
-                    Départ : {formatDate(result.ticket.trip_detail.departure_at)}
+                    {result.ticket.departure_label || "Départ"} : {formatDate(result.ticket.effective_departure_at || result.ticket.trip_detail.departure_at)}
                   </p>
                 </div>
                 <StatusBadge tone="green">Contrôlé</StatusBadge>
