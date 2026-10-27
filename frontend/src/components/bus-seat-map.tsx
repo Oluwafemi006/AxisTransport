@@ -23,11 +23,11 @@ export function BusSeatMap({
   return (
     <div className="bus-layout-container" style={{ marginTop: "20px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-        <label style={{ margin: 0, fontWeight: 700 }}>Plan des sièges (Car Yutong)</label>
+        <label style={{ margin: 0, fontWeight: 700 }}>Plan des sièges (choix facultatif)</label>
         <span style={{ fontSize: "12px", color: "var(--mute)" }}>
           {selectedSeatIds.length > 0
-            ? `${selectedSeatIds.length} place${selectedSeatIds.length > 1 ? "s" : ""} sélectionnée${selectedSeatIds.length > 1 ? "s" : ""} (max. ${maxSeats})`
-            : `Choisissez jusqu’à ${maxSeats} places`}
+            ? `${selectedSeatIds.length} place${selectedSeatIds.length > 1 ? "s" : ""} choisie${selectedSeatIds.length > 1 ? "s" : ""} (max. ${maxSeats})`
+            : `Facultatif : choisissez jusqu’à ${maxSeats} places ou laissez l’attribution automatique`}
         </span>
       </div>
 
@@ -154,6 +154,19 @@ export function BusSeatMap({
               style={{
                 width: "14px",
                 height: "14px",
+                background: "#FEF3C7",
+                border: "1px solid #D97706",
+                borderRadius: "4px",
+                display: "inline-block",
+              }}
+            />
+            <span>Retenu</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span
+              style={{
+                width: "14px",
+                height: "14px",
                 background: "var(--bg)",
                 border: "1px solid var(--line)",
                 borderRadius: "4px",
@@ -169,6 +182,7 @@ export function BusSeatMap({
 
   function renderSeatButton(seat: Seat) {
     const free = seat.status === "AVAILABLE";
+    const held = seat.status === "HELD";
     const chosen = selectedSeatIds.includes(seat.id);
     const canSelect = free && (chosen || selectedSeatIds.length < maxSeats);
 
@@ -178,16 +192,40 @@ export function BusSeatMap({
         key={seat.id}
         disabled={disabled || !free || (!chosen && selectedSeatIds.length >= maxSeats)}
         onClick={() => onToggleSeat(seat)}
-        title={chosen ? `Siège ${seat.number} sélectionné` : free ? `Siège ${seat.number} libre` : `Siège ${seat.number} (${seat.status_display})`}
+        title={
+          chosen
+            ? `Siège ${seat.number} sélectionné`
+            : free
+            ? `Siège ${seat.number} — Libre`
+            : held
+            ? `Siège ${seat.number} — Retenu (paiement en cours)`
+            : `Siège ${seat.number} — Occupé`
+        }
         aria-pressed={chosen}
         style={{
           aspectRatio: "1/1",
           borderRadius: "8px",
           fontWeight: 700,
           fontSize: "13px",
-          border: chosen ? "2px solid var(--blue)" : "1px solid var(--line)",
-          background: chosen ? "var(--blue)" : free ? "#fff" : "var(--bg)",
-          color: chosen ? "#fff" : free ? "var(--ink)" : "var(--mute)",
+          border: chosen
+            ? "2px solid var(--blue)"
+            : held
+            ? "1px solid #D97706"
+            : "1px solid var(--line)",
+          background: chosen
+            ? "var(--blue)"
+            : free
+            ? "#fff"
+            : held
+            ? "#FEF3C7"
+            : "var(--bg)",
+          color: chosen
+            ? "#fff"
+            : free
+            ? "var(--ink)"
+            : held
+            ? "#92400E"
+            : "var(--mute)",
           cursor: !free ? "not-allowed" : canSelect ? "pointer" : "not-allowed",
           display: "flex",
           alignItems: "center",

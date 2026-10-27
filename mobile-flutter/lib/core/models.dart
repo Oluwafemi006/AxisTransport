@@ -629,6 +629,8 @@ class Ticket {
     this.publicUrl = '',
     this.printInfo,
     this.bookingId,
+    this.seatPreference = true,
+    this.seatSummaryLabel,
   });
 
   final int id;
@@ -661,6 +663,12 @@ class Ticket {
 
   /// Données d'impression (vendeur, mode de paiement, agence, taxes) ; absentes sur un ancien billet en cache.
   final TicketPrintInfo? printInfo;
+
+  /// Vrai si le client a choisi son siège ; faux si le siège a été attribué automatiquement.
+  final bool seatPreference;
+
+  /// Libellé du siège selon l'étape (avant paiement : préférence ou attribution après paiement ; après paiement : numéro définitif).
+  final String? seatSummaryLabel;
 
   bool get isConfirmed =>
       status == 'ISSUED' || status == 'CHECKED' || status == 'COMPLETED';
@@ -700,6 +708,8 @@ class Ticket {
       reservationExpiresAt: json['reservation_expires_at'] == null
           ? null
           : DateTime.parse(json['reservation_expires_at'] as String).toLocal(),
+      seatPreference: json['seat_preference'] as bool? ?? true,
+      seatSummaryLabel: json['seat_summary_label'] as String?,
     );
   }
 
@@ -728,6 +738,8 @@ class Ticket {
     'departure_label': departureLabel,
     'effective_departure_at': effectiveDepartureAt?.toUtc().toIso8601String(),
     'reservation_expires_at': reservationExpiresAt?.toUtc().toIso8601String(),
+    'seat_preference': seatPreference,
+    if (seatSummaryLabel != null) 'seat_summary_label': seatSummaryLabel,
   };
 }
 
@@ -740,6 +752,13 @@ class BookingReservation {
     required this.amount,
     required this.currency,
     required this.tickets,
+    this.clientStatusDisplay,
+    this.segmentLabel,
+    this.originName,
+    this.destinationName,
+    this.departureLabel,
+    this.effectiveDepartureAt,
+    this.tripDetail,
     this.paymentQuotes = const [],
     this.guestAccessToken,
     this.reservationExpiresAt,
@@ -749,6 +768,13 @@ class BookingReservation {
   final String reference;
   final String status;
   final String statusDisplay;
+  final String? clientStatusDisplay;
+  final String? segmentLabel;
+  final String? originName;
+  final String? destinationName;
+  final String? departureLabel;
+  final DateTime? effectiveDepartureAt;
+  final Trip? tripDetail;
   final num amount;
   final String currency;
   final List<Ticket> tickets;
@@ -778,6 +804,17 @@ class BookingReservation {
       reference: json['reference'] as String? ?? '',
       status: json['status'] as String? ?? '',
       statusDisplay: json['status_display'] as String? ?? '',
+      clientStatusDisplay: json['client_status_display'] as String?,
+      segmentLabel: json['segment_label'] as String?,
+      originName: json['origin_name'] as String?,
+      destinationName: json['destination_name'] as String?,
+      departureLabel: json['departure_label'] as String?,
+      effectiveDepartureAt: json['effective_departure_at'] == null
+          ? null
+          : DateTime.parse(json['effective_departure_at'] as String).toLocal(),
+      tripDetail: json['trip_detail'] is Map<String, dynamic>
+          ? Trip.fromJson(json['trip_detail'] as Map<String, dynamic>)
+          : null,
       amount: asNum(json['amount']),
       currency: json['currency'] as String? ?? 'XOF',
       guestAccessToken: json['guest_access_token'] as String?,

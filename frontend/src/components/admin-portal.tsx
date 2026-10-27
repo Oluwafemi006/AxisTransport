@@ -3,9 +3,14 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone, useActionFeedback } from "./ui";
 import { LoginCard } from "./login-card";
+import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import { actionErrorText, counterTripLabel, holdMinutesConfigured, upcomingSellableTrips } from "@/lib/portal-rules";
+<<<<<<< HEAD
+import type { AgencyProfile, AgencySettingChange, Booking, FareRule, FeatureFlag, Location, ManualTicketChange, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
+=======
 import type { AgencyProfile, AgencySettingChange, BoardingPoint, FareRule, FeatureFlag, Location, ManualTicketChange, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
+>>>>>>> origin/main
 
 type AdminTab = "dashboard" | "planning" | "guichet" | "points" | "colis" | "flotte" | "tarifs" | "troncons" | "agence" | "paiements" | "equipe";
 type Dashboard = {
@@ -101,7 +106,7 @@ export function AdminPortal() {
           {tab === "tarifs" && <PricingPanel routes={routes} fares={fares} flags={flags} payments={payments} settings={settings} onChanged={load} />}
           {tab === "troncons" && <SegmentFarePanel />}
           {tab === "agence" && <AgencyPanel />}
-          {tab === "paiements" && <div className="space-y-5"><IncidentPanel incidents={incidents} onChanged={load} /><ManualTicketChangeLog /></div>}
+          {tab === "paiements" && <div className="space-y-5"><RefundDueBookingsPanel /><IncidentPanel incidents={incidents} onChanged={load} /><ManualTicketChangeLog /></div>}
           {tab === "equipe" && <TeamPanel users={users} onChanged={load} />}
         </>
       )}
@@ -918,6 +923,17 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
             </div>
           )}
           <Select label="Siège libre" value={seat} onChange={setSeat} options={seats.filter((item) => item.status === "AVAILABLE").map((item) => [String(item.id), item.number])} />
+          {seats.length > 0 && (
+            <div>
+              <span className="field-label">Plan des sièges (Libre · Retenu · Occupé)</span>
+              <BusSeatMap
+                seats={seats}
+                selectedSeatIds={seat ? [Number(seat)] : []}
+                onToggleSeat={(s) => setSeat(String(s.id))}
+                maxSeats={1}
+              />
+            </div>
+          )}
           <Input label="Nom du passager" value={name} onChange={setName} />
           <Input label="Téléphone" value={phone} onChange={setPhone} required={false} />
           <button className="primary-button w-full" disabled={busy || held}>Réserver au guichet</button>
@@ -1740,6 +1756,82 @@ function ManualTicketChangeLog() {
                   <td>{change.to_status_display}</td>
                   <td>{change.changed_by_name}</td>
                   <td>{change.note || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <Notice notice={notice} />
+    </section>
+  );
+}
+
+function RefundDueBookingsPanel() {
+  const [bookings, setBookings] = useState<Booking[] | null>(null);
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  useEffect(() => {
+    apiList<Booking>("/bookings/?status=REFUND_DUE")
+      .then(setBookings)
+      .catch((reason) => {
+        setBookings([]);
+        setNotice(failure(reason, "Les réservations payées sans places disponibles n’ont pas pu être chargées."));
+      });
+  }, []);
+
+  return (
+    <section className="card">
+      <SectionHeading
+        eyebrow="Traitement manuel requis"
+        title="Réservations payées · places indisponibles"
+        action={
+          bookings && (
+            <StatusBadge tone={bookings.length > 0 ? "red" : "green"}>
+              {bookings.length} réservation(s)
+            </StatusBadge>
+          )
+        }
+      />
+      <p className="mb-4 text-sm text-slate-500">
+        Paiements confirmés après l’expiration de la retenue alors qu’il ne restait plus assez de places libres sur le voyage. Aucun remboursement automatique n’est effectué.
+      </p>
+      {bookings === null ? (
+        <Loading />
+      ) : bookings.length === 0 ? (
+        <EmptyState
+          title="Aucune réservation en attente de traitement"
+          text="Les réservations payées tardivement sans places disponibles apparaîtront ici."
+        />
+      ) : (
+        <div className="table-scroll">
+          <table className="staff-table min-w-[760px]">
+            <thead>
+              <tr>
+                <th>Référence</th>
+                <th>Trajet</th>
+                <th>Départ</th>
+                <th>Client / Passagers</th>
+                <th>Montant payé</th>
+                <th>Statut</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bookings.map((b) => (
+                <tr key={b.id}>
+                  <td className="strong">{b.reference}</td>
+                  <td>{b.segment_label || b.trip_detail.route_detail.label}</td>
+                  <td className="whitespace-nowrap">{formatDate(b.effective_departure_at || b.trip_detail.departure_at)}</td>
+                  <td>
+                    {b.passengers.map((p) => p.full_name).join(", ") || "—"}
+                    {b.contact_phone ? ` (${b.contact_phone})` : ""}
+                  </td>
+                  <td className="strong whitespace-nowrap">{money(b.amount, b.currency)}</td>
+                  <td>
+                    <StatusBadge tone="red">
+                      {b.client_status_display || "Payée, places indisponibles"}
+                    </StatusBadge>
+                  </td>
                 </tr>
               ))}
             </tbody>

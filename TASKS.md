@@ -5,6 +5,8 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Réservation multi-passagers, choix/attribution de places et paiements tardifs | `ag/reservation-places-attribution` | Antigravity | à valider par Eddy |
+| Points d'embarquement et de débarquement par ville | `ag/points-embarquement` | Antigravity | à valider par Eddy |
 | Vente par tronçon : réservation, tarification, montée/descente et billets de bout en bout | `ag/vente-par-troncon` | Antigravity | terminée, en attente de fusion sur GitHub |
 | Escales ordonnées, sens de circulation et recherche multi-tronçons | `ag/feature-waypoint-direction-search` | Antigravity | fusionnée dans main |
 | Planning hebdomadaire par défaut et validation des dates | `ag/fix-planning-and-dates` | Antigravity | fusionnée dans main |

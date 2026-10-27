@@ -267,7 +267,7 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
               ),
             ],
             const SizedBox(height: 16),
-            const Text('Siège', style: TextStyle(fontWeight: FontWeight.w800)),
+            const Text('Siège (Libre · Retenu · Occupé)', style: TextStyle(fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
             if (free.isEmpty)
               const Notice(
@@ -278,12 +278,20 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: free
+                children: _sale.seats
                     .map(
                       (item) => ChoiceChip(
-                        label: Text(item.number),
+                        label: Text(
+                          item.isAvailable
+                              ? item.number
+                              : item.status == 'HELD'
+                              ? '${item.number} · Retenu'
+                              : '${item.number} · Occupé',
+                        ),
                         selected: _sale.seat?.id == item.id,
-                        onSelected: (_) => _sale.selectSeat(item),
+                        onSelected: item.isAvailable
+                            ? (_) => _sale.selectSeat(item)
+                            : null,
                       ),
                     )
                     .toList(),

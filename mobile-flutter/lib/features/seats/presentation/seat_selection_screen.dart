@@ -122,12 +122,12 @@ class _SeatSelectionScreenState extends ConsumerState<SeatSelectionScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Choix des sièges')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 96),
         children: [
           const _BookingProgress(),
           const SizedBox(height: 20),
           const Text(
-            'Attribuez un siège à chaque passager',
+            'Choix des sièges (facultatif)',
             style: TextStyle(
               color: AxisColors.navyDark,
               fontSize: 22,
@@ -136,7 +136,7 @@ class _SeatSelectionScreenState extends ConsumerState<SeatSelectionScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Les informations saisies à l’étape précédente seront contrôlées avec les règles de placement avant confirmation.',
+            'Choisissez vos places sur le plan ou continuez : les places restantes seront attribuées automatiquement.',
             style: TextStyle(color: AxisColors.muted, height: 1.4),
           ),
           const SizedBox(height: 16),
@@ -192,16 +192,16 @@ class _SeatSelectionScreenState extends ConsumerState<SeatSelectionScreen> {
           ],
           const SizedBox(height: 20),
           FilledButton.icon(
-            onPressed: draft.hasAllSeats
-                ? () => context.push(
-                    '/billets/booking/${widget.tripId}/recapitulatif',
-                  )
-                : null,
+            onPressed: () => context.push(
+              '/billets/booking/${widget.tripId}/recapitulatif',
+            ),
             icon: const Icon(Icons.receipt_long_outlined),
             label: Text(
               draft.hasAllSeats
                   ? 'Voir le récapitulatif'
-                  : '${draft.seatsByPassenger.length}/${passengers.length} siège(s) attribué(s)',
+                  : draft.seatsByPassenger.isEmpty
+                  ? 'Continuer (attribution automatique)'
+                  : 'Voir le récapitulatif (${draft.seatsByPassenger.length}/${passengers.length} préférence(s))',
             ),
           ),
         ],
@@ -241,10 +241,14 @@ class _SeatLegend extends StatelessWidget {
     runSpacing: 8,
     children: [
       const _LegendItem(color: AxisColors.seatIdle, label: 'Libre'),
-      const _LegendItem(color: AxisColors.seatTaken, label: 'Indisponible'),
+      const _LegendItem(
+        color: Color(0xFFFEF0C7),
+        label: 'Retenu',
+      ),
+      const _LegendItem(color: AxisColors.seatTaken, label: 'Occupé'),
       const _LegendItem(color: AxisColors.border, label: 'Non adapté'),
       _LegendItem(color: AxisColors.red, label: 'Pour $activeName'),
-      const _LegendItem(color: AxisColors.navy, label: 'Déjà attribué'),
+      const _LegendItem(color: AxisColors.navy, label: 'Attribué'),
     ],
   );
 }
@@ -429,26 +433,36 @@ class _SeatMap extends StatelessWidget {
     );
     final active = assignedTo == activePassenger.id;
     final assignedElsewhere = assignedTo != null && !active;
+    final isHeld = seat.status == 'HELD';
     final enabled = seat.isAvailable && !assignedElsewhere && allowedForActive;
     final color = active
         ? AxisColors.red
         : assignedElsewhere
         ? AxisColors.navy
+        : isHeld
+        ? const Color(0xFFFEF0C7)
+        : !seat.isAvailable
+        ? AxisColors.seatTaken
         : !allowedForActive
         ? AxisColors.border
-        : seat.isAvailable
-        ? AxisColors.seatIdle
-        : AxisColors.seatTaken;
+        : AxisColors.seatIdle;
     final foreground = active || assignedElsewhere
         ? Colors.white
+        : isHeld
+        ? const Color(0xFFB54708)
         : AxisColors.navyDark;
+    final statusSemantic = seat.isAvailable
+        ? 'Libre'
+        : isHeld
+        ? 'Retenu'
+        : 'Occupé';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Semantics(
         button: true,
         enabled: enabled,
         label: allowedForActive
-            ? 'Siège ${seat.number}'
+            ? 'Siège ${seat.number} ($statusSemantic)'
             : 'Siège ${seat.number} non adapté',
         child: InkWell(
           onTap: enabled ? () => onSelect(seat) : null,
