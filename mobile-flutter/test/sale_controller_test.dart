@@ -98,6 +98,8 @@ class _Api extends ApiClient {
     required int paymentMethod,
     String? origin,
     String? destination,
+    int? boardingPointId,
+    int? alightingPointId,
   }) async {
     sells += 1;
     keys.add(idempotencyKey);

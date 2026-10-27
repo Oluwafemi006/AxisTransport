@@ -26,6 +26,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import (
+    BoardingPoint,
     Booking,
     FareRule,
     FeatureFlag,
@@ -62,6 +63,7 @@ from .permissions import (
     IsOperationsStaff,
 )
 from .serializers import (
+    BoardingPointSerializer,
     PaymentIncidentSerializer,
     ManualTicketChangeSerializer,
     AgencyProfileSerializer,
@@ -548,7 +550,7 @@ class PublicReadAdminWriteMixin:
 
 
 class LocationViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
-    queryset = Location.objects.all()
+    queryset = Location.objects.prefetch_related("boarding_points")
     serializer_class = LocationSerializer
 
     def get_queryset(self):
@@ -556,6 +558,40 @@ class LocationViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
         if self.action == "list" and self.request.query_params.get("all") != "true":
             queryset = queryset.filter(active=True)
         return queryset
+
+
+class BoardingPointViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
+    """
+    Points d'embarquement et de débarquement par ville.
+    Lecture publique des points actifs (?all=true réservé à l'ADMIN).
+    Création, modification et activation/désactivation réservées à l'ADMIN.
+    Suppression refusée si le point a déjà été utilisé sur une réservation ou un billet.
+    """
+
+    queryset = BoardingPoint.objects.select_related("location").order_by("location__name", "order", "name")
+    serializer_class = BoardingPointSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        location_id = self.request.query_params.get("location")
+        if location_id:
+            queryset = queryset.filter(location_id=location_id)
+        if self.action == "list" and self.request.query_params.get("all") != "true":
+            queryset = queryset.filter(active=True, location__active=True)
+        return queryset
+
+    def perform_destroy(self, instance):
+        if (
+            instance.bookings_as_boarding_point.exists()
+            or instance.bookings_as_alighting_point.exists()
+            or instance.tickets_as_boarding_point.exists()
+            or instance.tickets_as_alighting_point.exists()
+        ):
+            raise ValidationError(
+                {"detail": "Ce point d'embarquement a déjà servi sur un billet ou une réservation : désactivez-le au lieu de le supprimer."}
+            )
+        super().perform_destroy(instance)
 
 
 class RouteViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
@@ -957,6 +993,12 @@ class TicketViewSet(viewsets.ModelViewSet):
         else:
             raise PermissionDenied("Ce rôle ne permet pas de vendre un billet.")
         try:
+            b_point = data.get("boarding_point_id")
+            if b_point is None:
+                b_point = data.get("boarding_point")
+            a_point = data.get("alighting_point_id")
+            if a_point is None:
+                a_point = data.get("alighting_point")
             ticket = reserve_ticket(
                 trip=data["trip"],
                 seat=data["seat"],
@@ -966,6 +1008,8 @@ class TicketViewSet(viewsets.ModelViewSet):
                 channel=channel,
                 origin=data.get("origin") or None,
                 destination=data.get("destination") or None,
+                boarding_point=b_point,
+                alighting_point=a_point,
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc, staff=request.user.role in {User.Role.COUNTER, User.Role.ADMIN})
@@ -1112,6 +1156,12 @@ class BookingViewSet(viewsets.ModelViewSet):
         user = request.user
         customer = user if user.is_authenticated and user.role == User.Role.CLIENT else None
         try:
+            b_point = data.get("boarding_point_id")
+            if b_point is None:
+                b_point = data.get("boarding_point")
+            a_point = data.get("alighting_point_id")
+            if a_point is None:
+                a_point = data.get("alighting_point")
             booking, guest_token = reserve_booking(
                 trip=data["trip"],
                 passengers=data["passengers"],
@@ -1121,6 +1171,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                 buyer_ifu=data.get("buyer_ifu", ""),
                 origin=data.get("origin") or None,
                 destination=data.get("destination") or None,
+                boarding_point=b_point,
+                alighting_point=a_point,
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc, staff=request.user.is_authenticated and request.user.role != User.Role.CLIENT)
@@ -1497,6 +1549,12 @@ class StaffTicketViewSet(viewsets.GenericViewSet):
 
         origin = request.data.get("origin")
         destination = request.data.get("destination")
+        boarding_point = request.data.get("boarding_point_id")
+        if boarding_point is None:
+            boarding_point = request.data.get("boarding_point")
+        alighting_point = request.data.get("alighting_point_id")
+        if alighting_point is None:
+            alighting_point = request.data.get("alighting_point")
 
         try:
             with transaction.atomic():
@@ -1512,6 +1570,8 @@ class StaffTicketViewSet(viewsets.GenericViewSet):
                     channel=Ticket.Channel.COUNTER,
                     origin=origin,
                     destination=destination,
+                    boarding_point=boarding_point,
+                    alighting_point=alighting_point,
                 )
                 settlement = settle_booking_payment(
                     booking,
@@ -1638,6 +1698,12 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                         raise ValidationError({"seat": "Siège introuvable pour ce départ."})
                     origin = request.data.get("origin")
                     destination = request.data.get("destination")
+                    boarding_point = request.data.get("boarding_point_id")
+                    if boarding_point is None:
+                        boarding_point = request.data.get("boarding_point")
+                    alighting_point = request.data.get("alighting_point_id")
+                    if alighting_point is None:
+                        alighting_point = request.data.get("alighting_point")
                     booking, _ = reserve_booking(
                         trip=trip,
                         passengers=[
@@ -1656,6 +1722,8 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                         buyer_ifu=str(request.data.get("buyer_ifu") or ""),
                         origin=origin,
                         destination=destination,
+                        boarding_point=boarding_point,
+                        alighting_point=alighting_point,
                     )
                 # Espèces : réservation et émission dans la même transaction, donc jamais de billet à moitié créé.
                 if not online and booking.status == Booking.Status.HELD:

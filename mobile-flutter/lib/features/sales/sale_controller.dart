@@ -17,6 +17,8 @@ class SaleController extends ChangeNotifier {
   SaleTrip? trip;
   Seat? seat;
   SaleQuote? quote;
+  int? boardingPointId;
+  int? alightingPointId;
 
   Sale? sale;
   SaleCheckout? checkout;
@@ -46,6 +48,8 @@ class SaleController extends ChangeNotifier {
       sale == null &&
       trip != null &&
       trip!.hasFare &&
+      (trip!.originBoardingPoints.length <= 1 || boardingPointId != null) &&
+      (trip!.destinationBoardingPoints.length <= 1 || alightingPointId != null) &&
       seat != null &&
       quote != null;
 
@@ -84,6 +88,12 @@ class SaleController extends ChangeNotifier {
     trip = selected;
     seat = null;
     seats = const [];
+    boardingPointId = selected != null && selected.originBoardingPoints.length == 1
+        ? selected.originBoardingPoints.first.id
+        : null;
+    alightingPointId = selected != null && selected.destinationBoardingPoints.length == 1
+        ? selected.destinationBoardingPoints.first.id
+        : null;
     quote = selected != null && selected.quotes.length == 1
         ? selected.quotes.first
         : null;
@@ -95,6 +105,16 @@ class SaleController extends ChangeNotifier {
     } on ApiException catch (e) {
       error = e.message;
     }
+    notifyListeners();
+  }
+
+  void selectBoardingPoint(int? id) {
+    boardingPointId = id;
+    notifyListeners();
+  }
+
+  void selectAlightingPoint(int? id) {
+    alightingPointId = id;
     notifyListeners();
   }
 
@@ -132,6 +152,8 @@ class SaleController extends ChangeNotifier {
         passengerName: passengerName.trim(),
         passengerPhone: passengerPhone.trim(),
         paymentMethod: currentQuote.paymentMethod,
+        boardingPointId: boardingPointId,
+        alightingPointId: alightingPointId,
       );
       _apply(payload);
       final paymentError = payload['payment_error'];

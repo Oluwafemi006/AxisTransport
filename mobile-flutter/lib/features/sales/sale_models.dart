@@ -54,6 +54,10 @@ class SaleTrip {
     required this.boardingAt,
     required this.availableSeats,
     required this.quotes,
+    this.originName = '',
+    this.destinationName = '',
+    this.originBoardingPoints = const [],
+    this.destinationBoardingPoints = const [],
   });
 
   final int id;
@@ -61,22 +65,41 @@ class SaleTrip {
   final DateTime? departureAt;
   final DateTime? boardingAt;
   final int availableSeats;
+  final String originName;
+  final String destinationName;
+  final List<BoardingPointInfo> originBoardingPoints;
+  final List<BoardingPointInfo> destinationBoardingPoints;
 
   /// Vide quand aucun tarif n'est défini en base : le départ n'est alors pas vendable.
   final List<SaleQuote> quotes;
 
   bool get hasFare => quotes.isNotEmpty;
 
-  factory SaleTrip.fromJson(Map<String, dynamic> json) => SaleTrip(
-    id: json['id'] as int,
-    label: _map(json['route_detail'])['label'] as String? ?? '',
-    departureAt: _date(json['departure_at']),
-    boardingAt: _date(json['boarding_at']),
-    availableSeats: json['available_seats'] as int? ?? 0,
-    quotes: (json['quotes'] as List? ?? const [])
-        .map((item) => SaleQuote.fromJson(_map(item)))
-        .toList(),
-  );
+  factory SaleTrip.fromJson(Map<String, dynamic> json) {
+    final routeDetail = _map(json['route_detail']);
+    final originDetail = _map(routeDetail['origin_detail']);
+    final destDetail = _map(routeDetail['destination_detail']);
+    return SaleTrip(
+      id: json['id'] as int,
+      label: routeDetail['label'] as String? ?? '',
+      departureAt: _date(json['departure_at']),
+      boardingAt: _date(json['boarding_at']),
+      availableSeats: json['available_seats'] as int? ?? 0,
+      originName: originDetail['name'] as String? ?? '',
+      destinationName: destDetail['name'] as String? ?? '',
+      originBoardingPoints: (originDetail['boarding_points'] as List? ?? const [])
+          .map((item) => BoardingPointInfo.fromJson(_map(item)))
+          .where((p) => p.active)
+          .toList(),
+      destinationBoardingPoints: (destDetail['boarding_points'] as List? ?? const [])
+          .map((item) => BoardingPointInfo.fromJson(_map(item)))
+          .where((p) => p.active)
+          .toList(),
+      quotes: (json['quotes'] as List? ?? const [])
+          .map((item) => SaleQuote.fromJson(_map(item)))
+          .toList(),
+    );
+  }
 }
 
 /// Billet d'une vente, tel que le serveur le renvoie.
@@ -93,6 +116,8 @@ class SaleTicket {
     required this.amount,
     required this.currency,
     required this.publicUrl,
+    this.boardingDisplay = '',
+    this.alightingDisplay = '',
     this.printInfo,
   });
 
@@ -110,6 +135,9 @@ class SaleTicket {
   /// Adresse publique du billet ; vide tant que le serveur n'a pas d'adresse de site configurée.
   final String publicUrl;
 
+  final String boardingDisplay;
+  final String alightingDisplay;
+
   /// Données imprimées sur le billet (fiscalité, IFU acheteur, mode de paiement).
   final TicketPrintInfo? printInfo;
 
@@ -118,6 +146,11 @@ class SaleTicket {
   factory SaleTicket.fromJson(Map<String, dynamic> json) {
     final trip = _map(json['trip_detail']);
     final segment = json['segment_label'] as String? ?? '';
+    final info = json['print_info'] is Map
+        ? TicketPrintInfo.fromJson(_map(json['print_info']))
+        : null;
+    final bDisp = (json['boarding_display'] as String? ?? '').trim();
+    final aDisp = (json['alighting_display'] as String? ?? '').trim();
     return SaleTicket(
       reference: json['reference'] as String? ?? '',
       status: json['status'] as String? ?? '',
@@ -132,9 +165,9 @@ class SaleTicket {
       amount: _num(json['amount']),
       currency: json['currency'] as String? ?? 'XOF',
       publicUrl: json['public_url'] as String? ?? '',
-      printInfo: json['print_info'] is Map
-          ? TicketPrintInfo.fromJson(_map(json['print_info']))
-          : null,
+      boardingDisplay: bDisp.isNotEmpty ? bDisp : (info?.boardingDisplay.trim() ?? ''),
+      alightingDisplay: aDisp.isNotEmpty ? aDisp : (info?.alightingDisplay.trim() ?? ''),
+      printInfo: info,
     );
   }
 }
@@ -200,13 +233,17 @@ class SaleCheckout {
 String saleShareText(SaleTicket ticket, String Function(DateTime) formatDate) {
   final info = ticket.printInfo;
   final paid = (info != null && info.paid) || ticket.isIssued;
+  final bDisp = ticket.boardingDisplay.trim();
+  final aDisp = ticket.alightingDisplay.trim();
   return [
     'AXIS Transport',
     'Billet : ${ticket.reference}',
     'Passager : ${ticket.passengerName}',
     'Trajet : ${ticket.routeLabel}',
+    if (bDisp.isNotEmpty) 'Embarquement : $bDisp',
+    if (aDisp.isNotEmpty) 'Débarquement : $aDisp',
     if (ticket.boardingAt != null)
-      'Embarquement : ${formatDate(ticket.boardingAt!)}',
+      '${bDisp.isNotEmpty ? "Heure d'embarquement" : "Embarquement"} : ${formatDate(ticket.boardingAt!)}',
     if (ticket.departureAt != null)
       'Départ : ${formatDate(ticket.departureAt!)}',
     'Siège : ${ticket.seatNumber}',

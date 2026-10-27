@@ -362,7 +362,7 @@ export function ClientPortal() {
             <main className="wrap section-margin" style={{ paddingBottom: '60px' }}>
               <h2>Billetterie & Réservation</h2>
               <p className="sub">Trouvez un départ, choisissez votre siège et recevez votre billet électronique.</p>
-              <Tickets user={user} trips={trips} tickets={tickets} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} />
+              <Tickets user={user} trips={trips} locations={locations} tickets={tickets} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} />
             </main>
           )}
           
@@ -443,6 +443,7 @@ type BookingPayload = { id: number; status: string; tickets: Ticket[]; payment_q
 function Tickets({
   user,
   trips,
+  locations,
   tickets,
   paymentMethods,
   onAuthenticated,
@@ -453,6 +454,7 @@ function Tickets({
 }: {
   user: User | null;
   trips: Trip[];
+  locations: Location[];
   tickets: Ticket[];
   paymentMethods: PaymentMethod[];
   onAuthenticated: () => Promise<void>;
@@ -464,6 +466,8 @@ function Tickets({
   const [tripId, setTripId] = useState(preselectedTripId || "");
   const [originId, setOriginId] = useState(searchOrigin || "");
   const [destinationId, setDestinationId] = useState(searchDestination || "");
+  const [boardingPointId, setBoardingPointId] = useState("");
+  const [alightingPointId, setAlightingPointId] = useState("");
 
   useEffect(() => {
     if (preselectedTripId) setTripId(preselectedTripId);
@@ -493,6 +497,46 @@ function Tickets({
   const [now, setNow] = useState(() => Date.now());
   const [message, setMessage] = useState("");
   const selectedTrip = trips.find((trip) => String(trip.id) === tripId);
+  const effectiveOriginId = originId || searchOrigin || (selectedTrip ? String(selectedTrip.route_detail.origin) : "");
+  const effectiveDestId = destinationId || searchDestination || (selectedTrip ? String(selectedTrip.route_detail.destination) : "");
+
+  const getActivePointsForCity = useCallback((cityIdStr: string) => {
+    if (!cityIdStr) return [];
+    const numId = Number(cityIdStr);
+    const fromStop = selectedTrip?.route_detail?.stops?.find((s) => s.id === numId || s.location_id === numId);
+    if (fromStop?.boarding_points) return fromStop.boarding_points.filter((p) => p.active);
+    if (selectedTrip?.route_detail?.origin === numId && selectedTrip.route_detail.origin_detail?.boarding_points) {
+      return selectedTrip.route_detail.origin_detail.boarding_points.filter((p) => p.active);
+    }
+    if (selectedTrip?.route_detail?.destination === numId && selectedTrip.route_detail.destination_detail?.boarding_points) {
+      return selectedTrip.route_detail.destination_detail.boarding_points.filter((p) => p.active);
+    }
+    const fromLoc = locations.find((l) => l.id === numId);
+    return (fromLoc?.boarding_points || []).filter((p) => p.active);
+  }, [selectedTrip, locations]);
+
+  const activeBoardingPoints = getActivePointsForCity(effectiveOriginId);
+  const activeAlightingPoints = getActivePointsForCity(effectiveDestId);
+
+  useEffect(() => {
+    if (activeBoardingPoints.length === 1) {
+      setBoardingPointId(String(activeBoardingPoints[0].id));
+    } else if (activeBoardingPoints.length === 0) {
+      setBoardingPointId("");
+    } else if (!activeBoardingPoints.some((p) => String(p.id) === boardingPointId)) {
+      setBoardingPointId("");
+    }
+  }, [effectiveOriginId, activeBoardingPoints, boardingPointId]);
+
+  useEffect(() => {
+    if (activeAlightingPoints.length === 1) {
+      setAlightingPointId(String(activeAlightingPoints[0].id));
+    } else if (activeAlightingPoints.length === 0) {
+      setAlightingPointId("");
+    } else if (!activeAlightingPoints.some((p) => String(p.id) === alightingPointId)) {
+      setAlightingPointId("");
+    }
+  }, [effectiveDestId, activeAlightingPoints, alightingPointId]);
   const onlineMethods = paymentMethods.filter((method) => method.online);
   // Un seul moyen de paiement en ligne : une seule action « Payer [total] ». Plusieurs : le choix reste à l'écran.
   const singleQuote = tripQuotes.length === 1 ? tripQuotes[0] : null;
@@ -648,6 +692,12 @@ function Tickets({
         throw new Error(`Veuillez renseigner le nom du passager pour le siège N° ${passengers[i].seatNumber}.`);
       }
     }
+    if (activeBoardingPoints.length > 1 && !boardingPointId) {
+      throw new Error("Veuillez choisir un point d’embarquement.");
+    }
+    if (activeAlightingPoints.length > 1 && !alightingPointId) {
+      throw new Error("Veuillez choisir un point de débarquement.");
+    }
     const orig = originId || searchOrigin;
     const dest = destinationId || searchDestination;
     const payload = {
@@ -656,6 +706,8 @@ function Tickets({
       buyer_ifu: buyerIfu.trim(),
       origin: orig || undefined,
       destination: dest || undefined,
+      boarding_point_id: boardingPointId ? Number(boardingPointId) : undefined,
+      alighting_point_id: alightingPointId ? Number(alightingPointId) : undefined,
       passengers: passengers.map((p) => ({
         full_name: p.fullName.trim(),
         phone: p.phone.trim() || contactPhone,
@@ -842,6 +894,41 @@ function Tickets({
                 </div>
               </div>
             )}
+
+            {selectedTrip && (activeBoardingPoints.length > 0 || activeAlightingPoints.length > 0) && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
+                {activeBoardingPoints.length > 0 && (
+                  <div>
+                    <label style={{ fontSize: '13px' }}>Point d’embarquement</label>
+                    <select
+                      value={boardingPointId}
+                      onChange={(e) => setBoardingPointId(e.target.value)}
+                      required={activeBoardingPoints.length > 1}
+                    >
+                      {activeBoardingPoints.length > 1 && <option value="">Choisir un point…</option>}
+                      {activeBoardingPoints.map((pt) => (
+                        <option key={pt.id} value={pt.id}>{pt.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {activeAlightingPoints.length > 0 && (
+                  <div>
+                    <label style={{ fontSize: '13px' }}>Point de débarquement</label>
+                    <select
+                      value={alightingPointId}
+                      onChange={(e) => setAlightingPointId(e.target.value)}
+                      required={activeAlightingPoints.length > 1}
+                    >
+                      {activeAlightingPoints.length > 1 && <option value="">Choisir un point…</option>}
+                      {activeAlightingPoints.map((pt) => (
+                        <option key={pt.id} value={pt.id}>{pt.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
             
             {seats.length > 0 && (
               <BusSeatMap
@@ -990,8 +1077,10 @@ function Tickets({
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                   <div>
                     <h4 style={{ color: 'var(--navy)', marginBottom: '4px' }}>{ticket.segment_label || ticket.trip_detail.route_detail.label}</h4>
+                    {ticket.boarding_display && <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Embarquement : {ticket.boarding_display}</p>}
+                    {ticket.alighting_display && <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Débarquement : {ticket.alighting_display}</p>}
                     <p style={{ fontSize: '13px', color: 'var(--mute)' }}>{ticket.departure_label || "Départ"} : {formatDate(ticket.effective_departure_at || ticket.trip_detail.departure_at)}</p>
-                    {ticket.trip_detail.boarding_at && <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Embarquement : {formatDate(ticket.trip_detail.boarding_at)}</p>}
+                    {ticket.trip_detail.boarding_at && <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Heure d’embarquement : {formatDate(ticket.trip_detail.boarding_at)}</p>}
                   </div>
                   <span className={ticket.status === "ISSUED" ? "pill" : "pill ex"} style={{ alignSelf: 'flex-start' }}>{ticket.status_display}</span>
                 </div>

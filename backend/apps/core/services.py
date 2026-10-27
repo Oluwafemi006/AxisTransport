@@ -11,6 +11,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .models import (
+    BoardingPoint,
     Booking,
     FareRule,
     FeatureFlag,
@@ -515,6 +516,47 @@ def hash_guest_token(token):
 DEPARTED_MESSAGE = "Ce départ est déjà parti : il n'est plus possible de réserver."
 
 
+def _resolve_single_boarding_point(location, point_or_id, role_label: str):
+    """
+    Valide ou résout le point d'embarquement/débarquement pour `location` :
+    - Si un point est fourni (instance ou identifiant), vérifie qu'il existe, appartient à `location` et est actif.
+    - Si aucun point n'est fourni :
+      * 0 point actif dans la ville → (None, "")
+      * 1 seul point actif → présélectionné automatiquement (point, point.name)
+      * plusieurs points actifs → erreur demandant un choix explicite.
+    """
+    if point_or_id is not None and point_or_id != "":
+        if isinstance(point_or_id, BoardingPoint):
+            point = point_or_id
+        else:
+            try:
+                point = BoardingPoint.objects.select_related("location").get(pk=int(point_or_id))
+            except (ValueError, TypeError, BoardingPoint.DoesNotExist) as exc:
+                raise ValidationError(f"Point de {role_label} introuvable.") from exc
+        if point.location_id != location.pk:
+            raise ValidationError(
+                f"Le point « {point.name} » n'appartient pas à la ville de {location.name} ({role_label})."
+            )
+        if not point.active:
+            raise ValidationError(
+                f"Le point « {point.name} » à {location.name} est désactivé et ne peut pas être choisi pour le {role_label}."
+            )
+        return point, point.name
+
+    active_points = list(location.boarding_points.filter(active=True).order_by("order", "name", "id"))
+    if not active_points:
+        return None, ""
+    if len(active_points) == 1:
+        return active_points[0], active_points[0].name
+    raise ValidationError(f"Veuillez choisir un point de {role_label} pour la ville de {location.name}.")
+
+
+def resolve_boarding_points(origin_loc, dest_loc, boarding_point=None, alighting_point=None):
+    b_point, b_name = _resolve_single_boarding_point(origin_loc, boarding_point, "embarquement")
+    a_point, a_name = _resolve_single_boarding_point(dest_loc, alighting_point, "débarquement")
+    return b_point, b_name, a_point, a_name
+
+
 @transaction.atomic
 def reserve_booking(
     *,
@@ -530,6 +572,8 @@ def reserve_booking(
     allow_departed=False,
     origin=None,
     destination=None,
+    boarding_point=None,
+    alighting_point=None,
 ):
     """
     Reserve all seats for a group or none of them.
@@ -597,6 +641,10 @@ def reserve_booking(
     except ImproperlyConfigured as exc:
         raise ValidationError(f"Aucun tarif n'est configuré pour le tronçon {origin_loc.name} → {dest_loc.name} : tronçon non vendable.") from exc
 
+    b_point, b_name, a_point, a_name = resolve_boarding_points(
+        origin_loc, dest_loc, boarding_point=boarding_point, alighting_point=alighting_point
+    )
+
     expires_at = timezone.now() + configured_hold_duration()
     guest_token = secrets.token_urlsafe(32) if customer is None else None
     booking = Booking.objects.create(
@@ -610,6 +658,10 @@ def reserve_booking(
         buyer_ifu=buyer_ifu,
         origin=origin_loc,
         destination=dest_loc,
+        boarding_point=b_point,
+        alighting_point=a_point,
+        boarding_point_name=b_name,
+        alighting_point_name=a_name,
         reservation_expires_at=expires_at,
         amount=fare.amount * Decimal(len(passengers)),
         currency=fare.currency,
@@ -635,6 +687,10 @@ def reserve_booking(
             channel=channel,
             origin=origin_loc,
             destination=dest_loc,
+            boarding_point=b_point,
+            alighting_point=a_point,
+            boarding_point_name=b_name,
+            alighting_point_name=a_name,
             reservation_expires_at=expires_at,
             amount=fare.amount,
             currency=fare.currency,
@@ -698,6 +754,8 @@ def reserve_ticket(
     channel=Ticket.Channel.ONLINE,
     origin=None,
     destination=None,
+    boarding_point=None,
+    alighting_point=None,
 ):
     if trip.status not in {Trip.Status.SCHEDULED, Trip.Status.BOARDING}:
         raise ValidationError("Ce trajet n'accepte pas de nouvelle réservation.")
@@ -745,6 +803,10 @@ def reserve_ticket(
     except ImproperlyConfigured as exc:
         raise ValidationError(f"Aucun tarif n'est configuré pour le tronçon {origin_loc.name} → {dest_loc.name} : tronçon non vendable.") from exc
 
+    b_point, b_name, a_point, a_name = resolve_boarding_points(
+        origin_loc, dest_loc, boarding_point=boarding_point, alighting_point=alighting_point
+    )
+
     expires_at = timezone.now() + configured_hold_duration()
     ticket = Ticket.objects.create(
         trip=trip,
@@ -755,6 +817,10 @@ def reserve_ticket(
         channel=channel,
         origin=origin_loc,
         destination=dest_loc,
+        boarding_point=b_point,
+        alighting_point=a_point,
+        boarding_point_name=b_name,
+        alighting_point_name=a_name,
         reservation_expires_at=expires_at,
         amount=fare.amount,
         currency=fare.currency,

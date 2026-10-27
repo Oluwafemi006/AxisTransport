@@ -55,6 +55,8 @@ class _Api extends ApiClient {
     String buyerIfu = '',
     String? origin,
     String? destination,
+    int? boardingPointId,
+    int? alightingPointId,
     required List<Map<String, dynamic>> passengers,
   }) async {
     reservations += 1;
