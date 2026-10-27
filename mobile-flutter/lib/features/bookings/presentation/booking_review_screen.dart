@@ -258,6 +258,20 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
             formatFullDateTime(trip.departureAt),
             style: const TextStyle(color: AxisColors.muted),
           ),
+          if ((draft.originName ?? trip.route.origin?.name ?? '').isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Embarquement : ${draft.originName ?? trip.route.origin?.name ?? ""}${draft.boardingPointName != null && draft.boardingPointName!.isNotEmpty ? " – ${draft.boardingPointName}" : ""}',
+              style: const TextStyle(color: AxisColors.muted, fontSize: 13),
+            ),
+          ],
+          if ((draft.destinationName ?? trip.route.destination?.name ?? '').isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              'Débarquement : ${draft.destinationName ?? trip.route.destination?.name ?? ""}${draft.alightingPointName != null && draft.alightingPointName!.isNotEmpty ? " – ${draft.alightingPointName}" : ""}',
+              style: const TextStyle(color: AxisColors.muted, fontSize: 13),
+            ),
+          ],
           const SizedBox(height: 18),
           ...draft.passengers.map((passenger) {
             final seat = draft.seatsByPassenger[passenger.id]!;

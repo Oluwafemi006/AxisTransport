@@ -228,6 +228,8 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
           buyerIfu: draft.buyerIfu,
           origin: draft.originId != null ? '${draft.originId}' : null,
           destination: draft.destinationId != null ? '${draft.destinationId}' : null,
+          boardingPointId: draft.boardingPointId,
+          alightingPointId: draft.alightingPointId,
           passengers: draft.passengers.map((passenger) {
             final seat = draft.seatsByPassenger[passenger.id]!;
             return {
@@ -259,6 +261,8 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
         buyerIfu: draft.buyerIfu,
         origin: draft.originId != null ? '${draft.originId}' : null,
         destination: draft.destinationId != null ? '${draft.destinationId}' : null,
+        boardingPointId: draft.boardingPointId,
+        alightingPointId: draft.alightingPointId,
         passengers: draft.passengers.map((passenger) {
           final seat = draft.seatsByPassenger[passenger.id]!;
           return {

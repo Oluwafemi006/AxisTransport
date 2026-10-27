@@ -105,7 +105,7 @@ class ClientLocationViewSet(viewsets.ReadOnlyModelViewSet):
     Villes et arrêts actifs. Lecture publique. Pas d'écriture (Admin uniquement).
     Ordonnés selon l'ordre de la ligne de car (1=Parakou, 2=Savè, ...), puis par nom.
     """
-    queryset = Location.objects.filter(active=True).order_by(
+    queryset = Location.objects.filter(active=True).prefetch_related("boarding_points").order_by(
         models.F("line_stop__position").asc(nulls_last=True), "name"
     )
     serializer_class = LocationSerializer
@@ -276,6 +276,12 @@ class ClientTicketViewSet(viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
+            b_point = data.get("boarding_point_id")
+            if b_point is None:
+                b_point = data.get("boarding_point")
+            a_point = data.get("alighting_point_id")
+            if a_point is None:
+                a_point = data.get("alighting_point")
             ticket = reserve_ticket(
                 trip=data["trip"],
                 seat=data["seat"],
@@ -283,6 +289,10 @@ class ClientTicketViewSet(viewsets.GenericViewSet):
                 passenger_name=data["passenger_name"],
                 passenger_phone=data.get("passenger_phone", ""),
                 channel=Ticket.Channel.ONLINE,  # Forcé : jamais COUNTER sur cette surface.
+                origin=data.get("origin") or None,
+                destination=data.get("destination") or None,
+                boarding_point=b_point,
+                alighting_point=a_point,
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc)
@@ -413,6 +423,12 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
                 {"contact_phone": "Un numéro de téléphone valide est obligatoire pour réserver sans compte."}
             )
         try:
+            b_point = data.get("boarding_point_id")
+            if b_point is None:
+                b_point = data.get("boarding_point")
+            a_point = data.get("alighting_point_id")
+            if a_point is None:
+                a_point = data.get("alighting_point")
             booking, guest_token = reserve_booking(
                 trip=data["trip"],
                 passengers=data["passengers"],
@@ -422,6 +438,8 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
                 buyer_ifu=data.get("buyer_ifu", ""),
                 origin=data.get("origin"),
                 destination=data.get("destination"),
+                boarding_point=b_point,
+                alighting_point=a_point,
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc)

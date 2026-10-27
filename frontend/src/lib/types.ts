@@ -11,19 +11,31 @@ export interface User {
   role_display: string;
 }
 
+export interface BoardingPoint {
+  id: number;
+  location: number;
+  location_name?: string;
+  name: string;
+  active: boolean;
+  order: number;
+  is_used?: boolean;
+}
+
 export interface Location {
   id: number;
   name: string;
   address: string;
   active: boolean;
+  boarding_points?: BoardingPoint[];
 }
 
 export interface RouteStop {
   id: number;
   position: number;
-  location_id: number;
+  location_id?: number;
   name: string;
   offset_minutes?: number | null;
+  boarding_points?: BoardingPoint[];
 }
 
 export interface Route {
@@ -116,6 +128,12 @@ export interface Ticket {
   destination_name?: string;
   origin_detail?: Location;
   destination_detail?: Location;
+  boarding_point?: number | null;
+  alighting_point?: number | null;
+  boarding_point_name?: string;
+  alighting_point_name?: string;
+  boarding_display?: string;
+  alighting_display?: string;
   segment_label?: string;
   departure_label?: string;
   effective_departure_at?: string;
@@ -281,6 +299,10 @@ export interface TicketPrintInfo {
   boarding_place: string;
   origin?: string;
   destination?: string;
+  boarding_point_name?: string;
+  alighting_point_name?: string;
+  boarding_display?: string;
+  alighting_display?: string;
   segment_label?: string;
   departure_label?: string;
   departure_at?: string;

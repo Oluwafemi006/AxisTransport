@@ -44,6 +44,24 @@ class Location(TimeStampedModel):
         return self.name
 
 
+class BoardingPoint(TimeStampedModel):
+    """Point d'embarquement et de débarquement rattaché à une ville."""
+
+    location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="boarding_points")
+    name = models.CharField(max_length=160)
+    active = models.BooleanField(default=True)
+    order = models.PositiveSmallIntegerField(default=1, help_text="Ordre d'affichage")
+
+    class Meta:
+        ordering = ["location__name", "order", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["location", "name"], name="unique_boarding_point_per_location"),
+        ]
+
+    def __str__(self):
+        return f"{self.location.name} – {self.name}"
+
+
 class Route(TimeStampedModel):
     origin = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="routes_from")
     destination = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="routes_to")
@@ -536,6 +554,32 @@ class Booking(TimeStampedModel):
         blank=True,
         help_text="Arrêt de descente du voyageur (null = terminus du trajet complet)",
     )
+    boarding_point = models.ForeignKey(
+        BoardingPoint,
+        on_delete=models.SET_NULL,
+        related_name="bookings_as_boarding_point",
+        null=True,
+        blank=True,
+        help_text="Point d'embarquement choisi dans la ville de départ",
+    )
+    alighting_point = models.ForeignKey(
+        BoardingPoint,
+        on_delete=models.SET_NULL,
+        related_name="bookings_as_alighting_point",
+        null=True,
+        blank=True,
+        help_text="Point de débarquement choisi dans la ville d'arrivée",
+    )
+    boarding_point_name = models.CharField(
+        max_length=160,
+        blank=True,
+        help_text="Copie figée du nom du point d'embarquement au moment de la réservation",
+    )
+    alighting_point_name = models.CharField(
+        max_length=160,
+        blank=True,
+        help_text="Copie figée du nom du point de débarquement au moment de la réservation",
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -555,6 +599,22 @@ class Booking(TimeStampedModel):
     @property
     def alighting_location(self):
         return self.destination or (self.trip.route.destination if self.trip_id and self.trip.route_id else None)
+
+    @property
+    def boarding_display(self):
+        loc = self.boarding_location
+        if not loc:
+            return ""
+        pt = (self.boarding_point_name or "").strip()
+        return f"{loc.name} – {pt}" if pt else loc.name
+
+    @property
+    def alighting_display(self):
+        loc = self.alighting_location
+        if not loc:
+            return ""
+        pt = (self.alighting_point_name or "").strip()
+        return f"{loc.name} – {pt}" if pt else loc.name
 
     @property
     def segment_label(self):
@@ -643,6 +703,32 @@ class Ticket(TimeStampedModel):
         blank=True,
         help_text="Arrêt de descente du passager (null = terminus du trajet complet)",
     )
+    boarding_point = models.ForeignKey(
+        BoardingPoint,
+        on_delete=models.SET_NULL,
+        related_name="tickets_as_boarding_point",
+        null=True,
+        blank=True,
+        help_text="Point d'embarquement choisi dans la ville de départ",
+    )
+    alighting_point = models.ForeignKey(
+        BoardingPoint,
+        on_delete=models.SET_NULL,
+        related_name="tickets_as_alighting_point",
+        null=True,
+        blank=True,
+        help_text="Point de débarquement choisi dans la ville d'arrivée",
+    )
+    boarding_point_name = models.CharField(
+        max_length=160,
+        blank=True,
+        help_text="Copie figée du nom du point d'embarquement au moment de l'émission",
+    )
+    alighting_point_name = models.CharField(
+        max_length=160,
+        blank=True,
+        help_text="Copie figée du nom du point de débarquement au moment de l'émission",
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -655,6 +741,22 @@ class Ticket(TimeStampedModel):
     @property
     def alighting_location(self):
         return self.destination or (self.trip.route.destination if self.trip_id and self.trip.route_id else None)
+
+    @property
+    def boarding_display(self):
+        loc = self.boarding_location
+        if not loc:
+            return ""
+        pt = (self.boarding_point_name or "").strip()
+        return f"{loc.name} – {pt}" if pt else loc.name
+
+    @property
+    def alighting_display(self):
+        loc = self.alighting_location
+        if not loc:
+            return ""
+        pt = (self.alighting_point_name or "").strip()
+        return f"{loc.name} – {pt}" if pt else loc.name
 
     @property
     def segment_label(self):

@@ -35,14 +35,24 @@ List<(String, String)> ticketFields(Ticket ticket) {
   final depTime = (info?.departureAt != null)
       ? info!.departureAt!
       : (ticket.effectiveDepartureAt ?? ticket.trip.departureAt);
+  final boardingDisplay = (info != null && info.boardingDisplay.trim().isNotEmpty)
+      ? info.boardingDisplay.trim()
+      : (ticket.boardingDisplay?.trim() ?? '');
+  final alightingDisplay = (info != null && info.alightingDisplay.trim().isNotEmpty)
+      ? info.alightingDisplay.trim()
+      : (ticket.alightingDisplay?.trim() ?? '');
   final paid = info?.paid ?? ticket.isConfirmed;
   return [
     ('Référence', _orMissing(ticket.reference)),
     ('Trajet', _orMissing(label)),
+    if (boardingDisplay.isNotEmpty)
+      ('Embarquement', boardingDisplay),
+    if (alightingDisplay.isNotEmpty)
+      ('Débarquement', alightingDisplay),
     if (info != null && info.boardingPlace.trim().isNotEmpty)
       ('Lieu d\'embarquement', info.boardingPlace.trim()),
     if (ticket.trip.boardingAt != null)
-      ('Embarquement', formatFullDateTime(ticket.trip.boardingAt!)),
+      (boardingDisplay.isNotEmpty ? 'Heure d\'embarquement' : 'Embarquement', formatFullDateTime(ticket.trip.boardingAt!)),
     (depLabel, formatFullDateTime(depTime)),
     if (ticket.trip.arrivalAt != null)
       ('Arrivée prévue', formatFullDateTime(ticket.trip.arrivalAt!)),
@@ -70,6 +80,8 @@ String pdfSafe(String text) {
       buffer.write('>');
     } else if (rune == 0x202F || rune == 0x00A0 || rune == 0x2009) {
       buffer.write(' ');
+    } else if (rune == 0x2013 || rune == 0x2014) {
+      buffer.write('-');
     } else if (rune == 0x2019) {
       buffer.write("'");
     } else if (rune <= 0xFF) {

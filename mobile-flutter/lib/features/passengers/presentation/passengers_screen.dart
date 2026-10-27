@@ -35,8 +35,29 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
   late final List<PassengerType> _types;
   late int _count;
   Trip? _trip;
+  int? _originId;
+  int? _destinationId;
+  int? _boardingPointId;
+  int? _alightingPointId;
   bool _loading = true;
   String? _error;
+
+  List<BoardingPointInfo> _pointsFor(Trip trip, int? locationId, {required bool isOrigin}) {
+    if (locationId != null) {
+      final stop = trip.route.stops.where((s) => s.id == locationId).firstOrNull;
+      if (stop != null && stop.boardingPoints.isNotEmpty) {
+        return stop.boardingPoints.where((p) => p.active).toList();
+      }
+      if (trip.route.origin?.id == locationId) {
+        return (trip.route.origin?.boardingPoints ?? const []).where((p) => p.active).toList();
+      }
+      if (trip.route.destination?.id == locationId) {
+        return (trip.route.destination?.boardingPoints ?? const []).where((p) => p.active).toList();
+      }
+    }
+    final fallback = isOrigin ? trip.route.origin : trip.route.destination;
+    return (fallback?.boardingPoints ?? const []).where((p) => p.active).toList();
+  }
 
   @override
   void initState() {
@@ -103,25 +124,49 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
       }
       final origId = widget.originId ?? draft.originId ?? trip.route.origin?.id;
       final destId = widget.destinationId ?? draft.destinationId ?? trip.route.destination?.id;
+      final origStop = origId == null ? null : trip.route.stops.where((s) => s.id == origId).firstOrNull;
+      final destStop = destId == null ? null : trip.route.stops.where((s) => s.id == destId).firstOrNull;
+      final oName = origStop?.name ?? trip.route.origin?.name;
+      final dName = destStop?.name ?? trip.route.destination?.name;
       String? segLabel;
-      if (origId != null && destId != null) {
-        final origStop = trip.route.stops.where((s) => s.id == origId).firstOrNull;
-        final destStop = trip.route.stops.where((s) => s.id == destId).firstOrNull;
-        final oName = origStop?.name ?? trip.route.origin?.name;
-        final dName = destStop?.name ?? trip.route.destination?.name;
-        if (oName != null && dName != null) {
-          segLabel = '$oName → $dName';
-        }
+      if (oName != null && dName != null) {
+        segLabel = '$oName → $dName';
+      }
+      final origPoints = _pointsFor(trip, origId, isOrigin: true);
+      final destPoints = _pointsFor(trip, destId, isOrigin: false);
+      int? initialBoardingId;
+      if (origPoints.length == 1) {
+        initialBoardingId = origPoints.first.id;
+      } else if (origPoints.length > 1 && origPoints.any((p) => p.id == draft.boardingPointId)) {
+        initialBoardingId = draft.boardingPointId;
+      }
+      int? initialAlightingId;
+      if (destPoints.length == 1) {
+        initialAlightingId = destPoints.first.id;
+      } else if (destPoints.length > 1 && destPoints.any((p) => p.id == draft.alightingPointId)) {
+        initialAlightingId = draft.alightingPointId;
       }
       ref.read(bookingDraftProvider.notifier).start(
         trip,
         originId: origId,
         destinationId: destId,
+        originName: oName,
+        destinationName: dName,
         segmentLabel: segLabel,
+      );
+      ref.read(bookingDraftProvider.notifier).setBoardingPoints(
+        boardingPointId: initialBoardingId,
+        boardingPointName: origPoints.where((p) => p.id == initialBoardingId).firstOrNull?.name,
+        alightingPointId: initialAlightingId,
+        alightingPointName: destPoints.where((p) => p.id == initialAlightingId).firstOrNull?.name,
       );
       if (!mounted) return;
       setState(() {
         _trip = trip;
+        _originId = origId;
+        _destinationId = destId;
+        _boardingPointId = initialBoardingId;
+        _alightingPointId = initialAlightingId;
         _loading = false;
       });
     } catch (_) {
@@ -135,6 +180,9 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
 
   void _continue() {
     if (!_formKey.currentState!.validate() || _trip == null) return;
+    final trip = _trip!;
+    final origPoints = _pointsFor(trip, _originId, isOrigin: true);
+    final destPoints = _pointsFor(trip, _destinationId, isOrigin: false);
     final passengers = List.generate(
       _count,
       (index) => Passenger(
@@ -144,8 +192,84 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
         type: _types[index],
       ),
     );
+    ref.read(bookingDraftProvider.notifier).setBoardingPoints(
+      boardingPointId: _boardingPointId,
+      boardingPointName: origPoints.where((p) => p.id == _boardingPointId).firstOrNull?.name,
+      alightingPointId: _alightingPointId,
+      alightingPointName: destPoints.where((p) => p.id == _alightingPointId).firstOrNull?.name,
+    );
     ref.read(bookingDraftProvider.notifier).setPassengers(passengers);
     context.push('/billets/booking/${widget.tripId}/sieges');
+  }
+
+  List<Widget> _buildBoardingPointSelectors(Trip trip) {
+    final origPoints = _pointsFor(trip, _originId, isOrigin: true);
+    final destPoints = _pointsFor(trip, _destinationId, isOrigin: false);
+    if (origPoints.isEmpty && destPoints.isEmpty) return const [];
+    final origStop = _originId == null ? null : trip.route.stops.where((s) => s.id == _originId).firstOrNull;
+    final destStop = _destinationId == null ? null : trip.route.stops.where((s) => s.id == _destinationId).firstOrNull;
+    final origName = origStop?.name ?? trip.route.origin?.name ?? '';
+    final destName = destStop?.name ?? trip.route.destination?.name ?? '';
+    return [
+      const SizedBox(height: 14),
+      AxisCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Points d\'embarquement et de débarquement',
+              style: TextStyle(
+                color: AxisColors.navyDark,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            if (origPoints.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                initialValue: _boardingPointId,
+                decoration: InputDecoration(
+                  labelText: 'Embarquement ($origName)',
+                ),
+                items: origPoints
+                    .map(
+                      (p) => DropdownMenuItem<int>(
+                        value: p.id,
+                        child: Text(p.name),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) => setState(() => _boardingPointId = value),
+                validator: origPoints.length > 1
+                    ? (value) => value == null ? 'Veuillez choisir un point d\'embarquement.' : null
+                    : null,
+              ),
+            ],
+            if (destPoints.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                initialValue: _alightingPointId,
+                decoration: InputDecoration(
+                  labelText: 'Débarquement ($destName)',
+                ),
+                items: destPoints
+                    .map(
+                      (p) => DropdownMenuItem<int>(
+                        value: p.id,
+                        child: Text(p.name),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) => setState(() => _alightingPointId = value),
+                validator: destPoints.length > 1
+                    ? (value) => value == null ? 'Veuillez choisir un point de débarquement.' : null
+                    : null,
+              ),
+            ],
+          ],
+        ),
+      ),
+    ];
   }
 
   @override
@@ -164,6 +288,7 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
                   if (trip != null) ...[
                     const SizedBox(height: 18),
                     _TripSummary(trip: trip),
+                    ..._buildBoardingPointSelectors(trip),
                   ],
                   if (_error != null) Notice(_error!, error: true),
                   const SizedBox(height: 22),

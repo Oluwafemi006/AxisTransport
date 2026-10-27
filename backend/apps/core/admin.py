@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
 from .models import (
+    BoardingPoint,
     Booking,
     FareRule,
     FeatureFlag,
@@ -166,6 +167,13 @@ class RouteStopAdmin(admin.ModelAdmin):
     list_display = ("route", "position", "location", "offset_minutes")
     list_filter = ("route",)
     ordering = ("route", "position")
+
+
+@admin.register(BoardingPoint)
+class BoardingPointAdmin(admin.ModelAdmin):
+    list_display = ("name", "location", "order", "active", "updated_at")
+    list_filter = ("active", "location")
+    ordering = ("location__name", "order", "name")
 
 
 admin.site.register(
