@@ -366,13 +366,10 @@ export function ClientPortal() {
           {tab === "billets" && (
             <main className="wrap section-margin" style={{ paddingBottom: '60px' }}>
               <h2>Billetterie & Réservation</h2>
-<<<<<<< HEAD
+
               <p className="sub">Trouvez un départ, choisissez votre siège (facultatif) et recevez votre billet électronique.</p>
-              <Tickets user={user} trips={trips} tickets={tickets} bookings={bookings} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} />
-=======
-              <p className="sub">Trouvez un départ, choisissez votre siège et recevez votre billet électronique.</p>
-              <Tickets user={user} trips={trips} locations={locations} tickets={tickets} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} />
->>>>>>> origin/main
+              <Tickets user={user} trips={trips} locations={locations} tickets={tickets} bookings={bookings} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} />
+
             </main>
           )}
           
