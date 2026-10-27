@@ -120,6 +120,7 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
     """
     serializer_class = TripSerializer
     permission_classes = [AllowAny]
+    pagination_class = None
 
     def get_queryset(self):
         from django.utils import timezone
@@ -144,6 +145,35 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
                 raise ValidationError({"date": "Format attendu : AAAA-MM-JJ."}) from exc
             queryset = queryset.filter(departure_at__date=selected_date)
         return queryset
+
+    def list(self, request, *args, **kwargs):
+        from .services import find_next_available_trip
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        data = serializer.data
+
+        origin = request.query_params.get("origin")
+        destination = request.query_params.get("destination")
+        date_value = request.query_params.get("date")
+
+        if origin or destination:
+            next_available = None
+            if len(data) == 0 and origin and destination:
+                next_available = find_next_available_trip(
+                    origin=origin, destination=destination, after_date=date_value
+                )
+            return Response({"results": data, "next_available": next_available})
+        return Response(data)
+
+    @action(detail=False, methods=["get"], url_path="banner")
+    def banner(self, request):
+        """Bandeau d'accueil dynamique construit côté serveur selon les voyages du jour et à venir."""
+        from .services import build_homepage_banner
+        return Response(build_homepage_banner())
 
     @action(detail=False, methods=["get"], url_path="search")
     def search(self, request):

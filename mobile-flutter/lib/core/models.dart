@@ -293,6 +293,55 @@ class Trip {
   };
 }
 
+class TripBanner {
+  const TripBanner({
+    required this.bannerText,
+    required this.todayTripsCount,
+    required this.hasDepartureToday,
+  });
+
+  final String bannerText;
+  final int todayTripsCount;
+  final bool hasDepartureToday;
+
+  factory TripBanner.fromJson(Map<String, dynamic> json) {
+    return TripBanner(
+      bannerText: json['banner_text'] as String? ?? '',
+      todayTripsCount: json['today_trips_count'] as int? ?? 0,
+      hasDepartureToday: json['has_departure_today'] as bool? ?? false,
+    );
+  }
+}
+
+class NextAvailable {
+  const NextAvailable({
+    required this.tripId,
+    required this.date,
+    required this.departureAt,
+    required this.formattedDate,
+    required this.formattedTime,
+    this.routeLabel,
+  });
+
+  final int tripId;
+  final DateTime date;
+  final DateTime departureAt;
+  final String formattedDate;
+  final String formattedTime;
+  final String? routeLabel;
+
+  factory NextAvailable.fromJson(Map<String, dynamic> json) {
+    return NextAvailable(
+      tripId: json['trip_id'] as int,
+      date: DateTime.parse(json['date'] as String),
+      departureAt: DateTime.parse(json['departure_at'] as String).toLocal(),
+      formattedDate: json['formatted_date'] as String? ?? '',
+      formattedTime: json['formatted_time'] as String? ?? '',
+      routeLabel: json['route_label'] as String?,
+    );
+  }
+}
+
 class Seat {
   const Seat({
     required this.id,

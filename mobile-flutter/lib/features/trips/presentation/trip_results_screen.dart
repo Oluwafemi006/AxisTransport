@@ -23,6 +23,7 @@ class TripResultsScreen extends ConsumerStatefulWidget {
 
 class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
   List<Trip> _trips = [];
+  NextAvailable? _nextAvailable;
   List<Place> _places = [];
   _SortBy _sort = _SortBy.departure;
   bool _loading = true;
@@ -53,11 +54,12 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
     });
     final placesFuture = api.locations().catchError((_) => <Place>[]);
     try {
-      final trips = await api.searchTrips(search);
+      final result = await api.searchTripsDetailed(search);
       final places = await placesFuture;
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
-        _trips = trips;
+        _trips = result.trips;
+        _nextAvailable = result.nextAvailable;
         _places = places;
         _loading = false;
       });
@@ -65,6 +67,7 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _trips = [];
+        _nextAvailable = null;
         _loading = false;
         _error =
             'Connexion nécessaire pour connaître les places et tarifs actuels.';
@@ -215,12 +218,35 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
                 child: AxisCard(
                   child: Column(
                     children: [
-                      const Text(
-                        'Aucun départ disponible pour cette recherche.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 12),
+                      if (_nextAvailable != null) ...[
+                        Text(
+                          'Aucun départ ce jour. Prochain départ pour ce trajet : ${_nextAvailable!.formattedDate} à ${_nextAvailable!.formattedTime}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: AxisColors.navyDark,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        FilledButton.icon(
+                          onPressed: () => context.go(
+                            search.withDate(_nextAvailable!.date).resultsLocation,
+                          ),
+                          icon: const Icon(Icons.arrow_forward),
+                          label: Text(
+                            'Voir le départ du ${_nextAvailable!.formattedDate}',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ] else ...[
+                        const Text(
+                          'Aucun départ disponible pour cette recherche.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       OutlinedButton(
                         onPressed: () => context.push(search.searchLocation),
                         child: const Text('Modifier la recherche'),

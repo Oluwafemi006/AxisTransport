@@ -519,7 +519,6 @@ def hash_guest_token(token):
 DEPARTED_MESSAGE = "Ce départ est déjà parti : il n'est plus possible de réserver."
 
 
-<<<<<<< HEAD
 def _seat_numeric_order(seat):
     text = str(seat.number or "").strip()
     if text.isdigit():
@@ -753,7 +752,8 @@ def recover_expired_booking_seats(locked_booking):
     locked_booking.reservation_expires_at = new_expires
     locked_booking.save(update_fields=["status", "reservation_expires_at", "updated_at"])
     return True
-=======
+
+
 def _resolve_single_boarding_point(location, point_or_id, role_label: str):
     """
     Valide ou résout le point d'embarquement/débarquement pour `location` :
@@ -793,7 +793,6 @@ def resolve_boarding_points(origin_loc, dest_loc, boarding_point=None, alighting
     b_point, b_name = _resolve_single_boarding_point(origin_loc, boarding_point, "embarquement")
     a_point, a_name = _resolve_single_boarding_point(dest_loc, alighting_point, "débarquement")
     return b_point, b_name, a_point, a_name
->>>>>>> origin/main
 
 
 @transaction.atomic
@@ -1202,3 +1201,192 @@ def rental_is_available(vehicle, starts_at, ends_at, exclude_booking=None):
     if exclude_booking:
         conflicts = conflicts.exclude(pk=exclude_booking.pk)
     return not conflicts.exists()
+
+
+def _format_trip_stops_summary(trip):
+    """
+    Extrait l'origine, la destination et les escales intermédiaires
+    ordonnées d'un voyage depuis RouteStop.
+    """
+    origin = trip.route.origin.name
+    destination = trip.route.destination.name
+    all_stops = list(trip.route.stops.select_related("location").order_by("position"))
+    intermediate = [
+        s.location.name
+        for s in all_stops
+        if s.location_id not in (trip.route.origin_id, trip.route.destination_id)
+    ]
+    stops_str = ", ".join(intermediate) if intermediate else ""
+    return origin, destination, stops_str
+
+
+def build_homepage_banner():
+    """
+    Construit le bandeau d'accueil dynamique côté serveur :
+    « Aujourd'hui, le bus va de X vers Y et passe par A, B, C. Demain, il repart vers Z. »
+    Cas gérés :
+    - Pas de voyage aujourd'hui : « Pas de départ aujourd'hui. Prochain départ : jour, heure, départ → arrivée »
+    - Voyage du jour déjà parti : « Le voyage d'aujourd'hui (X → Y) est déjà parti. Prochain départ : jour, heure, départ → arrivée »
+    - Deux voyages le même jour : annonce des deux départs
+    Fuseau : Bénin (UTC+1).
+    """
+    now = timezone.localtime()
+    today = now.date()
+    tomorrow = today + timedelta(days=1)
+
+    today_trips = list(
+        Trip.objects.filter(departure_at__date=today)
+        .exclude(status=Trip.Status.CANCELLED)
+        .select_related("route__origin", "route__destination")
+        .prefetch_related("route__stops__location")
+        .order_by("departure_at")
+    )
+
+    upcoming_trips = list(
+        Trip.objects.filter(departure_at__gt=timezone.now(), status__in=[Trip.Status.SCHEDULED, Trip.Status.BOARDING])
+        .select_related("route__origin", "route__destination")
+        .prefetch_related("route__stops__location")
+        .order_by("departure_at")
+    )
+
+    day_names = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+
+    def _format_next_departure(next_trip):
+        loc_dep = timezone.localtime(next_trip.departure_at)
+        day_str = day_names[loc_dep.weekday()]
+        time_str = loc_dep.strftime("%H:%M")
+        date_str = loc_dep.strftime("%d/%m")
+        return f"{day_str} {date_str} à {time_str}, {next_trip.route.origin.name} → {next_trip.route.destination.name}"
+
+    # Cas 1 : Aucun voyage aujourd'hui (ex: jour de repos)
+    if not today_trips:
+        if upcoming_trips:
+            next_info = _format_next_departure(upcoming_trips[0])
+            banner_text = f"Pas de départ aujourd'hui. Prochain départ : {next_info}."
+        else:
+            banner_text = "Pas de départ aujourd'hui. Aucun départ à venir n'est actuellement publié."
+        return {
+            "banner_text": banner_text,
+            "today_trips_count": 0,
+            "has_departure_today": False,
+        }
+
+    # Départs du jour encore à venir (non partis)
+    active_today = [
+        t for t in today_trips
+        if timezone.localtime(t.departure_at) > now and t.status in [Trip.Status.SCHEDULED, Trip.Status.BOARDING]
+    ]
+
+    # Cas 2 : Voyages aujourd'hui, mais déjà partis
+    if not active_today:
+        if len(today_trips) == 1:
+            t0 = today_trips[0]
+            dep_desc = f"{t0.route.origin.name} → {t0.route.destination.name}"
+            intro = f"Le voyage d'aujourd'hui ({dep_desc}) est déjà parti."
+        else:
+            intro = "Les voyages d'aujourd'hui sont déjà partis."
+        if upcoming_trips:
+            next_info = _format_next_departure(upcoming_trips[0])
+            banner_text = f"{intro} Prochain départ : {next_info}."
+        else:
+            banner_text = f"{intro} Aucun autre départ à venir n'est publié."
+        return {
+            "banner_text": banner_text,
+            "today_trips_count": len(today_trips),
+            "has_departure_today": False,
+        }
+
+    # Prochain départ après ceux d'aujourd'hui
+    later_trips = [t for t in upcoming_trips if t.id not in [x.id for x in active_today]]
+    tomorrow_text = ""
+    if later_trips:
+        nxt = later_trips[0]
+        nxt_date = timezone.localtime(nxt.departure_at).date()
+        if nxt_date == tomorrow:
+            tomorrow_text = f" Demain, il repart vers {nxt.route.destination.name}."
+        else:
+            day_str = day_names[nxt_date.weekday()]
+            time_str = timezone.localtime(nxt.departure_at).strftime("%H:%M")
+            tomorrow_text = f" Prochain départ : {day_str} {nxt_date:%d/%m} à {time_str} ({nxt.route.origin.name} → {nxt.route.destination.name})."
+
+    # Cas 3 : Un seul départ actif aujourd'hui
+    if len(active_today) == 1:
+        t = active_today[0]
+        origin, destination, stops_str = _format_trip_stops_summary(t)
+        if stops_str:
+            base_text = f"Aujourd'hui, le bus va de {origin} vers {destination} et passe par {stops_str}."
+        else:
+            base_text = f"Aujourd'hui, le bus va de {origin} vers {destination}."
+        banner_text = f"{base_text}{tomorrow_text}"
+        return {
+            "banner_text": banner_text,
+            "today_trips_count": 1,
+            "has_departure_today": True,
+        }
+
+    # Cas 4 : Deux ou plusieurs départs aujourd'hui
+    desc_list = []
+    for t in active_today:
+        o, d, s = _format_trip_stops_summary(t)
+        h = timezone.localtime(t.departure_at).strftime("%H:%M")
+        if s:
+            desc_list.append(f"{o} vers {d} à {h} (via {s})")
+        else:
+            desc_list.append(f"{o} vers {d} à {h}")
+    trips_desc = " et ".join(desc_list)
+    banner_text = f"Aujourd'hui, départs prévus : {trips_desc}.{tomorrow_text}"
+    return {
+        "banner_text": banner_text,
+        "today_trips_count": len(active_today),
+        "has_departure_today": True,
+    }
+
+
+def find_next_available_trip(origin, destination, after_date=None):
+    """
+    Recherche sans résultat : renvoie la prochaine date où le même tronçon
+    est vendable (dans la limite des voyages déjà générés).
+    """
+    from datetime import datetime, time
+
+    now = timezone.now()
+    min_departure = now
+    if after_date:
+        try:
+            d = datetime.strptime(str(after_date).strip(), "%Y-%m-%d").date()
+            dt = timezone.make_aware(datetime.combine(d, time.min))
+            if dt > min_departure:
+                min_departure = dt
+        except (ValueError, TypeError):
+            pass
+
+    candidate_qs = (
+        Trip.objects.select_related("route__origin", "route__destination", "vehicle")
+        .prefetch_related("seats")
+        .filter(
+            status__in=[Trip.Status.SCHEDULED, Trip.Status.BOARDING],
+            departure_at__gte=min_departure,
+        )
+        .order_by("departure_at")
+    )
+
+    matching_trips = find_trips_for_waypoint_direction(candidate_qs, origin=origin, destination=destination)
+    for trip in matching_trips:
+        loc_dep = timezone.localtime(trip.departure_at)
+        if after_date:
+            try:
+                target_d = datetime.strptime(str(after_date).strip(), "%Y-%m-%d").date()
+                if loc_dep.date() <= target_d:
+                    continue
+            except (ValueError, TypeError):
+                pass
+        return {
+            "trip_id": trip.id,
+            "date": loc_dep.strftime("%Y-%m-%d"),
+            "departure_at": trip.departure_at.isoformat(),
+            "formatted_date": loc_dep.strftime("%d/%m/%Y"),
+            "formatted_time": loc_dep.strftime("%H:%M"),
+            "route_label": trip.route.label,
+        }
+    return None
+

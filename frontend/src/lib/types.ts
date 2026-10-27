@@ -403,3 +403,18 @@ export interface FareRule {
   advance_days: number | null;
   active: boolean;
 }
+
+export interface TripBanner {
+  banner_text: string;
+  today_trips_count: number;
+  has_departure_today: boolean;
+}
+
+export interface NextAvailable {
+  trip_id: number;
+  date: string;
+  departure_at: string;
+  formatted_date: string;
+  formatted_time: string;
+  route_label?: string;
+}
