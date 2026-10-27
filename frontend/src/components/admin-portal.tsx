@@ -6,9 +6,13 @@ import { LoginCard } from "./login-card";
 import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import { actionErrorText, counterTripLabel, holdMinutesConfigured, upcomingSellableTrips } from "@/lib/portal-rules";
+<<<<<<< HEAD
 import type { AgencyProfile, AgencySettingChange, Booking, FareRule, FeatureFlag, Location, ManualTicketChange, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
+=======
+import type { AgencyProfile, AgencySettingChange, BoardingPoint, FareRule, FeatureFlag, Location, ManualTicketChange, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
+>>>>>>> origin/main
 
-type AdminTab = "dashboard" | "planning" | "guichet" | "colis" | "flotte" | "tarifs" | "troncons" | "agence" | "paiements" | "equipe";
+type AdminTab = "dashboard" | "planning" | "guichet" | "points" | "colis" | "flotte" | "tarifs" | "troncons" | "agence" | "paiements" | "equipe";
 type Dashboard = {
   tickets: { sold: number; online: number; counter: number; checked: number; cancelled_or_refunded: number };
   revenue: { total: number; by_payment_method: Array<{ payment_method__label: string; total: number }> };
@@ -22,7 +26,7 @@ const nextParcelStatus: Record<string, string> = {
 };
 
 const tabs: Array<[AdminTab, string]> = [
-  ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["colis", "Colis"],
+  ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["points", "Points d’embarquement"], ["colis", "Colis"],
   ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["troncons", "Tarifs par tronçon"], ["agence", "Agence et taxes"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
 ];
 
@@ -96,6 +100,7 @@ export function AdminPortal() {
           {tab === "dashboard" && <DashboardPanel data={dashboard} trips={trips} />}
           {tab === "planning" && <PlanningPanel routes={routes} vehicles={vehicles.filter((v) => v.category === "BUS")} trips={trips} weeklySchedules={weeklySchedules} onChanged={load} />}
           {tab === "guichet" && <CounterPanel trips={trips} payments={payments} onChanged={load} />}
+          {tab === "points" && <BoardingPointsPanel locations={locations} onChanged={load} />}
           {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
           {tab === "flotte" && <FleetPanel locations={locations} vehicles={vehicles} onChanged={load} />}
           {tab === "tarifs" && <PricingPanel routes={routes} fares={fares} flags={flags} payments={payments} settings={settings} onChanged={load} />}
@@ -689,6 +694,8 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
   const [tripId, setTripId] = useState("");
   const [originId, setOriginId] = useState("");
   const [destinationId, setDestinationId] = useState("");
+  const [boardingPointId, setBoardingPointId] = useState("");
+  const [alightingPointId, setAlightingPointId] = useState("");
   const [seats, setSeats] = useState<Seat[]>([]);
   const [seat, setSeat] = useState("");
   const [name, setName] = useState("");
@@ -699,6 +706,45 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
 
   const selectedTrip = trips.find((t) => String(t.id) === tripId);
   const routeStops = selectedTrip?.route_detail?.stops || [];
+  const effectiveOriginId = originId || (selectedTrip ? String(selectedTrip.route_detail.origin) : "");
+  const effectiveDestId = destinationId || (selectedTrip ? String(selectedTrip.route_detail.destination) : "");
+
+  const getPointsForCity = useCallback((cityIdStr: string) => {
+    if (!cityIdStr || !selectedTrip) return [];
+    const numId = Number(cityIdStr);
+    const fromStop = selectedTrip.route_detail?.stops?.find((s) => s.id === numId || s.location_id === numId);
+    if (fromStop?.boarding_points) return fromStop.boarding_points.filter((p) => p.active);
+    if (selectedTrip.route_detail?.origin === numId && selectedTrip.route_detail.origin_detail?.boarding_points) {
+      return selectedTrip.route_detail.origin_detail.boarding_points.filter((p) => p.active);
+    }
+    if (selectedTrip.route_detail?.destination === numId && selectedTrip.route_detail.destination_detail?.boarding_points) {
+      return selectedTrip.route_detail.destination_detail.boarding_points.filter((p) => p.active);
+    }
+    return [];
+  }, [selectedTrip]);
+
+  const activeBoardingPoints = getPointsForCity(effectiveOriginId);
+  const activeAlightingPoints = getPointsForCity(effectiveDestId);
+
+  useEffect(() => {
+    if (activeBoardingPoints.length === 1) {
+      setBoardingPointId(String(activeBoardingPoints[0].id));
+    } else if (activeBoardingPoints.length === 0) {
+      setBoardingPointId("");
+    } else if (!activeBoardingPoints.some((p) => String(p.id) === boardingPointId)) {
+      setBoardingPointId("");
+    }
+  }, [effectiveOriginId, activeBoardingPoints, boardingPointId]);
+
+  useEffect(() => {
+    if (activeAlightingPoints.length === 1) {
+      setAlightingPointId(String(activeAlightingPoints[0].id));
+    } else if (activeAlightingPoints.length === 0) {
+      setAlightingPointId("");
+    } else if (!activeAlightingPoints.some((p) => String(p.id) === alightingPointId)) {
+      setAlightingPointId("");
+    }
+  }, [effectiveDestId, activeAlightingPoints, alightingPointId]);
 
   const loadSeats = useCallback(async (id: string) => {
     if (!id) { setSeats([]); return; }
@@ -709,6 +755,14 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
 
   async function sell(event: FormEvent) {
     event.preventDefault();
+    if (activeBoardingPoints.length > 1 && !boardingPointId) {
+      feedback.failure(null, "Veuillez choisir un point d’embarquement.");
+      return;
+    }
+    if (activeAlightingPoints.length > 1 && !alightingPointId) {
+      feedback.failure(null, "Veuillez choisir un point de débarquement.");
+      return;
+    }
     setBusy(true);
     try {
       const created = await apiFetch<Ticket>("/tickets/", {
@@ -721,6 +775,8 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
           channel: "COUNTER",
           origin: originId || undefined,
           destination: destinationId || undefined,
+          boarding_point_id: boardingPointId ? Number(boardingPointId) : undefined,
+          alighting_point_id: alightingPointId ? Number(alightingPointId) : undefined,
         }),
       });
       setTicket(created);
@@ -745,7 +801,7 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
 
   function reset() {
     setTicket(null); setNotice(null); setSeat(""); setName(""); setPhone("");
-    setOriginId(""); setDestinationId("");
+    setOriginId(""); setDestinationId(""); setBoardingPointId(""); setAlightingPointId("");
   }
 
   // Départs à venir et vendables (itinéraire actif, pas encore partis), du plus proche au plus lointain.
@@ -844,6 +900,28 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
               />
             </div>
           )}
+          {selectedTrip && (activeBoardingPoints.length > 0 || activeAlightingPoints.length > 0) && (
+            <div className="grid grid-cols-2 gap-3">
+              {activeBoardingPoints.length > 0 && (
+                <Select
+                  label="Point d’embarquement"
+                  value={boardingPointId}
+                  onChange={setBoardingPointId}
+                  options={activeBoardingPoints.map((pt) => [String(pt.id), pt.name])}
+                  required={activeBoardingPoints.length > 1}
+                />
+              )}
+              {activeAlightingPoints.length > 0 && (
+                <Select
+                  label="Point de débarquement"
+                  value={alightingPointId}
+                  onChange={setAlightingPointId}
+                  options={activeAlightingPoints.map((pt) => [String(pt.id), pt.name])}
+                  required={activeAlightingPoints.length > 1}
+                />
+              )}
+            </div>
+          )}
           <Select label="Siège libre" value={seat} onChange={setSeat} options={seats.filter((item) => item.status === "AVAILABLE").map((item) => [String(item.id), item.number])} />
           {seats.length > 0 && (
             <div>
@@ -868,6 +946,8 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
             <p className="text-lg font-extrabold text-axis-900">{ticket.reference}</p>
             <p className="mt-1 text-sm text-slate-500">{ticket.passenger_name} · siège {ticket.seat_detail.number}</p>
             <p className="text-sm font-semibold text-slate-700">{ticket.segment_label || ticket.trip_detail.route_detail.label}</p>
+            {ticket.boarding_display && <p className="text-xs text-slate-600 mt-1">Embarquement : {ticket.boarding_display}</p>}
+            {ticket.alighting_display && <p className="text-xs text-slate-600">Débarquement : {ticket.alighting_display}</p>}
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
               <div><dt className="field-label">Embarquement</dt><dd>{ticket.trip_detail.boarding_at ? formatDate(ticket.trip_detail.boarding_at) : "à confirmer"}</dd></div>
               <div><dt className="field-label">{ticket.departure_label || "Départ"}</dt><dd>{formatDate(ticket.effective_departure_at || ticket.trip_detail.departure_at)}</dd></div>
@@ -1368,6 +1448,190 @@ function AgencyPanel() {
             </table>
           </div>
         )}
+      </section>
+    </div>
+  );
+}
+
+function BoardingPointsPanel({ locations, onChanged }: { locations: Location[]; onChanged: () => Promise<void> }) {
+  const feedback = useActionFeedback();
+  const [points, setPoints] = useState<BoardingPoint[] | null>(null);
+  const [notice, setNotice] = useState<NoticeState>(null);
+  const [busy, setBusy] = useState(false);
+  const [newPoint, setNewPoint] = useState({ location: "", name: "", order: "1" });
+  const [drafts, setDrafts] = useState<Record<number, { name: string; order: string; active: boolean }>>({});
+
+  const load = useCallback(async () => {
+    try {
+      const rows = await apiList<BoardingPoint>("/boarding-points/?all=true");
+      setPoints(rows);
+      setDrafts(Object.fromEntries(rows.map((pt) => [pt.id, { name: pt.name, order: String(pt.order), active: pt.active }])));
+    } catch (reason) {
+      setNotice(failure(reason, "Les points d’embarquement n’ont pas pu être chargés."));
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function addPoint(event: FormEvent) {
+    event.preventDefault();
+    if (!newPoint.location || !newPoint.name.trim()) return;
+    setBusy(true);
+    try {
+      await apiFetch("/boarding-points/", {
+        method: "POST",
+        body: JSON.stringify({
+          location: Number(newPoint.location),
+          name: newPoint.name.trim(),
+          order: Number(newPoint.order) || 1,
+          active: true,
+        }),
+      });
+      setNewPoint({ location: "", name: "", order: "1" });
+      feedback.success("Point d’embarquement ajouté.");
+      await Promise.all([load(), onChanged()]);
+    } catch (reason) {
+      feedback.failure(reason, "Le point d’embarquement n’a pas été ajouté.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function savePoint(pt: BoardingPoint) {
+    const draft = drafts[pt.id];
+    if (!draft) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/boarding-points/${pt.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: draft.name.trim(),
+          order: Number(draft.order) || 1,
+          active: draft.active,
+        }),
+      });
+      feedback.success(`Point « ${draft.name.trim()} » mis à jour.`);
+      await Promise.all([load(), onChanged()]);
+    } catch (reason) {
+      feedback.failure(reason, "Le point d’embarquement n’a pas été modifié.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removePoint(pt: BoardingPoint) {
+    if (pt.is_used) return;
+    if (!window.confirm(`Supprimer le point « ${pt.name} » (${pt.location_name}) ?`)) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/boarding-points/${pt.id}/`, { method: "DELETE" });
+      feedback.success(`Point « ${pt.name} » supprimé.`);
+      await Promise.all([load(), onChanged()]);
+    } catch (reason) {
+      feedback.failure(reason, "Le point d’embarquement n’a pas pu être supprimé.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
+      <section className="card">
+        <SectionHeading eyebrow="Embarquement & débarquement" title="Points d’embarquement par ville" />
+        <p className="mb-4 text-sm text-slate-500">
+          Un même point sert à l’embarquement et au débarquement d’une ville. Un billet déjà émis conserve le nom du point tel qu’il était au moment de la vente.
+          Un point ayant déjà servi ne peut pas être supprimé (désactivez-le).
+        </p>
+        {points === null ? <Loading /> : points.length === 0 ? (
+          <EmptyState title="Aucun point configuré" text="Ajoutez un point d’embarquement pour une ville dans le formulaire ci-contre." />
+        ) : (
+          <div className="table-scroll">
+            <table className="staff-table min-w-[680px]">
+              <thead>
+                <tr>
+                  <th>Ville</th>
+                  <th>Nom du point</th>
+                  <th>Ordre</th>
+                  <th>Actif</th>
+                  <th className="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {points.map((pt) => {
+                  const draft = drafts[pt.id] ?? { name: pt.name, order: String(pt.order), active: pt.active };
+                  return (
+                    <tr key={pt.id}>
+                      <td className="strong">{pt.location_name}</td>
+                      <td>
+                        <input
+                          className="field"
+                          aria-label={`Nom ${pt.name}`}
+                          value={draft.name}
+                          onChange={(e) => setDrafts({ ...drafts, [pt.id]: { ...draft, name: e.target.value } })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="field max-w-20"
+                          type="number"
+                          min={1}
+                          aria-label={`Ordre ${pt.name}`}
+                          value={draft.order}
+                          onChange={(e) => setDrafts({ ...drafts, [pt.id]: { ...draft, order: e.target.value } })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          aria-label={`${pt.name} actif`}
+                          checked={draft.active}
+                          onChange={(e) => setDrafts({ ...drafts, [pt.id]: { ...draft, active: e.target.checked } })}
+                        />
+                      </td>
+                      <td className="text-right whitespace-nowrap space-x-2">
+                        <button type="button" className="secondary-button" disabled={busy} onClick={() => void savePoint(pt)}>
+                          Enregistrer
+                        </button>
+                        {!pt.is_used && (
+                          <button type="button" className="text-button text-red-700" disabled={busy} onClick={() => void removePoint(pt)}>
+                            Supprimer
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <Notice notice={notice} />
+      </section>
+
+      <section className="card self-start">
+        <SectionHeading eyebrow="Administration" title="Ajouter un point" />
+        <form onSubmit={addPoint} className="space-y-4">
+          <Select
+            label="Ville"
+            value={newPoint.location}
+            onChange={(val) => setNewPoint({ ...newPoint, location: val })}
+            options={locations.map((loc) => [String(loc.id), `${loc.name}${loc.active ? "" : " (ville inactive)"}`])}
+          />
+          <Input
+            label="Nom du point d’embarquement"
+            value={newPoint.name}
+            onChange={(val) => setNewPoint({ ...newPoint, name: val })}
+          />
+          <Input
+            label="Ordre d’affichage"
+            type="number"
+            value={newPoint.order}
+            onChange={(val) => setNewPoint({ ...newPoint, order: val })}
+          />
+          <button className="primary-button w-full" disabled={busy}>
+            Ajouter le point
+          </button>
+        </form>
       </section>
     </div>
   );

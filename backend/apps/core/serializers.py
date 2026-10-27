@@ -5,6 +5,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 from .models import (
+    BoardingPoint,
     Booking,
     FareRule,
     FeatureFlag,
@@ -76,11 +77,59 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
+class BoardingPointSerializer(serializers.ModelSerializer):
+    location_name = serializers.CharField(source="location.name", read_only=True)
+    is_used = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BoardingPoint
+        fields = [
+            "id",
+            "location",
+            "location_name",
+            "name",
+            "active",
+            "order",
+            "is_used",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "location_name", "is_used", "created_at", "updated_at"]
+
+    def validate_name(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Le nom du point d'embarquement est obligatoire.")
+        return value
+
+    def get_is_used(self, obj):
+        return (
+            obj.bookings_as_boarding_point.exists()
+            or obj.bookings_as_alighting_point.exists()
+            or obj.tickets_as_boarding_point.exists()
+            or obj.tickets_as_alighting_point.exists()
+        )
+
+
+def _active_boarding_points_payload(location):
+    if not location:
+        return []
+    return [
+        {"id": pt.id, "name": pt.name, "order": pt.order, "active": pt.active}
+        for pt in location.boarding_points.filter(active=True).order_by("order", "name", "id")
+    ]
+
+
 class LocationSerializer(serializers.ModelSerializer):
+    boarding_points = serializers.SerializerMethodField()
+
     class Meta:
         model = Location
-        fields = "__all__"
+        fields = ["id", "name", "address", "active", "boarding_points", "created_at", "updated_at"]
         read_only_fields = ["created_at", "updated_at"]
+
+    def get_boarding_points(self, obj):
+        return _active_boarding_points_payload(obj)
 
 
 class RouteStopSerializer(serializers.ModelSerializer):
@@ -116,7 +165,15 @@ class RouteSerializer(serializers.ModelSerializer):
 
     def get_stops(self, obj):
         seq = obj.get_stops_sequence()
-        return [{"id": loc.id, "name": loc.name, "position": idx + 1} for idx, loc in enumerate(seq)]
+        return [
+            {
+                "id": loc.id,
+                "name": loc.name,
+                "position": idx + 1,
+                "boarding_points": _active_boarding_points_payload(loc),
+            }
+            for idx, loc in enumerate(seq)
+        ]
 
     def validate(self, attrs):
         if attrs.get("origin", getattr(self.instance, "origin", None)) == attrs.get(
@@ -428,6 +485,10 @@ def ticket_print_info(ticket):
         "boarding_place": (origin.address or "").strip() if origin else "",
         "origin": origin.name if origin else "",
         "destination": destination.name if destination else "",
+        "boarding_point_name": (ticket.boarding_point_name or "").strip(),
+        "alighting_point_name": (ticket.alighting_point_name or "").strip(),
+        "boarding_display": ticket.boarding_display,
+        "alighting_display": ticket.alighting_display,
         "segment_label": ticket.segment_label,
         "departure_label": dep_label,
         "departure_at": dep_time.isoformat() if dep_time else (ticket.trip.departure_at.isoformat() if ticket.trip else None),
@@ -454,6 +515,8 @@ class TicketSerializer(serializers.ModelSerializer):
     destination_detail = LocationSerializer(source="alighting_location", read_only=True)
     origin_name = serializers.CharField(source="boarding_location.name", read_only=True)
     destination_name = serializers.CharField(source="alighting_location.name", read_only=True)
+    boarding_display = serializers.CharField(read_only=True)
+    alighting_display = serializers.CharField(read_only=True)
     segment_label = serializers.CharField(read_only=True)
     departure_label = serializers.SerializerMethodField()
     effective_departure_at = serializers.SerializerMethodField()
@@ -476,6 +539,12 @@ class TicketSerializer(serializers.ModelSerializer):
             "destination_name",
             "origin_detail",
             "destination_detail",
+            "boarding_point",
+            "alighting_point",
+            "boarding_point_name",
+            "alighting_point_name",
+            "boarding_display",
+            "alighting_display",
             "segment_label",
             "departure_label",
             "effective_departure_at",
@@ -552,6 +621,10 @@ class TicketCreateSerializer(serializers.Serializer):
     channel = serializers.ChoiceField(choices=Ticket.Channel.choices, required=False)
     origin = serializers.CharField(max_length=120, required=False, allow_blank=True)
     destination = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    boarding_point_id = serializers.IntegerField(required=False, allow_null=True)
+    alighting_point_id = serializers.IntegerField(required=False, allow_null=True)
+    boarding_point = serializers.IntegerField(required=False, allow_null=True)
+    alighting_point = serializers.IntegerField(required=False, allow_null=True)
 
 
 class BookingPassengerSerializer(serializers.ModelSerializer):
@@ -575,6 +648,10 @@ class BookingCreateSerializer(serializers.Serializer):
     trip = serializers.PrimaryKeyRelatedField(queryset=Trip.objects.all())
     origin = serializers.CharField(max_length=120, required=False, allow_blank=True)
     destination = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    boarding_point_id = serializers.IntegerField(required=False, allow_null=True)
+    alighting_point_id = serializers.IntegerField(required=False, allow_null=True)
+    boarding_point = serializers.IntegerField(required=False, allow_null=True)
+    alighting_point = serializers.IntegerField(required=False, allow_null=True)
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
     buyer_ifu = serializers.CharField(max_length=30, required=False, allow_blank=True)
@@ -604,6 +681,8 @@ class BookingSerializer(serializers.ModelSerializer):
     destination_detail = LocationSerializer(source="alighting_location", read_only=True)
     origin_name = serializers.CharField(source="boarding_location.name", read_only=True)
     destination_name = serializers.CharField(source="alighting_location.name", read_only=True)
+    boarding_display = serializers.CharField(read_only=True)
+    alighting_display = serializers.CharField(read_only=True)
     segment_label = serializers.CharField(read_only=True)
     departure_label = serializers.SerializerMethodField()
     effective_departure_at = serializers.SerializerMethodField()
@@ -621,6 +700,12 @@ class BookingSerializer(serializers.ModelSerializer):
             "destination_name",
             "origin_detail",
             "destination_detail",
+            "boarding_point",
+            "alighting_point",
+            "boarding_point_name",
+            "alighting_point_name",
+            "boarding_display",
+            "alighting_display",
             "segment_label",
             "departure_label",
             "effective_departure_at",
@@ -765,6 +850,10 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
     seat_label = serializers.SerializerMethodField()
     origin = serializers.SerializerMethodField()
     destination = serializers.SerializerMethodField()
+    boarding_point_name = serializers.CharField(read_only=True)
+    alighting_point_name = serializers.CharField(read_only=True)
+    boarding_display = serializers.CharField(read_only=True)
+    alighting_display = serializers.CharField(read_only=True)
     departure_at = serializers.SerializerMethodField()
     departure_label = serializers.SerializerMethodField()
     segment_label = serializers.CharField(read_only=True)
@@ -788,6 +877,10 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
             "seat_label",
             "origin",
             "destination",
+            "boarding_point_name",
+            "alighting_point_name",
+            "boarding_display",
+            "alighting_display",
             "segment_label",
             "departure_label",
             "departure_at",

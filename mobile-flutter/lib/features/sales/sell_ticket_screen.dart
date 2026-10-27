@@ -228,6 +228,44 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
               error: true,
             )
           else ...[
+            if (trip.originBoardingPoints.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                initialValue: _sale.boardingPointId,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Embarquement (${trip.originName})',
+                ),
+                items: trip.originBoardingPoints
+                    .map(
+                      (p) => DropdownMenuItem<int>(
+                        value: p.id,
+                        child: Text(p.name),
+                      ),
+                    )
+                    .toList(),
+                onChanged: _sale.selectBoardingPoint,
+              ),
+            ],
+            if (trip.destinationBoardingPoints.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                initialValue: _sale.alightingPointId,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Débarquement (${trip.destinationName})',
+                ),
+                items: trip.destinationBoardingPoints
+                    .map(
+                      (p) => DropdownMenuItem<int>(
+                        value: p.id,
+                        child: Text(p.name),
+                      ),
+                    )
+                    .toList(),
+                onChanged: _sale.selectAlightingPoint,
+              ),
+            ],
             const SizedBox(height: 16),
             const Text('Siège (Libre · Retenu · Occupé)', style: TextStyle(fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
@@ -451,8 +489,12 @@ class SaleIssuedCard extends StatelessWidget {
           Text('Passager : ${ticket.passengerName}'),
           Text('Siège : ${ticket.seatNumber}'),
           Text('Trajet : ${ticket.routeLabel}'),
+          if (ticket.boardingDisplay.trim().isNotEmpty)
+            Text('Embarquement : ${ticket.boardingDisplay.trim()}'),
+          if (ticket.alightingDisplay.trim().isNotEmpty)
+            Text('Débarquement : ${ticket.alightingDisplay.trim()}'),
           if (ticket.boardingAt != null)
-            Text('Embarquement : ${formatFullDateTime(ticket.boardingAt!)}'),
+            Text('${ticket.boardingDisplay.trim().isNotEmpty ? "Heure d'embarquement" : "Embarquement"} : ${formatFullDateTime(ticket.boardingAt!)}'),
           if (ticket.departureAt != null)
             Text('Départ : ${formatFullDateTime(ticket.departureAt!)}'),
           Text(

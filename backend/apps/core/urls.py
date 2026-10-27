@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    BoardingPointViewSet,
     BookingViewSet,
     DashboardView,
     FareRuleViewSet,
@@ -34,6 +35,7 @@ from .views import (
 
 router = DefaultRouter()
 router.register("locations", LocationViewSet)
+router.register("boarding-points", BoardingPointViewSet)
 router.register("routes", RouteViewSet)
 router.register("vehicles", VehicleViewSet)
 router.register("trips", TripViewSet)

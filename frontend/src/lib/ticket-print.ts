@@ -10,6 +10,8 @@ export interface PrintableTicket {
   reference: string;
   origin: string;
   destination: string;
+  boarding_display?: string;
+  alighting_display?: string;
   boarding_at: string | null;
   departure_at: string | null;
   arrival_at: string | null;
@@ -24,12 +26,24 @@ export function ticketRows(ticket: PrintableTicket, formatDate: (iso: string) =>
   const info = ticket.print_info;
   const origin = info?.origin || ticket.origin;
   const destination = info?.destination || ticket.destination;
+  const boardingDisplay =
+    info?.boarding_display ||
+    ticket.boarding_display ||
+    (origin && info?.boarding_point_name ? `${origin} – ${info.boarding_point_name}` : origin);
+  const alightingDisplay =
+    info?.alighting_display ||
+    ticket.alighting_display ||
+    (destination && info?.alighting_point_name ? `${destination} – ${info.alighting_point_name}` : destination);
   const rows: Array<[string, string]> = [
     ["Référence", ticket.reference],
     ["Trajet", origin && destination ? `${origin} → ${destination}` : TO_FILL],
   ];
-  if (info?.boarding_place) rows.push(["Lieu d'embarquement", info.boarding_place]);
-  if (ticket.boarding_at) rows.push(["Embarquement", formatDate(ticket.boarding_at)]);
+  if (boardingDisplay) rows.push(["Embarquement", boardingDisplay]);
+  if (alightingDisplay) rows.push(["Débarquement", alightingDisplay]);
+  if (info?.boarding_place && !info?.boarding_point_name) rows.push(["Lieu d'embarquement", info.boarding_place]);
+  if (ticket.boarding_at) {
+    rows.push([boardingDisplay ? "Heure d'embarquement" : "Embarquement", formatDate(ticket.boarding_at)]);
+  }
   const depLabel = info?.departure_label || "Départ";
   const depTime = info?.departure_at || ticket.departure_at;
   if (depTime) rows.push([depLabel, formatDate(depTime)]);

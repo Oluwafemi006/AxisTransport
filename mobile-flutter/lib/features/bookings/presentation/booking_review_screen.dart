@@ -264,12 +264,26 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
             '${pending?.departureLabel ?? "Départ"} : ${formatFullDateTime(pending?.effectiveDepartureAt ?? trip.departureAt)}',
             style: const TextStyle(color: AxisColors.muted),
           ),
+<<<<<<< HEAD
           if ((pending?.originName ?? draft.originName ?? trip.route.origin?.name) != null &&
               (pending?.destinationName ?? draft.destinationName ?? trip.route.destination?.name) != null) ...[
             const SizedBox(height: 4),
             Text(
               'Embarquement : ${pending?.originName ?? draft.originName ?? trip.route.origin?.name} · '
               'Débarquement : ${pending?.destinationName ?? draft.destinationName ?? trip.route.destination?.name}',
+=======
+          if ((draft.originName ?? trip.route.origin?.name ?? '').isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Embarquement : ${draft.originName ?? trip.route.origin?.name ?? ""}${draft.boardingPointName != null && draft.boardingPointName!.isNotEmpty ? " – ${draft.boardingPointName}" : ""}',
+              style: const TextStyle(color: AxisColors.muted, fontSize: 13),
+            ),
+          ],
+          if ((draft.destinationName ?? trip.route.destination?.name ?? '').isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              'Débarquement : ${draft.destinationName ?? trip.route.destination?.name ?? ""}${draft.alightingPointName != null && draft.alightingPointName!.isNotEmpty ? " – ${draft.alightingPointName}" : ""}',
+>>>>>>> origin/main
               style: const TextStyle(color: AxisColors.muted, fontSize: 13),
             ),
           ],

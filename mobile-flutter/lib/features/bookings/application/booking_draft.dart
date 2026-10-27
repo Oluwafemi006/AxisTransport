@@ -14,6 +14,10 @@ class BookingDraft {
     this.originName,
     this.destinationName,
     this.segmentLabel,
+    this.boardingPointId,
+    this.alightingPointId,
+    this.boardingPointName,
+    this.alightingPointName,
   });
 
   final Trip? trip;
@@ -27,6 +31,10 @@ class BookingDraft {
   final String? originName;
   final String? destinationName;
   final String? segmentLabel;
+  final int? boardingPointId;
+  final int? alightingPointId;
+  final String? boardingPointName;
+  final String? alightingPointName;
 
   bool get hasAllPassengers =>
       passengers.isNotEmpty &&
@@ -48,6 +56,12 @@ class BookingDraft {
     String? originName,
     String? destinationName,
     String? segmentLabel,
+    int? boardingPointId,
+    bool clearBoardingPoint = false,
+    int? alightingPointId,
+    bool clearAlightingPoint = false,
+    String? boardingPointName,
+    String? alightingPointName,
   }) => BookingDraft(
     trip: trip ?? this.trip,
     passengers: passengers ?? this.passengers,
@@ -58,6 +72,10 @@ class BookingDraft {
     originName: originName ?? this.originName,
     destinationName: destinationName ?? this.destinationName,
     segmentLabel: segmentLabel ?? this.segmentLabel,
+    boardingPointId: clearBoardingPoint ? null : (boardingPointId ?? this.boardingPointId),
+    alightingPointId: clearAlightingPoint ? null : (alightingPointId ?? this.alightingPointId),
+    boardingPointName: clearBoardingPoint ? null : (boardingPointName ?? this.boardingPointName),
+    alightingPointName: clearAlightingPoint ? null : (alightingPointName ?? this.alightingPointName),
   );
 }
 
@@ -107,6 +125,22 @@ class BookingDraftNotifier extends Notifier<BookingDraft> {
       originName: originName,
       destinationName: destinationName,
       segmentLabel: segmentLabel,
+    );
+  }
+
+  void setBoardingPoints({
+    int? boardingPointId,
+    String? boardingPointName,
+    int? alightingPointId,
+    String? alightingPointName,
+  }) {
+    state = state.copyWith(
+      boardingPointId: boardingPointId,
+      clearBoardingPoint: boardingPointId == null,
+      boardingPointName: boardingPointName,
+      alightingPointId: alightingPointId,
+      clearAlightingPoint: alightingPointId == null,
+      alightingPointName: alightingPointName,
     );
   }
 

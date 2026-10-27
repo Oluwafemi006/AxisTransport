@@ -258,8 +258,30 @@ void main() {
 
     test('les caractères hors Latin-1 sont remplacés pour le PDF', () {
       expect(pdfSafe('Cotonou → Parakou'), 'Cotonou > Parakou');
+      expect(pdfSafe('Parakou – Parc ALBARIKA'), 'Parakou - Parc ALBARIKA');
       expect(pdfSafe('1 000 XOF'), '1 000 XOF');
       expect(pdfSafe('Siège réservé'), 'Siège réservé');
+    });
+
+    test('les points d\'embarquement et de débarquement du serveur sont affichés sur le billet', () {
+      final ticket = Ticket.fromJson({
+        ..._ticket().toJson(),
+        'boarding_point_name': 'Parc ALBARIKA',
+        'alighting_point_name': '',
+        'boarding_display': 'Parakou – Parc ALBARIKA',
+        'alighting_display': 'Cotonou',
+      });
+      final fields = Map.fromEntries(
+        ticketFields(ticket).map((item) => MapEntry(item.$1, item.$2)),
+      );
+      expect(fields['Embarquement'], 'Parakou – Parc ALBARIKA');
+      expect(fields['Débarquement'], 'Cotonou');
+      // Survit au stockage hors ligne.
+      final restored = Ticket.fromJson(
+        jsonDecode(jsonEncode(ticket.toJson())) as Map<String, dynamic>,
+      );
+      expect(restored.boardingDisplay, 'Parakou – Parc ALBARIKA');
+      expect(restored.alightingDisplay, 'Cotonou');
     });
   });
 

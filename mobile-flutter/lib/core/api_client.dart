@@ -274,6 +274,8 @@ class ApiClient {
     String buyerIfu = '',
     String? origin,
     String? destination,
+    int? boardingPointId,
+    int? alightingPointId,
     required List<Map<String, dynamic>> passengers,
   }) async {
     final payload = await _request<Map<String, dynamic>>(
@@ -285,6 +287,10 @@ class ApiClient {
         'buyer_ifu': buyerIfu.trim(),
         if (origin != null && origin.isNotEmpty) 'origin': origin,
         if (destination != null && destination.isNotEmpty) 'destination': destination,
+        // ignore: use_null_aware_elements
+        if (boardingPointId != null) 'boarding_point_id': boardingPointId,
+        // ignore: use_null_aware_elements
+        if (alightingPointId != null) 'alighting_point_id': alightingPointId,
         'passengers': passengers,
       },
       auth: true,
@@ -431,6 +437,8 @@ class ApiClient {
     required int paymentMethod,
     String? origin,
     String? destination,
+    int? boardingPointId,
+    int? alightingPointId,
   }) {
     return _request<Map<String, dynamic>>(
       '/staff/sales/sell/',
@@ -443,6 +451,10 @@ class ApiClient {
         'payment_method': paymentMethod,
         if (origin != null && origin.isNotEmpty) 'origin': origin,
         if (destination != null && destination.isNotEmpty) 'destination': destination,
+        // ignore: use_null_aware_elements
+        if (boardingPointId != null) 'boarding_point_id': boardingPointId,
+        // ignore: use_null_aware_elements
+        if (alightingPointId != null) 'alighting_point_id': alightingPointId,
       },
       auth: true,
     );
