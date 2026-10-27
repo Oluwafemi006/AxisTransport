@@ -146,6 +146,13 @@ class ApiClient {
     return _list('/client/trips/', (json) => Trip.fromJson(json));
   }
 
+  Future<TripBanner> tripBanner() async {
+    final payload = await _request<Map<String, dynamic>>(
+      '/client/trips/banner/',
+    );
+    return TripBanner.fromJson(payload);
+  }
+
   Future<Trip> trip(int tripId) async {
     final payload = await _request<Map<String, dynamic>>(
       '/client/trips/$tripId/',
@@ -158,6 +165,43 @@ class ApiClient {
     (json) => Trip.fromJson(json),
     queryParameters: search.queryParameters,
   );
+
+  Future<({List<Trip> trips, NextAvailable? nextAvailable})> searchTripsDetailed(
+    TripSearch search,
+  ) async {
+    try {
+      final payload = await _request<dynamic>(
+        '/client/trips/',
+        queryParameters: search.queryParameters,
+      );
+      if (payload is Map<String, dynamic>) {
+        final items = payload['results'];
+        final trips = items is List
+            ? items
+                .whereType<Map>()
+                .map((item) => Trip.fromJson(Map<String, dynamic>.from(item)))
+                .toList()
+            : <Trip>[];
+        final nextJson = payload['next_available'] as Map<String, dynamic>?;
+        final nextAvailable =
+            nextJson != null ? NextAvailable.fromJson(nextJson) : null;
+        return (trips: trips, nextAvailable: nextAvailable);
+      }
+      if (payload is List) {
+        final trips = payload
+            .whereType<Map>()
+            .map((item) => Trip.fromJson(Map<String, dynamic>.from(item)))
+            .toList();
+        return (trips: trips, nextAvailable: null);
+      }
+    } catch (_) {
+      // Repli sur searchTrips (ex: tests ou mocks personnalisés)
+      final fallback = await searchTrips(search);
+      return (trips: fallback, nextAvailable: null);
+    }
+    final fallback = await searchTrips(search);
+    return (trips: fallback, nextAvailable: null);
+  }
 
   Future<List<Place>> locations() {
     return _list('/client/locations/', (json) => Place.fromJson(json));

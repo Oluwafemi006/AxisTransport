@@ -1,3 +1,4 @@
+from datetime import timedelta
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
@@ -302,6 +303,28 @@ class TripSerializer(serializers.ModelSerializer):
     def get_boarding_at(self, obj):
         boarding = serialized_boarding_at(self, obj)
         return serializers.DateTimeField().to_representation(boarding) if boarding else None
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Si arrival_at n'est pas renseigné explicitement, on calcule via RouteStop.offset_minutes
+        if not data.get("arrival_at") and instance.route_id and instance.departure_at:
+            request = self.context.get("request") if isinstance(self.context, dict) else None
+            dest_param = request.query_params.get("destination") if request and hasattr(request, "query_params") else None
+            target_stop = None
+            if dest_param:
+                from .services import resolve_location
+                try:
+                    dest_loc = resolve_location(dest_param)
+                    if dest_loc:
+                        target_stop = instance.route.stops.filter(location_id=dest_loc.pk).first()
+                except Exception:
+                    target_stop = None
+            if not target_stop:
+                target_stop = instance.route.stops.order_by("-position").first()
+            if target_stop and target_stop.offset_minutes is not None:
+                effective_arrival = instance.departure_at + timedelta(minutes=target_stop.offset_minutes)
+                data["arrival_at"] = serializers.DateTimeField().to_representation(effective_arrival)
+        return data
 
     def get_current_fare(self, obj):
         request = self.context.get("request")

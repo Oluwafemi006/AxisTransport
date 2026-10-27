@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import { beninDateKey, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
-import type { Booking, Checkout, Contact, Location, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
+import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { BusSeatMap } from "./bus-seat-map";
 import { PassengerForm, type PassengerItem } from "./passenger-form";
@@ -23,6 +23,8 @@ export function ClientPortal() {
   const [parcels, setParcels] = useState<Parcel[]>([]);
   const [rentals, setRentals] = useState<RentalBooking[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [banner, setBanner] = useState<TripBanner | null>(null);
+  const [nextAvailable, setNextAvailable] = useState<NextAvailable | null>(null);
   // Coordonnées lues dans les réglages admin ; vides tant qu'elles ne sont pas renseignées.
   const [contact, setContact] = useState<Contact>({ contact_phone: "", contact_whatsapp: "" });
   const [loading, setLoading] = useState(true);
@@ -71,6 +73,7 @@ export function ClientPortal() {
       setLocations(activeLocations);
       setVehicles(rentalVehicles);
       setPaymentMethods(methods);
+      apiFetch<TripBanner>("/client/trips/banner/", {}, false).then(setBanner).catch(() => undefined);
       apiFetch<Contact>("/client/contact/", {}, false).then(setContact).catch(() => undefined);
       await loadPrivate();
     } catch (reason) {
@@ -106,6 +109,7 @@ export function ClientPortal() {
   async function runSearch() {
     const problem = searchError(searchOrigin, searchDestination) ?? searchDateError(searchDate, beninDateKey());
     setSearchMessage(problem ?? "");
+    setNextAvailable(null);
     if (!problem) {
       try {
         const query = new URLSearchParams({
@@ -113,7 +117,14 @@ export function ClientPortal() {
           destination: searchDestination,
           ...(searchDate ? { date: searchDate } : {}),
         });
-        const serverTrips = await apiList<Trip>(`/client/trips/?${query.toString()}`, false);
+        const payload = await apiFetch<Trip[] | { results: Trip[]; next_available?: NextAvailable | null }>(
+          `/client/trips/?${query.toString()}`,
+          {},
+          false
+        );
+        const serverTrips = Array.isArray(payload) ? payload : (payload.results || []);
+        const nextAvail = !Array.isArray(payload) && payload.next_available ? payload.next_available : null;
+        setNextAvailable(nextAvail);
         if (serverTrips.length > 0) {
           setTrips(current => {
             const serverIds = new Set(serverTrips.map(t => t.id));
@@ -173,7 +184,7 @@ export function ClientPortal() {
     <>
       <div className="top">
         <div className="wrap">
-          <span>Axe Parakou – Cotonou</span>
+          <span>{banner?.banner_text ? banner.banner_text.split('.')[0] : "Voyages interurbains au Bénin"}</span>
           {contact.contact_phone && <span>Téléphone : <PhoneText value={contact.contact_phone} /></span>}
           <WhatsAppIcon value={contact.contact_whatsapp} />
           <span>Voyagez en toute confiance</span>
@@ -223,13 +234,12 @@ export function ClientPortal() {
                   <small>AXIS TRANSPORT</small>
                   <h1>Voyagez simplement avec AXIS Transport</h1>
                   <p>Réservez votre place en ligne, payez par Mobile Money et voyagez avec un billet électronique.</p>
-                  <div className="axe">
-                    <span>Parakou</span><em>›</em>
-                    <span>Savè</span><em>›</em>
-                    <span>Kétou</span><em>›</em>
-                    <span>Porto-Novo</span><em>›</em>
-                    <span>Cotonou</span>
-                  </div>
+                  {banner?.banner_text ? (
+                    <div className="axe" style={{ padding: '12px 20px', fontSize: '15px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '10px', lineHeight: 1.4 }}>
+                      <span style={{ fontSize: '20px' }}>🚌</span>
+                      <span>{banner.banner_text}</span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -277,8 +287,45 @@ export function ClientPortal() {
                   </div>
                   
                   {filteredTrips.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '40px', background: '#fff', borderRadius: '16px', border: '1px dashed var(--line)', color: 'var(--mute)' }}>
-                      Aucun départ publié pour ces critères.
+                    <div style={{ textAlign: 'center', padding: '36px 20px', background: '#fff', borderRadius: '16px', border: '1px dashed var(--line)', color: 'var(--mute)' }}>
+                      {nextAvailable ? (
+                        <div>
+                          <p style={{ color: 'var(--text)', fontWeight: 700, fontSize: '16px', marginBottom: '8px' }}>
+                            Aucun départ ce jour. Prochain départ pour ce trajet : {nextAvailable.formatted_date} à {nextAvailable.formatted_time}
+                          </p>
+                          <button
+                            type="button"
+                            className="btn p"
+                            style={{ marginTop: '10px' }}
+                            onClick={() => {
+                              setSearchDate(nextAvailable.date);
+                              setSearchMessage("");
+                              const query = new URLSearchParams({
+                                origin: searchOrigin,
+                                destination: searchDestination,
+                                date: nextAvailable.date,
+                              });
+                              apiFetch<Trip[] | { results: Trip[]; next_available?: NextAvailable | null }>(`/client/trips/?${query.toString()}`, {}, false)
+                                .then(payload => {
+                                  const resTrips = Array.isArray(payload) ? payload : (payload.results || []);
+                                  if (resTrips.length > 0) {
+                                    setTrips(current => {
+                                      const ids = new Set(resTrips.map(t => t.id));
+                                      return [...resTrips, ...current.filter(t => !ids.has(t.id))];
+                                    });
+                                    setPreselectedTripId(String(resTrips[0].id));
+                                  }
+                                  setNextAvailable(null);
+                                })
+                                .catch(() => undefined);
+                            }}
+                          >
+                            Voir le départ du {nextAvailable.formatted_date} à {nextAvailable.formatted_time} →
+                          </button>
+                        </div>
+                      ) : (
+                        <p>Aucun départ publié pour ces critères.</p>
+                      )}
                     </div>
                   ) : (
                     <div className="grid3">
@@ -293,7 +340,9 @@ export function ClientPortal() {
                           <div className="d">Date : {formatDate(trip.departure_at)}</div>
                           <div className="times">
                             <span>Départ <b>{new Date(trip.departure_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</b></span>
-                            <span>Arrivée <b>{trip.arrival_at ? new Date(trip.arrival_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'}) : "--:--"}</b></span>
+                            {trip.arrival_at && (
+                              <span>Arrivée <b>{new Date(trip.arrival_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</b></span>
+                            )}
                           </div>
                           <div className="b">
                             <span className="price">{trip.current_fare ? money(trip.current_fare.amount, trip.current_fare.currency) : "Sur devis"}</span>
@@ -339,7 +388,7 @@ export function ClientPortal() {
                       <div className="pic" style={ { backgroundImage: "url('/images/service-passenger.jpg')" } }></div>
                       <div>
                         <h3>Transport de voyageurs</h3>
-                        <p>Réservez votre place sur l'axe Parakou – Cotonou.</p>
+                        <p>Réservez votre place pour vos voyages interurbains.</p>
                       </div>
                     </div>
                     <div className="card" onClick={() => setTab("colis")}>

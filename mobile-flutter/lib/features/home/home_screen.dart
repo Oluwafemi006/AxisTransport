@@ -19,6 +19,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<Trip> _trips = [];
   List<Ticket> _tickets = [];
+  TripBanner? _banner;
   bool _loading = true;
   String? _error;
 
@@ -45,6 +46,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     }
+    try {
+      final banner = await api.tripBanner();
+      if (mounted) setState(() => _banner = banner);
+    } catch (_) {}
     try {
       final user = await api.me();
       if (user.isClient) {
@@ -115,6 +120,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             style: TextStyle(color: AxisColors.muted),
           ),
           const SizedBox(height: 18),
+          if (_banner != null && _banner!.bannerText.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: AxisColors.surfaceLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AxisColors.border),
+              ),
+              child: Row(
+                children: [
+                  const Text('🚌', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _banner!.bannerText,
+                      style: const TextStyle(
+                        color: AxisColors.navyDark,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
           const TripSearchCard(),
           if (_error != null) Notice(_error!, error: true),
           const SizedBox(height: 24),
