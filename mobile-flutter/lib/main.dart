@@ -6,7 +6,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
 import 'core/session.dart';
-import 'core/theme.dart';
+import 'core/theme/axis_theme.dart';
 import 'features/auth/login_screen.dart';
 import 'router.dart';
 import 'staff_router.dart';
@@ -45,7 +45,7 @@ class _AxisTransportAppState extends ConsumerState<AxisTransportApp> {
       return MaterialApp(
         title: 'Axis Transport',
         debugShowCheckedModeBanner: false,
-        theme: axisTheme(),
+        theme: AxisTheme.light(),
         locale: const Locale('fr'),
         supportedLocales: const [Locale('fr')],
         localizationsDelegates: _delegates,
@@ -71,7 +71,7 @@ class _AxisTransportAppState extends ConsumerState<AxisTransportApp> {
       key: ValueKey(user.isStaff ? 'personnel' : 'client'),
       title: 'Axis Transport',
       debugShowCheckedModeBanner: false,
-      theme: axisTheme(),
+      theme: AxisTheme.light(),
       locale: const Locale('fr'),
       supportedLocales: const [Locale('fr')],
       localizationsDelegates: _delegates,
