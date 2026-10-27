@@ -434,6 +434,19 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
         booking = self._get_booking(pk)
         return Response(self._serialized_booking(booking))
 
+    @action(detail=False, methods=["get"], url_path="mine")
+    def mine(self, request):
+        """
+        « Mes réservations » : réservations du client connecté uniquement (En attente, Payée, Expirée, Annulée).
+        """
+        if not request.user.is_authenticated:
+            raise PermissionDenied("Authentification requise pour consulter vos réservations.")
+        if request.user.role != User.Role.CLIENT:
+            raise PermissionDenied("Le personnel interne ne doit pas utiliser la surface client pour accéder aux réservations.")
+        release_expired_holds()
+        bookings = self.BASE_QUERYSET.filter(customer=request.user).order_by("-created_at")
+        return Response(BookingSerializer(bookings, many=True, context={"request": request}).data)
+
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         """

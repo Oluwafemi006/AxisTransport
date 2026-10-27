@@ -35,6 +35,7 @@ class _Api extends ApiClient {
   int cancellations = 0;
   bool failCheckout = false;
   int? cancelledBooking;
+  List<Map<String, dynamic>>? lastPassengersPayload;
 
   @override
   Future<List<PaymentMethod>> paymentMethods() async => [_fedapay];
@@ -58,6 +59,7 @@ class _Api extends ApiClient {
     required List<Map<String, dynamic>> passengers,
   }) async {
     reservations += 1;
+    lastPassengersPayload = passengers;
     await Future<void>.delayed(const Duration(milliseconds: 20));
     return BookingReservation(
       id: 40 + reservations,
@@ -204,5 +206,19 @@ void main() {
     final (_, api, notifier) = await _setUp();
     expect(await notifier.cancel(), isFalse);
     expect(api.cancellations, 0);
+  });
+
+  test('le choix du siège est facultatif : réserve sans seat dans le payload', () async {
+    final (_, api, notifier) = await _setUp();
+    final draftWithoutSeat = BookingDraft(
+      trip: _draft().trip,
+      passengers: _draft().passengers,
+      seatsByPassenger: const {},
+    );
+    final checkout = await notifier.payNow(draftWithoutSeat, _fedapay);
+    expect(checkout, isNotNull);
+    expect(api.reservations, 1);
+    expect(api.lastPassengersPayload, isNotNull);
+    expect(api.lastPassengersPayload!.single.containsKey('seat'), isFalse);
   });
 }

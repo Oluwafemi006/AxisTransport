@@ -494,6 +494,10 @@ class Seat(TimeStampedModel):
         return f"{self.trip} · siège {self.number}"
 
 
+# Alias utilisé dans certaines vues pour désigner un siège occupé/payé sans modifier les choix en base.
+setattr(Seat.Status, "BOOKED", Seat.Status.PAID)
+
+
 class Booking(TimeStampedModel):
     class Status(models.TextChoices):
         HELD = "HELD", "Réservation temporaire"
@@ -563,6 +567,36 @@ class Booking(TimeStampedModel):
         if orig and dest:
             return f"{orig.name} → {dest.name}"
         return ""
+
+    @property
+    def client_status_display(self):
+        if self.status == self.Status.HELD:
+            if self.reservation_expires_at and self.reservation_expires_at <= timezone.now():
+                return "Expirée"
+            return "En attente de paiement"
+        if self.status == self.Status.CONFIRMED:
+            return "Payée"
+        if self.status == self.Status.EXPIRED:
+            return "Expirée"
+        if self.status == self.Status.CANCELLED:
+            return "Annulée"
+        if self.status == self.Status.REFUND_DUE:
+            return "Payée, places indisponibles"
+        return self.get_status_display()
+
+    def get_departure_time_and_label(self):
+        if not self.trip_id or not self.trip.route_id:
+            return None, "", False
+        terminus = self.trip.route.origin
+        boarding = self.boarding_location
+        if not boarding or boarding.pk == terminus.pk:
+            return self.trip.departure_at, f"Départ de {terminus.name}", False
+
+        route_stop = self.trip.route.stops.filter(location=boarding).first()
+        if route_stop and route_stop.offset_minutes is not None:
+            est_time = self.trip.departure_at + timedelta(minutes=route_stop.offset_minutes)
+            return est_time, f"Départ de {boarding.name}", True
+        return self.trip.departure_at, f"Départ de {terminus.name}", False
 
     def save(self, *args, **kwargs):
         if not self.reference:
@@ -663,6 +697,26 @@ class Ticket(TimeStampedModel):
         if orig and dest:
             return f"{orig.name} → {dest.name}"
         return ""
+
+    @property
+    def seat_preference(self):
+        """Vrai si le passager a choisi son siège sur le plan, Faux si attribué automatiquement."""
+        history = list(self.status_history.all())
+        if history:
+            return not any(
+                h.note == "Attribution automatique du siège"
+                for h in history
+                if h.to_status == self.Status.HELD
+            )
+        return True
+
+    @property
+    def seat_summary_label(self):
+        if self.status in {self.Status.PAID, self.Status.ISSUED, self.Status.CHECKED, self.Status.COMPLETED}:
+            return f"Siège {self.seat.number}" if self.seat_id else ""
+        if self.seat_preference:
+            return f"Siège {self.seat.number} (préférence)" if self.seat_id else "Préférence"
+        return "Places attribuées après paiement"
 
     def get_departure_time_and_label(self):
         """

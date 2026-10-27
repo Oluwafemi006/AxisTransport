@@ -195,6 +195,15 @@ class ApiClient {
     );
   }
 
+  /// « Mes réservations » du client connecté.
+  Future<List<BookingReservation>> myBookings() {
+    return _list(
+      '/client/bookings/mine/',
+      (json) => BookingReservation.fromJson(json),
+      auth: true,
+    );
+  }
+
   Future<List<Parcel>> parcels() {
     return _list(
       '/client/parcels/',

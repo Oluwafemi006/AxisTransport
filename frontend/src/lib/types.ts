@@ -121,6 +121,8 @@ export interface Ticket {
   effective_departure_at?: string;
   seat: number;
   seat_detail: Seat;
+  seat_preference?: boolean;
+  seat_summary_label?: string;
   passenger_name: string;
   passenger_phone: string;
   status: string;
@@ -131,6 +133,48 @@ export interface Ticket {
   reservation_expires_at: string | null;
   amount: string;
   currency: string;
+  created_at: string;
+}
+
+export interface BookingPassenger {
+  id: number;
+  full_name: string;
+  phone: string;
+  passenger_type: string;
+  passenger_type_display: string;
+}
+
+export interface Booking {
+  id: number;
+  reference: string;
+  trip: number;
+  trip_detail: Trip;
+  origin?: number | null;
+  destination?: number | null;
+  origin_name?: string;
+  destination_name?: string;
+  segment_label?: string;
+  departure_label?: string;
+  effective_departure_at?: string | null;
+  contact_phone: string;
+  buyer_ifu: string;
+  status: "HELD" | "CONFIRMED" | "CANCELLED" | "EXPIRED" | "REFUND_DUE" | string;
+  status_display: string;
+  client_status_display?: string;
+  reservation_expires_at: string | null;
+  amount: string;
+  currency: string;
+  passengers: BookingPassenger[];
+  tickets: Ticket[];
+  payment_quotes: Array<{
+    payment_method: number;
+    label: string;
+    amount: string | number;
+    fee_amount: string | number;
+    total: string | number;
+    currency: string;
+  }>;
+  guest_access_token?: string;
   created_at: string;
 }
 

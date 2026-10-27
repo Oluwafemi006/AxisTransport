@@ -457,6 +457,8 @@ class TicketSerializer(serializers.ModelSerializer):
     segment_label = serializers.CharField(read_only=True)
     departure_label = serializers.SerializerMethodField()
     effective_departure_at = serializers.SerializerMethodField()
+    seat_preference = serializers.BooleanField(read_only=True)
+    seat_summary_label = serializers.CharField(read_only=True)
 
     class Meta:
         model = Ticket
@@ -479,6 +481,8 @@ class TicketSerializer(serializers.ModelSerializer):
             "effective_departure_at",
             "seat",
             "seat_detail",
+            "seat_preference",
+            "seat_summary_label",
             "customer",
             "customer_detail",
             "passenger_name",
@@ -562,7 +566,9 @@ class BookingCreatePassengerSerializer(serializers.Serializer):
     full_name = serializers.CharField(max_length=160)
     phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     passenger_type = serializers.ChoiceField(choices=Passenger.Type.choices, default=Passenger.Type.ADULT)
-    seat = serializers.PrimaryKeyRelatedField(queryset=Seat.objects.all())
+    seat = serializers.PrimaryKeyRelatedField(
+        queryset=Seat.objects.all(), required=False, allow_null=True, default=None
+    )
 
 
 class BookingCreateSerializer(serializers.Serializer):
@@ -577,10 +583,11 @@ class BookingCreateSerializer(serializers.Serializer):
     def validate(self, attrs):
         trip = attrs["trip"]
         passengers = attrs["passengers"]
-        seat_ids = [passenger["seat"].pk for passenger in passengers]
+        chosen_seats = [passenger["seat"] for passenger in passengers if passenger.get("seat") is not None]
+        seat_ids = [seat.pk for seat in chosen_seats]
         if len(seat_ids) != len(set(seat_ids)):
             raise serializers.ValidationError({"passengers": "Chaque passager doit avoir un siège différent."})
-        if any(passenger["seat"].trip_id != trip.pk for passenger in passengers):
+        if any(seat.trip_id != trip.pk for seat in chosen_seats):
             raise serializers.ValidationError({"passengers": "Tous les sièges doivent appartenir au trajet."})
         return attrs
 
@@ -589,6 +596,7 @@ class BookingSerializer(serializers.ModelSerializer):
     trip_detail = TripSerializer(source="trip", read_only=True)
     customer_detail = UserSerializer(source="customer", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    client_status_display = serializers.CharField(read_only=True)
     passengers = BookingPassengerSerializer(many=True, read_only=True)
     tickets = TicketSerializer(many=True, read_only=True)
     payment_quotes = serializers.SerializerMethodField()
@@ -597,6 +605,8 @@ class BookingSerializer(serializers.ModelSerializer):
     origin_name = serializers.CharField(source="boarding_location.name", read_only=True)
     destination_name = serializers.CharField(source="alighting_location.name", read_only=True)
     segment_label = serializers.CharField(read_only=True)
+    departure_label = serializers.SerializerMethodField()
+    effective_departure_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Booking
@@ -612,6 +622,8 @@ class BookingSerializer(serializers.ModelSerializer):
             "origin_detail",
             "destination_detail",
             "segment_label",
+            "departure_label",
+            "effective_departure_at",
             "customer",
             "customer_detail",
             "contact_phone",
@@ -619,6 +631,7 @@ class BookingSerializer(serializers.ModelSerializer):
             "buyer_ifu",
             "status",
             "status_display",
+            "client_status_display",
             "reservation_expires_at",
             "amount",
             "currency",
@@ -627,6 +640,14 @@ class BookingSerializer(serializers.ModelSerializer):
             "payment_quotes",
             "created_at",
         ]
+
+    def get_departure_label(self, obj):
+        _, label, _ = obj.get_departure_time_and_label()
+        return label
+
+    def get_effective_departure_at(self, obj):
+        dep_time, _, _ = obj.get_departure_time_and_label()
+        return dep_time.isoformat() if dep_time else None
 
     def get_payment_quotes(self, obj):
         """Montant à payer par moyen de paiement (frais inclus), calculé par le serveur."""

@@ -33,7 +33,7 @@ from .models import (
     Transaction,
     User,
 )
-from .services import pay_and_issue_booking, pay_and_issue_ticket, transition_ticket
+from .services import pay_and_issue_booking, pay_and_issue_ticket, recover_expired_booking_seats, transition_ticket
 
 FEDAPAY = "FEDAPAY"
 KKIAPAY = "KKIAPAY"
@@ -393,6 +393,13 @@ def _settle(target, *, payment_method, external_reference, actor, source, proof=
         if proof.amount != due:
             raise ValidationError(f"Montant payé ({proof.amount}) différent du montant dû ({due}).")
         refund_due = _is_expired(locked)
+        if (
+            refund_due
+            and is_booking
+            and locked.status not in {Booking.Status.CANCELLED, Booking.Status.REFUND_DUE}
+        ):
+            if recover_expired_booking_seats(locked):
+                refund_due = False
 
         # 4. Enregistrement du reçu : les contraintes uniques en base tranchent les accès concurrents.
         try:

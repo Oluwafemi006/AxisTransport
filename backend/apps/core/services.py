@@ -47,8 +47,11 @@ TICKET_TRANSITIONS = {
     Ticket.Status.COMPLETED: set(),
     Ticket.Status.CANCELLED: set(),
     Ticket.Status.REFUNDED: set(),
-    Ticket.Status.EXPIRED: set(),
+    Ticket.Status.EXPIRED: {Ticket.Status.HELD, Ticket.Status.PAID},
 }
+
+AUTO_SEAT_NOTE = "Attribution automatique du siège"
+SEAT_JUST_TAKEN_MESSAGE = "Cette place vient d'être prise"
 
 PARCEL_TRANSITIONS = {
     Parcel.Status.REGISTERED: {Parcel.Status.DEPOSITED},
@@ -515,6 +518,241 @@ def hash_guest_token(token):
 DEPARTED_MESSAGE = "Ce départ est déjà parti : il n'est plus possible de réserver."
 
 
+def _seat_numeric_order(seat):
+    text = str(seat.number or "").strip()
+    if text.isdigit():
+        return int(text)
+    match = re.search(r"\d+", text)
+    return int(match.group(0)) if match else 999999
+
+
+def _seat_effective_coords(seat):
+    """
+    Retourne (row, col, side_block, numeric_num, label) pour regrouper les places côte à côte.
+    Sur un car 2+2 (Yutong), les colonnes 1-2 sont à gauche du couloir (bloc 0) et 3-4 à droite (bloc 1).
+    """
+    num = _seat_numeric_order(seat)
+    if seat.row is not None and seat.column is not None:
+        row, col = int(seat.row), int(seat.column)
+    elif 1 <= num < 999999:
+        row = (num - 1) // 4 + 1
+        col = (num - 1) % 4 + 1
+    else:
+        row, col = 999, 999
+    side_block = 0 if col <= 2 else 1
+    return row, col, side_block, num, str(seat.number)
+
+
+def _seat_allows_passenger(seat, passenger_type):
+    allowed = seat.allowed_passenger_types or []
+    return not allowed or passenger_type in allowed
+
+
+def select_automatic_seats(available_seats, passenger_types):
+    """
+    Retient automatiquement `len(passenger_types)` places parmi `available_seats` :
+    - groupées côte à côte si possible (même duo gauche/droite d'une rangée, ou même rangée),
+    - sinon par plus petit numéro de siège.
+    """
+    count = len(passenger_types)
+    if count == 0:
+        return []
+    pool = sorted(
+        list(available_seats),
+        key=lambda s: (
+            _seat_numeric_order(s),
+            _seat_effective_coords(s)[0],
+            _seat_effective_coords(s)[1],
+            str(s.number),
+        ),
+    )
+    if len(pool) < count:
+        raise ValidationError("Il n'y a plus assez de places libres sur ce départ.")
+
+    has_restrictions = any(bool(s.allowed_passenger_types) for s in pool)
+    if not has_restrictions and count >= 2:
+        by_row = {}
+        by_pair = {}
+        for s in pool:
+            row, _col, side_block, _, _ = _seat_effective_coords(s)
+            by_row.setdefault(row, []).append(s)
+            by_pair.setdefault((row, side_block), []).append(s)
+
+        if count == 2:
+            for (_row, _side), seats_in_pair in sorted(by_pair.items()):
+                if len(seats_in_pair) >= 2:
+                    return seats_in_pair[:2]
+            for _row, seats_in_row in sorted(by_row.items()):
+                if len(seats_in_row) >= 2:
+                    return seats_in_row[:2]
+        else:
+            for _row, seats_in_row in sorted(by_row.items()):
+                if len(seats_in_row) >= count:
+                    return seats_in_row[:count]
+            chosen = []
+            used_ids = set()
+            for (_row, _side), seats_in_pair in sorted(by_pair.items()):
+                while len(seats_in_pair) >= 2 and (count - len(chosen)) >= 2:
+                    pair = [s for s in seats_in_pair if s.pk not in used_ids][:2]
+                    if len(pair) < 2:
+                        break
+                    chosen.extend(pair)
+                    used_ids.update(s.pk for s in pair)
+                    seats_in_pair = [s for s in seats_in_pair if s.pk not in used_ids]
+            for s in pool:
+                if len(chosen) >= count:
+                    break
+                if s.pk not in used_ids:
+                    chosen.append(s)
+                    used_ids.add(s.pk)
+            if len(chosen) == count:
+                return chosen
+
+    chosen = []
+    used_ids = set()
+    for p_type in passenger_types:
+        matched = next(
+            (s for s in pool if s.pk not in used_ids and _seat_allows_passenger(s, p_type)),
+            None,
+        )
+        if matched is None:
+            raise ValidationError("Aucun siège libre ne correspond au type de passager demandé.")
+        chosen.append(matched)
+        used_ids.add(matched.pk)
+    return chosen
+
+
+def recover_expired_booking_seats(locked_booking):
+    """
+    Paiement confirmé après expiration de la retenue (pour une réservation non annulée) :
+    1. Si les places initialement retenues sont toujours libres, les reprendre ;
+    2. Sinon, attribuer d'autres places libres du même voyage (côte à côte si possible, sinon plus petit numéro) ;
+    3. S'il n'y a plus assez de places libres sur le voyage, renvoyer False (la réservation sera marquée REFUND_DUE).
+    """
+    if locked_booking.status in {Booking.Status.CANCELLED, Booking.Status.REFUND_DUE}:
+        return False
+
+    now = timezone.now()
+    # Libérer d'abord les retenues expirées d'autres réservations sur ce voyage
+    stale_other_tickets = list(
+        Ticket.objects.select_for_update()
+        .select_related("seat")
+        .filter(
+            trip_id=locked_booking.trip_id,
+            status=Ticket.Status.HELD,
+            reservation_expires_at__lte=now,
+        )
+        .exclude(booking_id=locked_booking.pk)
+    )
+    stale_booking_ids = {t.booking_id for t in stale_other_tickets if t.booking_id}
+    for stale in stale_other_tickets:
+        stale.status = Ticket.Status.EXPIRED
+        stale.save(update_fields=["status", "updated_at"])
+        TicketStatusHistory.objects.create(
+            ticket=stale,
+            from_status=Ticket.Status.HELD,
+            to_status=Ticket.Status.EXPIRED,
+            note="Expiration automatique de la réservation temporaire",
+        )
+        stale.seat.status = Seat.Status.AVAILABLE
+        stale.seat.hold_expires_at = None
+        stale.seat.save(update_fields=["status", "hold_expires_at", "updated_at"])
+    for b_id in stale_booking_ids:
+        if not Ticket.objects.filter(booking_id=b_id, status=Ticket.Status.HELD).exists():
+            Booking.objects.filter(pk=b_id, status=Booking.Status.HELD).update(
+                status=Booking.Status.EXPIRED, updated_at=now
+            )
+
+    locked_trip = Trip.objects.select_for_update().get(pk=locked_booking.trip_id)
+    if locked_trip.status not in {Trip.Status.SCHEDULED, Trip.Status.BOARDING}:
+        return False
+
+    all_seats = list(Seat.objects.select_for_update().filter(trip=locked_trip))
+    seats_by_pk = {s.pk: s for s in all_seats}
+    tickets = list(
+        locked_booking.tickets.select_for_update(of=("self",))
+        .select_related("seat", "passenger")
+        .order_by("created_at")
+    )
+    if not tickets:
+        return False
+
+    reclaimed = {}
+    reclaimed_seat_ids = set()
+    needs_reassignment = []
+
+    for ticket in tickets:
+        orig_seat = seats_by_pk.get(ticket.seat_id)
+        # Le siège d'origine est disponible s'il est AVAILABLE, ou s'il est encore HELD par ce billet lui-même
+        still_held_by_this_ticket = (
+            orig_seat is not None
+            and orig_seat.status == Seat.Status.HELD
+            and ticket.status == Ticket.Status.HELD
+            and not Ticket.objects.filter(seat=orig_seat, status=Ticket.Status.HELD).exclude(pk=ticket.pk).exists()
+        )
+        if orig_seat is not None and (orig_seat.status == Seat.Status.AVAILABLE or still_held_by_this_ticket):
+            reclaimed[ticket.pk] = orig_seat
+            reclaimed_seat_ids.add(orig_seat.pk)
+        else:
+            needs_reassignment.append(ticket)
+
+    if needs_reassignment:
+        free_pool = [
+            s for s in all_seats
+            if s.status == Seat.Status.AVAILABLE and s.pk not in reclaimed_seat_ids
+        ]
+        passenger_types = [
+            t.passenger.passenger_type if t.passenger_id else Passenger.Type.ADULT
+            for t in needs_reassignment
+        ]
+        try:
+            replacement_seats = select_automatic_seats(free_pool, passenger_types)
+        except ValidationError:
+            return False
+    else:
+        replacement_seats = []
+
+    try:
+        hold_duration = configured_hold_duration()
+    except ReservationsClosed:
+        hold_duration = timedelta(minutes=5)
+    new_expires = now + hold_duration
+
+    rep_iter = iter(replacement_seats)
+    for ticket in tickets:
+        assigned_seat = reclaimed.get(ticket.pk) or next(rep_iter)
+        old_status = ticket.status
+        old_seat_id = ticket.seat_id
+        ticket.seat = assigned_seat
+        ticket.status = Ticket.Status.HELD
+        ticket.reservation_expires_at = new_expires
+        ticket.save(update_fields=["seat", "status", "reservation_expires_at", "updated_at"])
+
+        assigned_seat.status = Seat.Status.HELD
+        assigned_seat.hold_expires_at = new_expires
+        assigned_seat.save(update_fields=["status", "hold_expires_at", "updated_at"])
+
+        if old_seat_id != assigned_seat.pk:
+            TicketStatusHistory.objects.create(
+                ticket=ticket,
+                from_status=old_status,
+                to_status=Ticket.Status.HELD,
+                note=f"Nouvelle place attribuée ({assigned_seat.number}) après paiement tardif",
+            )
+        elif old_status != Ticket.Status.HELD:
+            TicketStatusHistory.objects.create(
+                ticket=ticket,
+                from_status=old_status,
+                to_status=Ticket.Status.HELD,
+                note="Place reprise après paiement tardif",
+            )
+
+    locked_booking.status = Booking.Status.HELD
+    locked_booking.reservation_expires_at = new_expires
+    locked_booking.save(update_fields=["status", "reservation_expires_at", "updated_at"])
+    return True
+
+
 @transaction.atomic
 def reserve_booking(
     *,
@@ -546,27 +784,43 @@ def reserve_booking(
     if not allow_departed and locked_trip.departure_at <= timezone.now():
         raise ValidationError(DEPARTED_MESSAGE)
 
-    seat_ids = [item["seat"].pk for item in passengers]
-    if len(seat_ids) != len(set(seat_ids)):
+    all_trip_seats = list(Seat.objects.select_for_update().filter(trip=locked_trip))
+    seats_by_pk = {seat.pk: seat for seat in all_trip_seats}
+
+    chosen_seat_ids = [item["seat"].pk for item in passengers if item.get("seat") is not None]
+    if len(chosen_seat_ids) != len(set(chosen_seat_ids)):
         raise ValidationError("Chaque passager doit avoir un siège différent.")
-    seats = {
-        seat.pk: seat
-        for seat in Seat.objects.select_for_update().filter(trip=locked_trip, pk__in=seat_ids)
-    }
-    if len(seats) != len(seat_ids):
+    if any(seat_id not in seats_by_pk for seat_id in chosen_seat_ids):
         raise ValidationError("Un ou plusieurs sièges ne correspondent pas au trajet sélectionné.")
-    if any(seats[seat_id].status != Seat.Status.AVAILABLE for seat_id in seat_ids):
-        raise ValidationError("Un ou plusieurs sièges ne sont plus disponibles.")
+    if any(seats_by_pk[seat_id].status != Seat.Status.AVAILABLE for seat_id in chosen_seat_ids):
+        raise ValidationError(SEAT_JUST_TAKEN_MESSAGE)
 
     for item in passengers:
         passenger_type = item.get("passenger_type", Passenger.Type.ADULT)
         if passenger_type not in Passenger.Type.values:
             raise ValidationError("Le type d'un passager est invalide.")
-        allowed_types = seats[item["seat"].pk].allowed_passenger_types or []
-        if allowed_types and passenger_type not in allowed_types:
-            raise ValidationError(
-                f"Le siège {item['seat'].number} n'autorise pas ce type de passager."
-            )
+        if item.get("seat") is not None:
+            seat_obj = seats_by_pk[item["seat"].pk]
+            allowed_types = seat_obj.allowed_passenger_types or []
+            if allowed_types and passenger_type not in allowed_types:
+                raise ValidationError(
+                    f"Le siège {seat_obj.number} n'autorise pas ce type de passager."
+                )
+
+    unassigned_indices = [idx for idx, item in enumerate(passengers) if item.get("seat") is None]
+    if unassigned_indices:
+        chosen_set = set(chosen_seat_ids)
+        free_pool = [
+            s for s in all_trip_seats
+            if s.status == Seat.Status.AVAILABLE and s.pk not in chosen_set
+        ]
+        unassigned_types = [
+            passengers[idx].get("passenger_type", Passenger.Type.ADULT)
+            for idx in unassigned_indices
+        ]
+        auto_seats = select_automatic_seats(free_pool, unassigned_types)
+    else:
+        auto_seats = []
 
     origin_loc = resolve_location(origin) if origin else None
     dest_loc = resolve_location(destination) if destination else None
@@ -616,8 +870,10 @@ def reserve_booking(
     )
 
     taxes = _tax_snapshot(fare.amount)
+    auto_iter = iter(auto_seats)
     for item in passengers:
-        seat = seats[item["seat"].pk]
+        is_preferred = item.get("seat") is not None
+        seat = seats_by_pk[item["seat"].pk] if is_preferred else next(auto_iter)
         passenger = Passenger.objects.create(
             booking=booking,
             full_name=item["full_name"],
@@ -640,7 +896,12 @@ def reserve_booking(
             currency=fare.currency,
             **taxes,
         )
-        TicketStatusHistory.objects.create(ticket=ticket, to_status=Ticket.Status.HELD, changed_by=customer)
+        TicketStatusHistory.objects.create(
+            ticket=ticket,
+            to_status=Ticket.Status.HELD,
+            changed_by=customer,
+            note="" if is_preferred else AUTO_SEAT_NOTE,
+        )
         seat.status = Seat.Status.HELD
         seat.hold_expires_at = expires_at
         seat.save(update_fields=["status", "hold_expires_at", "updated_at"])

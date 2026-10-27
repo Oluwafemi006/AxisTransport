@@ -103,7 +103,13 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
     final checkout = await ref
         .read(bookingCheckoutProvider.notifier)
         .payNow(ref.read(bookingDraftProvider), method);
-    if (checkout == null) return;
+    if (checkout == null) {
+      final err = ref.read(bookingCheckoutProvider).value?.error ?? '';
+      if (err.contains("Cette place vient d'être prise") && mounted) {
+        context.go('/billets/booking/${widget.tripId}/sieges');
+      }
+      return;
+    }
     if (checkout.paymentUrl == null) {
       await _verifyPayment();
     } else {
@@ -158,7 +164,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
     final trip = draft.trip;
     final checkoutState = ref.watch(bookingCheckoutProvider);
 
-    if (trip?.id != widget.tripId || !draft.hasAllSeats) {
+    if (trip?.id != widget.tripId || !draft.hasAllPassengers) {
       return Scaffold(
         appBar: AppBar(title: const Text('Récapitulatif')),
         body: Center(
@@ -246,7 +252,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
           ),
           const SizedBox(height: 20),
           Text(
-            draft.segmentLabel ?? trip.route.label,
+            pending?.segmentLabel ?? draft.segmentLabel ?? trip.route.label,
             style: const TextStyle(
               color: AxisColors.navyDark,
               fontSize: 22,
@@ -255,48 +261,149 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
           ),
           const SizedBox(height: 5),
           Text(
-            formatFullDateTime(trip.departureAt),
+            '${pending?.departureLabel ?? "Départ"} : ${formatFullDateTime(pending?.effectiveDepartureAt ?? trip.departureAt)}',
             style: const TextStyle(color: AxisColors.muted),
           ),
+          if ((pending?.originName ?? draft.originName ?? trip.route.origin?.name) != null &&
+              (pending?.destinationName ?? draft.destinationName ?? trip.route.destination?.name) != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Embarquement : ${pending?.originName ?? draft.originName ?? trip.route.origin?.name} · '
+              'Débarquement : ${pending?.destinationName ?? draft.destinationName ?? trip.route.destination?.name}',
+              style: const TextStyle(color: AxisColors.muted, fontSize: 13),
+            ),
+          ],
           const SizedBox(height: 18),
-          ...draft.passengers.map((passenger) {
-            final seat = draft.seatsByPassenger[passenger.id]!;
-            return AxisCard(
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: AxisColors.surfaceLow,
-                    foregroundColor: AxisColors.navy,
-                    child: Text('${draft.passengers.indexOf(passenger) + 1}'),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          passenger.fullName,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          passenger.type.label,
-                          style: const TextStyle(color: AxisColors.muted),
-                        ),
-                      ],
+          if (pending != null && pending.tickets.isNotEmpty)
+            ...pending.tickets.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final ticket = entry.value;
+              final isConfirmed = pending.isConfirmed || ticket.isConfirmed;
+              return AxisCard(
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: AxisColors.surfaceLow,
+                      foregroundColor: AxisColors.navy,
+                      child: Text('${idx + 1}'),
                     ),
-                  ),
-                  Text(
-                    'Siège ${seat.number}',
-                    style: const TextStyle(
-                      color: AxisColors.navy,
-                      fontWeight: FontWeight.w900,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        ticket.passengerName,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            );
-          }),
+                    Flexible(
+                      child: isConfirmed
+                          ? Text(
+                              'Siège ${ticket.seat.number}',
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                color: AxisColors.navy,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                            )
+                          : !ticket.seatPreference
+                          ? const Text(
+                              'Places attribuées après paiement',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                color: AxisColors.navy,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  'Siège ${ticket.seat.number}',
+                                  style: const TextStyle(
+                                    color: AxisColors.navy,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const Text(
+                                  'préférence',
+                                  style: TextStyle(
+                                    color: AxisColors.muted,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ],
+                ),
+              );
+            })
+          else
+            ...draft.passengers.map((passenger) {
+              final seat = draft.seatsByPassenger[passenger.id];
+              return AxisCard(
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: AxisColors.surfaceLow,
+                      foregroundColor: AxisColors.navy,
+                      child: Text('${draft.passengers.indexOf(passenger) + 1}'),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            passenger.fullName,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            passenger.type.label,
+                            style: const TextStyle(color: AxisColors.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Flexible(
+                      child: seat == null
+                          ? const Text(
+                              'Places attribuées après paiement',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                color: AxisColors.navy,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  'Siège ${seat.number}',
+                                  style: const TextStyle(
+                                    color: AxisColors.navy,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const Text(
+                                  'préférence',
+                                  style: TextStyle(
+                                    color: AxisColors.muted,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ],
+                ),
+              );
+            }),
           AxisCard(
             child: Column(
               children: [

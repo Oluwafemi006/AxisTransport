@@ -1075,10 +1075,13 @@ class BookingViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return queryset.none()
         if user.role == User.Role.CLIENT:
-            return queryset.filter(customer=user)
-        if user.is_axis_staff:
-            return queryset
-        return queryset.none()
+            queryset = queryset.filter(customer=user)
+        elif not user.is_axis_staff:
+            return queryset.none()
+        status_param = self.request.query_params.get("status")
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+        return queryset
 
     def _guest_token(self):
         return self.request.headers.get("X-Booking-Token") or self.request.data.get("guest_token", "")
