@@ -76,6 +76,9 @@ class AxisTokens extends ThemeExtension<AxisTokens> {
   final Color textSecondary;
   final List<BoxShadow> floatingShadow;
 
+  /// Alias sémantique vers [inputFill] (#F8FAFC) pour les surfaces douces / fonds de cartes secondaires.
+  Color get surfaceSoft => inputFill;
+
   @override
   AxisTokens copyWith({
     Color? accent,

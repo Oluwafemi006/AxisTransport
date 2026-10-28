@@ -10,6 +10,14 @@ abstract final class AxisSpacing {
   static const double s20 = 20;
   static const double s24 = 24;
 
+  /// Alias de commodité pour la cohérence des widgets.
+  static const double xxs = s4;
+  static const double xs = s8;
+  static const double sm = s12;
+  static const double md = s16;
+  static const double lg = s20;
+  static const double xl = s24;
+
   /// Marge latérale des écrans.
   static const double screen = 16;
 
@@ -36,6 +44,13 @@ abstract final class AxisRadius {
 
   /// Pastilles.
   static const double pill = 999;
+
+  /// Alias de commodité pour la cohérence des widgets.
+  static const double xs = chip;
+  static const double sm = small;
+  static const double md = button;
+  static const double lg = card;
+  static const double xl = sheet;
 }
 
 abstract final class AxisSizes {
