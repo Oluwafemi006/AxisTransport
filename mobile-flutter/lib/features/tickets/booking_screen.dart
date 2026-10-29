@@ -6,6 +6,8 @@ import '../../core/formatters.dart';
 import '../../core/models.dart';
 import '../../core/session.dart';
 import '../../core/theme.dart';
+import '../../core/theme/axis_spacing.dart';
+import '../../core/theme/axis_tokens.dart';
 import '../../shared/widgets.dart';
 
 class BookingScreen extends ConsumerStatefulWidget {
@@ -129,6 +131,8 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   @override
   Widget build(BuildContext context) {
     final trip = _trip;
+    final theme = Theme.of(context);
+    final tokens = context.axis;
     return Scaffold(
       appBar: AppBar(title: const Text('Réserver un billet')),
       body: _loading
@@ -141,44 +145,41 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
                       color: AxisColors.navy,
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(AxisRadius.lg),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           trip.route.label,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: tokens.onDark,
                             fontWeight: FontWeight.w900,
-                            fontSize: 21,
                           ),
                         ),
                         const SizedBox(height: 7),
                         Text(
                           formatFullDateTime(trip.departureAt),
-                          style: const TextStyle(color: Color(0xFFCBE0F6)),
+                          style: TextStyle(color: tokens.borderStrong),
                         ),
                         const SizedBox(height: 14),
                         Text(
                           trip.currentFare == null
                               ? 'Tarif à configurer'
                               : formatMoney(trip.currentFare!.amount, 'FCFA'),
-                          style: const TextStyle(
-                            color: Color(0xFFCBE0F6),
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: tokens.borderStrong,
                             fontWeight: FontWeight.w900,
-                            fontSize: 20,
                           ),
                         ),
                       ],
                     ),
                   ),
                 const SizedBox(height: 22),
-                const Text(
+                Text(
                   '1. Informations du passager',
-                  style: TextStyle(
+                  style: theme.textTheme.titleLarge?.copyWith(
                     color: AxisColors.text,
-                    fontSize: 18,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -197,11 +198,10 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                   decoration: const InputDecoration(labelText: 'Téléphone'),
                 ),
                 const SizedBox(height: 22),
-                const Text(
+                Text(
                   '2. Choix du siège',
-                  style: TextStyle(
+                  style: theme.textTheme.titleLarge?.copyWith(
                     color: AxisColors.text,
-                    fontSize: 18,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -228,7 +228,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                         onTap: seat.isAvailable
                             ? () => setState(() => _selectedSeat = seat.id)
                             : null,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(AxisRadius.sm),
                         child: Container(
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
@@ -237,16 +237,16 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                                 : seat.isAvailable
                                 ? AxisColors.seatIdle
                                 : AxisColors.seatTaken,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(AxisRadius.sm),
                           ),
                           child: Text(
                             seat.number,
                             style: TextStyle(
                               color: selected
-                                  ? Colors.white
+                                  ? tokens.onDark
                                   : seat.isAvailable
                                   ? AxisColors.navy
-                                  : const Color(0xFF94A3B8),
+                                  : tokens.textMuted,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
@@ -268,12 +268,11 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                     child: Text(_busy ? 'Patientez…' : 'Réserver ce siège'),
                   )
                 else ...[
-                  const Text(
+                  Text(
                     'Paiement de test',
-                    style: TextStyle(
+                    style: theme.textTheme.titleLarge?.copyWith(
                       color: AxisColors.text,
                       fontWeight: FontWeight.w900,
-                      fontSize: 18,
                     ),
                   ),
                   ..._methods.map(

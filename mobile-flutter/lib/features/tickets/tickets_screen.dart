@@ -6,6 +6,8 @@ import '../../core/formatters.dart';
 import '../../core/models.dart';
 import '../../core/session.dart';
 import '../../core/theme.dart';
+import '../../core/theme/axis_spacing.dart';
+import '../../core/theme/axis_tokens.dart';
 import '../../shared/widgets.dart';
 import '../bookings/application/booking_checkout.dart';
 import '../bookings/application/booking_draft.dart';
@@ -174,26 +176,26 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = context.axis;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
         children: [
-          const Text(
+          Text(
             'BILLETTERIE',
-            style: TextStyle(
+            style: theme.textTheme.labelSmall?.copyWith(
               color: AxisColors.blue,
-              fontSize: 11,
               fontWeight: FontWeight.w900,
               letterSpacing: 1.6,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Réserver un billet',
-            style: TextStyle(
+            style: theme.textTheme.headlineSmall?.copyWith(
               color: AxisColors.text,
-              fontSize: 22,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -228,17 +230,15 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                   children: [
                     Text(
                       trip.route.label,
-                      style: const TextStyle(
+                      style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w900,
-                        fontSize: 16,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       formatDateTime(trip.departureAt),
-                      style: const TextStyle(
+                      style: theme.textTheme.bodySmall?.copyWith(
                         color: AxisColors.muted,
-                        fontSize: 12,
                       ),
                     ),
                     const SizedBox(height: 15),
@@ -246,10 +246,9 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                       children: [
                         Text(
                           '${trip.availableSeats} place(s) libre(s)',
-                          style: const TextStyle(
+                          style: theme.textTheme.bodySmall?.copyWith(
                             color: AxisColors.success,
                             fontWeight: FontWeight.w700,
-                            fontSize: 12,
                           ),
                         ),
                         const Spacer(),
@@ -268,11 +267,10 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
             ),
           if (_authenticated) ...[
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Mes réservations',
-              style: TextStyle(
+              style: theme.textTheme.headlineSmall?.copyWith(
                 color: AxisColors.text,
-                fontSize: 22,
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -323,9 +321,8 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                           Expanded(
                             child: Text(
                               routeLabel,
-                              style: const TextStyle(
+                              style: theme.textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.w900,
-                                fontSize: 16,
                               ),
                             ),
                           ),
@@ -336,14 +333,13 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                             ),
                             decoration: BoxDecoration(
                               color: b.isConfirmed
-                                  ? const Color(0xFFECFDF3)
+                                  ? tokens.successSoft
                                   : AxisColors.surfaceLow,
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(AxisRadius.sm),
                             ),
                             child: Text(
                               statusLabel,
-                              style: TextStyle(
-                                fontSize: 12,
+                              style: theme.textTheme.bodySmall?.copyWith(
                                 fontWeight: FontWeight.w800,
                                 color: b.isConfirmed
                                     ? AxisColors.success
@@ -357,9 +353,8 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                       Text(
                         'Réf. ${b.reference}'
                         '${depAt == null ? '' : ' · ${b.departureLabel ?? 'Départ'} : ${formatDateTime(depAt)}'}',
-                        style: const TextStyle(
+                        style: theme.textTheme.bodySmall?.copyWith(
                           color: AxisColors.muted,
-                          fontSize: 12,
                         ),
                       ),
                       if (b.tickets.isNotEmpty) ...[
@@ -374,7 +369,9 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                                     : '${t.passengerName} (Siège ${t.seat.number} — préférence)',
                               )
                               .join(' · '),
-                          style: const TextStyle(fontSize: 13),
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ],
                       const SizedBox(height: 6),
@@ -414,11 +411,10 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
               }),
           ],
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Mes billets et QR codes',
-            style: TextStyle(
+            style: theme.textTheme.headlineSmall?.copyWith(
               color: AxisColors.text,
-              fontSize: 22,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -452,17 +448,15 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                   children: [
                     Text(
                       ticket.reference,
-                      style: const TextStyle(
+                      style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w900,
-                        fontSize: 16,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       '${ticket.trip.route.label} · siège ${ticket.seat.number}',
-                      style: const TextStyle(
+                      style: theme.textTheme.bodySmall?.copyWith(
                         color: AxisColors.muted,
-                        fontSize: 12,
                       ),
                     ),
                   ],

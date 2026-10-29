@@ -79,6 +79,51 @@ class AxisTokens extends ThemeExtension<AxisTokens> {
   /// Alias sémantique vers [inputFill] (#F8FAFC) pour les surfaces douces / fonds de cartes secondaires.
   Color get surfaceSoft => inputFill;
 
+  /// Blanc pur pour le texte et les icônes sur fond sombre (`primary`, `ink`, `success`, `danger`).
+  Color get onDark => AxisPalette.onDark;
+
+  /// Surface blanche standard.
+  Color get surface => AxisPalette.surface;
+
+  /// Fond translucide pour bouton icône sur en-tête sombre.
+  Color get glassOnDark => const Color(0x1FFFFFFF);
+
+  /// Halo ambré pour l'étape ou l'arrêt actif.
+  List<BoxShadow> get accentGlow => [
+        BoxShadow(
+          color: accent.withValues(alpha: 0.35),
+          blurRadius: 0,
+          spreadRadius: 4,
+        ),
+      ];
+
+  /// Halo ambré doux pour l'étape active de la frise chronologique.
+  List<BoxShadow> get accentSoftGlow => [
+        BoxShadow(
+          color: accentSoft,
+          blurRadius: 0,
+          spreadRadius: 4,
+        ),
+      ];
+
+  /// Ombre portée du siège sélectionné.
+  List<BoxShadow> get seatSelectedShadow => [
+        BoxShadow(
+          color: accent.withValues(alpha: 0.45),
+          blurRadius: 8,
+          offset: const Offset(0, 4),
+        ),
+      ];
+
+  /// Halo lumineux de la ligne de visée du scanner QR.
+  List<BoxShadow> get scanLaserShadow => [
+        BoxShadow(
+          color: accent.withValues(alpha: 0.6),
+          blurRadius: 6,
+          spreadRadius: 1,
+        ),
+      ];
+
   @override
   AxisTokens copyWith({
     Color? accent,

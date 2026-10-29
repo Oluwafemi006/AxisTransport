@@ -91,7 +91,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               decoration: BoxDecoration(
                 color: theme.colorScheme.primary,
                 borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(28),
+                  bottom: Radius.circular(AxisRadius.authHeader),
                 ),
               ),
               child: Column(
@@ -110,9 +110,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         alignment: Alignment.center,
                         child: Text(
                           'A',
-                          style: TextStyle(
+                          style: theme.textTheme.headlineSmall?.copyWith(
                             color: theme.colorScheme.primary,
-                            fontSize: 22,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -120,11 +119,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       const SizedBox(width: AxisSpacing.xs),
                       Text(
                         'AXIS',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          color: Colors.white,
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          color: tokens.onDark,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 1.6,
-                          fontSize: 22,
                         ),
                       ),
                     ],
@@ -132,18 +130,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   const SizedBox(height: AxisSpacing.md),
                   Text(
                     'Connexion',
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      color: Colors.white,
+                    style: theme.textTheme.headlineLarge?.copyWith(
+                      color: tokens.onDark,
                       fontWeight: FontWeight.w800,
-                      fontSize: 28,
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     'Voyager, expédier, louer.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
+                    style: theme.textTheme.bodyLarge?.copyWith(
                       color: tokens.borderStrong,
-                      fontSize: 15,
                     ),
                   ),
                 ],
@@ -241,17 +237,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         'Pas encore de compte ? ',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: tokens.textSecondary,
-                          fontSize: 14,
                         ),
                       ),
-                      GestureDetector(
-                        onTap: () => context.push('/inscription'),
+                      TextButton(
+                        onPressed: () => context.push('/inscription'),
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(0, AxisSizes.minTarget),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                        ),
                         child: Text(
                           'Créer un compte',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.primary,
                             fontWeight: FontWeight.w800,
-                            fontSize: 14,
                           ),
                         ),
                       ),
@@ -289,7 +287,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         'Contrôleur ? Créez votre compte avec le lien reçu par e-mail, puis connectez-vous ici. L’app s’ouvre sur votre espace.',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: tokens.textSecondary,
-                          fontSize: 12,
                           height: 1.5,
                         ),
                       ),

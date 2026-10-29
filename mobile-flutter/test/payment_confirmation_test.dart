@@ -156,7 +156,7 @@ void main() {
 
       expect(api.refreshed, [77]);
       expect(
-        find.textContaining('pas encore confirmé par FedaPay'),
+        find.textContaining('pas encore confirmé'),
         findsOneWidget,
       );
       expect(find.byType(PrettyQrView), findsNothing);

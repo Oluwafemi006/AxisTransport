@@ -60,8 +60,8 @@ class ScanResultSheet extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(26),
-          topRight: Radius.circular(26),
+          topLeft: Radius.circular(AxisRadius.scanSheet),
+          topRight: Radius.circular(AxisRadius.scanSheet),
         ),
       ),
       padding: const EdgeInsets.fromLTRB(
@@ -112,10 +112,10 @@ class ScanResultSheet extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               alignment: Alignment.center,
-              child: const Icon(
+              child: Icon(
                 Icons.check_rounded,
                 size: 28,
-                color: Colors.white,
+                color: tokens.onDark,
               ),
             ),
             const SizedBox(width: AxisSpacing.sm),
@@ -125,17 +125,16 @@ class ScanResultSheet extends StatelessWidget {
                 children: [
                   Text(
                     'Billet valide',
-                    style: theme.textTheme.titleMedium?.copyWith(
+                    style: theme.textTheme.titleLarge?.copyWith(
                       color: tokens.success,
                       fontWeight: FontWeight.w800,
-                      fontSize: 19,
                     ),
                   ),
                   Text(
                     'N° ${data.ticketNumber ?? "AXS-XXXXXX"} · payé',
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    style: theme.textTheme.labelMedium?.copyWith(
                       color: tokens.textSecondary,
-                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -209,10 +208,10 @@ class ScanResultSheet extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               alignment: Alignment.center,
-              child: const Icon(
+              child: Icon(
                 Icons.priority_high_rounded,
                 size: 26,
-                color: Colors.white,
+                color: tokens.onDark,
               ),
             ),
             const SizedBox(width: AxisSpacing.sm),
@@ -222,17 +221,16 @@ class ScanResultSheet extends StatelessWidget {
                 children: [
                   Text(
                     'Billet déjà utilisé',
-                    style: theme.textTheme.titleMedium?.copyWith(
+                    style: theme.textTheme.titleLarge?.copyWith(
                       color: tokens.onAccentSoft,
                       fontWeight: FontWeight.w800,
-                      fontSize: 19,
                     ),
                   ),
                   Text(
                     'Scanné le ${data.usedTimestamp ?? "—"}${data.scannedBy != null ? " par ${data.scannedBy}" : ""}',
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    style: theme.textTheme.labelMedium?.copyWith(
                       color: tokens.textSecondary,
-                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -243,9 +241,9 @@ class ScanResultSheet extends StatelessWidget {
         const SizedBox(height: AxisSpacing.sm),
         Text(
           'Ne pas laisser monter. Vérifiez la pièce d’identité si le passager conteste.',
-          style: theme.textTheme.bodyMedium?.copyWith(
+          style: theme.textTheme.labelMedium?.copyWith(
             color: tokens.textSecondary,
-            fontSize: 13,
+            fontWeight: FontWeight.w600,
             height: 1.4,
           ),
         ),
@@ -276,10 +274,10 @@ class ScanResultSheet extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               alignment: Alignment.center,
-              child: const Icon(
+              child: Icon(
                 Icons.close_rounded,
                 size: 26,
-                color: Colors.white,
+                color: tokens.onDark,
               ),
             ),
             const SizedBox(width: AxisSpacing.sm),
@@ -289,17 +287,16 @@ class ScanResultSheet extends StatelessWidget {
                 children: [
                   Text(
                     'Billet introuvable',
-                    style: theme.textTheme.titleMedium?.copyWith(
+                    style: theme.textTheme.titleLarge?.copyWith(
                       color: tokens.danger,
                       fontWeight: FontWeight.w800,
-                      fontSize: 19,
                     ),
                   ),
                   Text(
                     'Ce code n’existe pas ou n’est pas payé',
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    style: theme.textTheme.labelMedium?.copyWith(
                       color: tokens.textSecondary,
-                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -328,16 +325,14 @@ class ScanResultSheet extends StatelessWidget {
           label,
           style: theme.textTheme.labelSmall?.copyWith(
             color: tokens.textSecondary,
-            fontSize: 11,
             fontWeight: FontWeight.w600,
           ),
         ),
         const SizedBox(height: 2),
         Text(
           value,
-          style: theme.textTheme.titleSmall?.copyWith(
+          style: theme.textTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.w800,
-            fontSize: 15,
             color: tokens.ink,
           ),
         ),

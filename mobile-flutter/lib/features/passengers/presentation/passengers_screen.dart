@@ -6,6 +6,8 @@ import '../../../core/formatters.dart';
 import '../../../core/models.dart';
 import '../../../core/session.dart';
 import '../../../core/theme.dart';
+import '../../../core/theme/axis_spacing.dart';
+import '../../../core/theme/axis_tokens.dart';
 import '../../../shared/widgets.dart';
 import '../../bookings/application/booking_draft.dart';
 import '../domain/passenger.dart';
@@ -216,11 +218,10 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Points d\'embarquement et de débarquement',
-              style: TextStyle(
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 color: AxisColors.navyDark,
-                fontSize: 16,
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -295,11 +296,10 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
+                      Text(
                         'Qui voyage ?',
-                        style: TextStyle(
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                           color: AxisColors.navyDark,
-                          fontSize: 22,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -307,14 +307,13 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: AxisColors.surfaceLow,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(AxisRadius.sm),
                         ),
                         child: Text(
                           '$_count passager${_count > 1 ? "s" : ""}',
-                          style: const TextStyle(
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: AxisColors.navy,
                             fontWeight: FontWeight.w800,
-                            fontSize: 12,
                           ),
                         ),
                       ),
@@ -339,9 +338,8 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
                               children: [
                                 Text(
                                   'Passager ${index + 1}',
-                                  style: const TextStyle(
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                     color: AxisColors.navyDark,
-                                    fontSize: 17,
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
@@ -437,7 +435,7 @@ class _BookingProgress extends StatelessWidget {
           margin: EdgeInsets.only(right: index == 2 ? 0 : 6),
           decoration: BoxDecoration(
             color: step <= currentStep ? AxisColors.navy : AxisColors.border,
-            borderRadius: BorderRadius.circular(99),
+            borderRadius: BorderRadius.circular(AxisRadius.pill),
           ),
         ),
       );
@@ -451,29 +449,32 @@ class _TripSummary extends StatelessWidget {
   final Trip trip;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: AxisColors.navy,
-      borderRadius: BorderRadius.circular(18),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          trip.route.label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w900,
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = context.axis;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AxisColors.navy,
+        borderRadius: BorderRadius.circular(AxisRadius.lg),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            trip.route.label,
+            style: theme.textTheme.titleLarge?.copyWith(
+              color: tokens.onDark,
+              fontWeight: FontWeight.w900,
+            ),
           ),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          formatFullDateTime(trip.departureAt),
-          style: const TextStyle(color: Color(0xFFD3E4FE)),
-        ),
-      ],
-    ),
-  );
+          const SizedBox(height: 5),
+          Text(
+            formatFullDateTime(trip.departureAt),
+            style: TextStyle(color: tokens.borderStrong),
+          ),
+        ],
+      ),
+    );
+  }
 }

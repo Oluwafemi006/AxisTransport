@@ -66,7 +66,8 @@ String? globalRoleRedirect(BuildContext context, GoRouterState state) {
     final isClientExclusiveTarget = loc == '/' ||
         loc.startsWith('/billets') ||
         loc.startsWith('/colis') ||
-        loc.startsWith('/location');
+        loc.startsWith('/location') ||
+        loc.startsWith('/profil');
     if (isClientExclusiveTarget) {
       return '/staff';
     }

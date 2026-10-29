@@ -50,10 +50,9 @@ class EmptyState extends StatelessWidget {
             const SizedBox(height: AxisSpacing.md),
             Text(
               title,
-              style: theme.textTheme.titleMedium?.copyWith(
+              style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w800,
                 color: tokens.ink,
-                fontSize: 18,
               ),
               textAlign: TextAlign.center,
             ),
@@ -62,7 +61,6 @@ class EmptyState extends StatelessWidget {
               description,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: tokens.textSecondary,
-                fontSize: 14,
                 height: 1.4,
               ),
               textAlign: TextAlign.center,

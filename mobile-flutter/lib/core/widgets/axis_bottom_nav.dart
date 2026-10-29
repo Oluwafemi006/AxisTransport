@@ -155,7 +155,6 @@ class AxisBottomNav extends StatelessWidget {
                           Text(
                             item.label,
                             style: theme.textTheme.labelSmall?.copyWith(
-                              fontSize: 11,
                               fontWeight: isSelected
                                   ? FontWeight.w800
                                   : FontWeight.w600,

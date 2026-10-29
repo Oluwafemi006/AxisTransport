@@ -59,7 +59,7 @@ class AxisHeader extends StatelessWidget {
           button: true,
           label: 'Retour',
           child: Material(
-            color: const Color(0x1FFFFFFF),
+            color: axis.glassOnDark,
             borderRadius: BorderRadius.circular(AxisRadius.small),
             child: InkWell(
               onTap: onBack,
@@ -91,7 +91,7 @@ class AxisHeader extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               color: axis.accent,
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(AxisRadius.badge),
             ),
             child: Text(
               'CONTRÔLEUR',

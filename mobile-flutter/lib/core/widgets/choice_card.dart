@@ -64,92 +64,97 @@ class ChoiceCard extends StatelessWidget {
     final titleColor = !enabled
         ? tokens.textMuted
         : selected
-            ? Colors.white
+            ? tokens.onDark
             : tokens.ink;
 
     final subtitleColor = !enabled
         ? tokens.textMuted
         : selected
-            ? Colors.white.withValues(alpha: 0.85)
+            ? tokens.onDark.withValues(alpha: 0.85)
             : tokens.textSecondary;
 
-    return Material(
-      color: bg,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AxisRadius.sm),
-        side: BorderSide(
-          color: borderColor,
-          width: 2,
+    return Semantics(
+      button: enabled,
+      selected: selected,
+      label: title,
+      child: Material(
+        color: bg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AxisRadius.sm),
+          side: BorderSide(
+            color: borderColor,
+            width: 2,
+          ),
         ),
-      ),
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(AxisRadius.sm),
-        child: Padding(
-          padding: const EdgeInsets.all(AxisSpacing.sm),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (badge != null || icon != null)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    if (icon != null)
-                      Icon(
-                        icon,
-                        size: 20,
-                        color: titleColor,
-                      ),
-                    ?badge,
-                  ],
-                ),
-              if (badge != null || icon != null)
-                const SizedBox(height: AxisSpacing.xs),
-              Text(
-                title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: titleColor,
-                  fontWeight: FontWeight.w800,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              if (subtitle != null) ...[
-                const SizedBox(height: AxisSpacing.xxs),
-                Text(
-                  subtitle!,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: subtitleColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-              if (price != null) ...[
-                const SizedBox(height: AxisSpacing.xxs),
-                RichText(
-                  text: TextSpan(
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: titleColor,
-                      fontWeight: FontWeight.w800,
-                    ),
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(AxisRadius.sm),
+          child: Padding(
+            padding: const EdgeInsets.all(AxisSpacing.sm),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (badge != null || icon != null)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      TextSpan(text: price!),
-                      if (unit != null)
-                        TextSpan(
-                          text: ' $unit',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: subtitleColor,
-                            fontWeight: FontWeight.w600,
-                          ),
+                      if (icon != null)
+                        Icon(
+                          icon,
+                          size: 20,
+                          color: titleColor,
                         ),
+                      ?badge,
                     ],
                   ),
+                if (badge != null || icon != null)
+                  const SizedBox(height: AxisSpacing.xs),
+                Text(
+                  title,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: titleColor,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: AxisSpacing.xxs),
+                  Text(
+                    subtitle!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: subtitleColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                if (price != null) ...[
+                  const SizedBox(height: AxisSpacing.xxs),
+                  RichText(
+                    text: TextSpan(
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      children: [
+                        TextSpan(text: price!),
+                        if (unit != null)
+                          TextSpan(
+                            text: ' $unit',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: subtitleColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

@@ -41,7 +41,7 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
       await _load();
       message = _ticket?.isConfirmed == true
           ? 'Paiement confirmé : votre billet est prêt.'
-          : 'Paiement pas encore confirmé par FedaPay. Réessayez dans un instant.';
+          : 'Paiement Mobile Money pas encore confirmé. Réessayez dans un instant.';
     } on ApiException catch (error) {
       message = error.isNetwork
           ? 'Serveur injoignable : vérifiez votre connexion et réessayez.'

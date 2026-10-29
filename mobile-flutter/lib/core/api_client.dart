@@ -405,7 +405,7 @@ class ApiClient {
     );
   }
 
-  /// « Vérifier mon paiement » : le serveur relit chez FedaPay les transactions en cours de la réservation.
+  /// « Vérifier mon paiement » : le serveur relit chez le prestataire Mobile Money les transactions en cours de la réservation.
   Future<BookingReservation> refreshBookingPayment({
     required int bookingId,
     String? guestAccessToken,
