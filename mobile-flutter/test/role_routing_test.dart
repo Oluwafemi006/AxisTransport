@@ -95,7 +95,7 @@ void main() {
     'un client arrive sur l’interface client, sans Scanner ni Vendre',
     (tester) async {
       final api = await _open(tester, role: 'CLIENT');
-      expect(find.text('Où souhaitez-vous aller ?'), findsOneWidget);
+      expect(find.text('Où voyagez-vous aujourd’hui ?'), findsOneWidget);
       expect(find.text('Billets'), findsOneWidget);
       expect(find.text('Suivi colis'), findsOneWidget);
       expect(find.text('Scanner'), findsNothing);

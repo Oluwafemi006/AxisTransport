@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
-import '../../../core/theme.dart';
+import '../../../core/theme/axis_theme.dart';
+import '../../../core/widgets/widgets.dart';
 import '../domain/trip_search.dart';
 import 'trip_search_card.dart';
 
@@ -10,27 +12,40 @@ class TripSearchScreen extends StatelessWidget {
   final TripSearch? initialSearch;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Rechercher un trajet')),
-    body: ListView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-      children: [
-        const Text(
-          'Où souhaitez-vous aller ?',
-          style: TextStyle(
-            color: AxisColors.navyDark,
-            fontSize: 26,
-            fontWeight: FontWeight.w800,
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final axis = context.axis;
+
+    return Scaffold(
+      body: Column(
+        children: [
+          AxisHeader(
+            title: 'Rechercher un trajet',
+            subtitle: 'Choisissez votre trajet et consultez les places disponibles.',
+            onBack: () => context.canPop() ? context.pop() : context.go('/'),
           ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Choisissez votre trajet et consultez les places disponibles.',
-          style: TextStyle(color: AxisColors.muted),
-        ),
-        const SizedBox(height: 22),
-        TripSearchCard(initialSearch: initialSearch),
-      ],
-    ),
-  );
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(
+                AxisSpacing.screen,
+                AxisSpacing.s20,
+                AxisSpacing.screen,
+                AxisSpacing.s24,
+              ),
+              children: [
+                Text(
+                  'Où voyagez-vous aujourd’hui ?',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    color: axis.ink,
+                  ),
+                ),
+                const SizedBox(height: AxisSpacing.s16),
+                TripSearchCard(initialSearch: initialSearch),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

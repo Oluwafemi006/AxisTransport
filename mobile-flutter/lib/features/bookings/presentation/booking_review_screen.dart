@@ -6,13 +6,13 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/formatters.dart';
-import '../../../core/theme.dart';
 import '../../../core/models.dart';
+import '../../../core/theme/axis_theme.dart';
+import '../../../core/widgets/widgets.dart';
 import '../../../shared/payment_link.dart';
-import '../../../shared/widgets.dart';
 import '../../passengers/domain/passenger.dart';
-import '../application/booking_draft.dart';
 import '../application/booking_checkout.dart';
+import '../application/booking_draft.dart';
 
 class BookingReviewScreen extends ConsumerStatefulWidget {
   const BookingReviewScreen({super.key, required this.tripId});
@@ -36,7 +36,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Le total à payer (tarif + frais) est demandé au serveur dès l'ouverture, avant tout appui.
+    // Le total à payer est demandé au serveur dès l'ouverture, avant tout appui.
     Future.microtask(() {
       final draft = ref.read(bookingDraftProvider);
       if (draft.trip?.id != widget.tripId || draft.passengers.isEmpty) return;
@@ -152,37 +152,72 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
     }
   }
 
+  String _initials(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'P';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'
+        .toUpperCase();
+  }
+
+  (String, String) _resolveEndpoints(BookingDraft draft, Trip trip) {
+    final seg = draft.segmentLabel;
+    if (seg != null && seg.contains('→')) {
+      final parts = seg.split('→').map((s) => s.trim()).toList();
+      if (parts.length == 2 && parts[0].isNotEmpty && parts[1].isNotEmpty) {
+        return (parts[0], parts[1]);
+      }
+    }
+    final origin =
+        draft.originName ??
+        trip.route.origin?.name ??
+        (trip.route.label.contains('→')
+            ? trip.route.label.split('→').first.trim()
+            : trip.route.label);
+    final destination =
+        draft.destinationName ??
+        trip.route.destination?.name ??
+        (trip.route.label.contains('→')
+            ? trip.route.label.split('→').last.trim()
+            : 'À renseigner');
+    return (origin, destination);
+  }
+
   @override
   Widget build(BuildContext context) {
     final draft = ref.watch(bookingDraftProvider);
     final trip = draft.trip;
     final checkoutState = ref.watch(bookingCheckoutProvider);
+    final theme = Theme.of(context);
+    final axis = context.axis;
 
     if (trip?.id != widget.tripId || !draft.hasAllSeats) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Récapitulatif')),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: AxisCard(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'La réservation est incomplète.',
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 14),
-                  FilledButton(
-                    onPressed: () => context.go(
-                      '/billets/booking/${widget.tripId}/passagers',
-                    ),
-                    child: const Text('Recommencer'),
-                  ),
-                ],
+        body: Column(
+          children: [
+            AxisHeader(
+              title: 'Récapitulatif',
+              onBack: () => context.canPop()
+                  ? context.pop()
+                  : context.go('/billets/booking/${widget.tripId}/passagers'),
+            ),
+            Expanded(
+              child: EmptyState(
+                icon: Icons.receipt_long_outlined,
+                title: 'La réservation est incomplète.',
+                description:
+                    'Sélectionnez vos passagers et vos sièges avant de continuer.',
+                actionLabel: 'Recommencer',
+                onAction: () => context.go(
+                  '/billets/booking/${widget.tripId}/passagers',
+                ),
               ),
             ),
-          ),
+          ],
         ),
       );
     }
@@ -225,267 +260,699 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
     final baseAmount = pending?.amount ?? draft.totalAmount;
     final totalToPay = quote?.total ?? baseAmount;
 
+    final (originName, destinationName) = _resolveEndpoints(draft, trip);
+    final dateFormatted = DateFormat(
+      'EEE d MMM',
+      'fr_FR',
+    ).format(trip.departureAt);
+    final departureTime = DateFormat.Hm('fr_FR').format(trip.departureAt);
+    // Heure d'embarquement = champ boardingAt du serveur ou départ − 30 min à l'affichage.
+    final boardingAt =
+        trip.boardingAt ??
+        trip.departureAt.subtract(const Duration(minutes: 30));
+    final boardingTime = DateFormat.Hm('fr_FR').format(boardingAt);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Récapitulatif')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      body: Column(
         children: [
-          Row(
-            children: List.generate(3, (index) {
-              return Expanded(
-                child: Container(
-                  height: 4,
-                  margin: EdgeInsets.only(right: index == 2 ? 0 : 6),
-                  decoration: BoxDecoration(
-                    color: AxisColors.navy,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
-              );
-            }),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            draft.segmentLabel ?? trip.route.label,
-            style: const TextStyle(
-              color: AxisColors.navyDark,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
+          // En-tête blanc + barre d'avancement en 4 segments (Recap.html)
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              border: Border(bottom: BorderSide(color: axis.border)),
             ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            formatFullDateTime(trip.departureAt),
-            style: const TextStyle(color: AxisColors.muted),
-          ),
-          const SizedBox(height: 18),
-          ...draft.passengers.map((passenger) {
-            final seat = draft.seatsByPassenger[passenger.id]!;
-            return AxisCard(
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: AxisColors.surfaceLow,
-                    foregroundColor: AxisColors.navy,
-                    child: Text('${draft.passengers.indexOf(passenger) + 1}'),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          passenger.fullName,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          passenger.type.label,
-                          style: const TextStyle(color: AxisColors.muted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    'Siège ${seat.number}',
-                    style: const TextStyle(
-                      color: AxisColors.navy,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
-          AxisCard(
+            padding: const EdgeInsets.fromLTRB(
+              AxisSpacing.screen,
+              AxisSpacing.s12,
+              AxisSpacing.screen,
+              AxisSpacing.s12,
+            ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    const Expanded(
-                      child: Text(
-                        'Prix des billets',
-                        style: TextStyle(fontSize: 15, color: AxisColors.muted),
+                    Tooltip(
+                      message: 'Retour',
+                      child: Semantics(
+                        button: true,
+                        label: 'Retour',
+                        child: Material(
+                          color: axis.inputFill,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              AxisRadius.small,
+                            ),
+                            side: BorderSide(color: axis.border),
+                          ),
+                          child: InkWell(
+                            onTap: () => context.canPop()
+                                ? context.pop()
+                                : context.go(
+                                    '/billets/booking/${widget.tripId}/sieges',
+                                  ),
+                            borderRadius: BorderRadius.circular(
+                              AxisRadius.small,
+                            ),
+                            child: SizedBox(
+                              width: AxisSizes.minTarget,
+                              height: AxisSizes.minTarget,
+                              child: Icon(
+                                Icons.arrow_back_rounded,
+                                color: axis.ink,
+                                size: AxisSizes.icon,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                    Text(
-                      formatMoney(baseAmount, currency),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 16,
+                    const SizedBox(width: AxisSpacing.s10),
+                    Expanded(
+                      child: Text(
+                        'Récapitulatif',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          color: axis.ink,
+                        ),
                       ),
                     ),
                   ],
                 ),
+                const SizedBox(height: AxisSpacing.s10),
+                Row(
+                  children: List.generate(4, (index) {
+                    return Expanded(
+                      child: Container(
+                        height: 4,
+                        margin: EdgeInsets.only(
+                          right: index == 3 ? 0 : AxisSpacing.s6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: index < 3
+                              ? theme.colorScheme.primary
+                              : axis.disabled,
+                          borderRadius: BorderRadius.circular(AxisRadius.pill),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
 
-          // IFU de l'acheteur : facultatif, saisi avant la réservation, imprimé sur le billet s'il est rempli.
-          if (pending == null) ...[
-            TextFormField(
-              key: const Key('buyer-ifu'),
-              initialValue: draft.buyerIfu,
-              maxLength: 30,
-              decoration: const InputDecoration(
-                labelText: 'IFU de l\'acheteur (facultatif)',
-                helperText: 'Imprimé sur le billet s\'il est rempli.',
+          // Contenu défilable
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                AxisSpacing.screen,
+                AxisSpacing.s14,
+                AxisSpacing.screen,
+                AxisSpacing.s24,
               ),
-              onChanged: ref.read(bookingDraftProvider.notifier).setBuyerIfu,
-            ),
-            const SizedBox(height: 8),
-          ],
-
-          // Choix du moyen de paiement, seulement s'il y en a plusieurs : il précède l'action unique.
-          if (methods.length > 1 &&
-              checkout == null &&
-              phase != PaymentPhase.expired &&
-              phase != PaymentPhase.refundDue) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Moyen de paiement',
-              style: TextStyle(
-                color: AxisColors.navyDark,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: methods.map((method) {
-                return ChoiceChip(
-                  label: Text(method.label),
-                  selected: _selectedMethod?.id == method.id,
-                  onSelected: (selected) {
-                    if (selected) setState(() => _selectedMethod = method);
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-          ],
-
-          if (methods.isEmpty)
-            const Notice(
-              'Aucun paiement en ligne n\'est disponible pour le moment.',
-              error: true,
-            )
-          else if (pending == null)
-            // Une seule action : réserver les sièges et payer.
-            FilledButton(
-              onPressed: isBusy || quote == null ? null : _payNow,
-              child: Text(
-                isBusy
-                    ? 'Patientez…'
-                    : quote == null
-                    ? 'Montant en cours de calcul…'
-                    : 'Payer ${formatMoney(quote.total, quote.currency)}',
-              ),
-            )
-          else ...[
-            AxisCard(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    'Réservation en cours · ${pending.reference}',
-                    style: const TextStyle(fontWeight: FontWeight.w900),
+                // Carte trajet bleu marine (Recap.html)
+                Container(
+                  padding: const EdgeInsets.all(AxisSpacing.s16),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary,
+                    borderRadius: BorderRadius.circular(AxisRadius.card),
                   ),
-                  const SizedBox(height: 6),
-                  if (pending.reservationExpiresAt != null &&
-                      phase != PaymentPhase.expired &&
-                      phase != PaymentPhase.refundDue)
-                    HoldCountdown(expiresAt: pending.reservationExpiresAt!),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'DE',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: axis.borderStrong,
+                                    letterSpacing: 0.6,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  originName,
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    color: theme.colorScheme.onPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: axis.accent,
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              Icons.arrow_forward_rounded,
+                              color: theme.colorScheme.primary,
+                              size: 18,
+                            ),
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  'À',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: axis.borderStrong,
+                                    letterSpacing: 0.6,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  destinationName,
+                                  textAlign: TextAlign.end,
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    color: theme.colorScheme.onPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AxisSpacing.s14),
+                      Divider(
+                        height: 1,
+                        color: theme.colorScheme.onPrimary.withValues(
+                          alpha: 0.16,
+                        ),
+                      ),
+                      const SizedBox(height: AxisSpacing.s12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _TripMetaItem(
+                              label: 'Date',
+                              value: dateFormatted,
+                              valueColor: theme.colorScheme.onPrimary,
+                            ),
+                          ),
+                          Expanded(
+                            child: _TripMetaItem(
+                              label: 'Départ',
+                              value: departureTime,
+                              valueColor: theme.colorScheme.onPrimary,
+                            ),
+                          ),
+                          Expanded(
+                            child: _TripMetaItem(
+                              label: 'Embarquement',
+                              value: boardingTime,
+                              valueColor: axis.accent,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: AxisSpacing.s14),
+
+                // Section Passagers
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'PASSAGER',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: axis.textMuted,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                    if (pending == null)
+                      TextButton(
+                        onPressed: () => context.go(
+                          '/billets/booking/${widget.tripId}/passagers',
+                        ),
+                        child: const Text('Modifier'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: AxisSpacing.s6),
+                ...draft.passengers.map((passenger) {
+                  final seat = draft.seatsByPassenger[passenger.id]!;
+                  final subtitleText = passenger.phone.trim().isNotEmpty
+                      ? passenger.phone.trim()
+                      : passenger.type.label;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: AxisSpacing.s10),
+                    child: AxisCard(
+                      padding: const EdgeInsets.all(AxisSpacing.s14),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: axis.primarySoft,
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              _initials(passenger.fullName),
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AxisSpacing.s12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  passenger.fullName,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    color: axis.ink,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  subtitleText,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: axis.textMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AxisSpacing.s10,
+                              vertical: AxisSpacing.s6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: axis.accentSoft,
+                              borderRadius: BorderRadius.circular(
+                                AxisRadius.small,
+                              ),
+                            ),
+                            child: Text(
+                              'Siège ${seat.number}',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: axis.onAccentSoft,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+
+                const SizedBox(height: AxisSpacing.s6),
+
+                // Section Moyen de paiement ("Mobile Money" uniquement côté client)
+                Text(
+                  'MOYEN DE PAIEMENT',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: axis.textMuted,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(height: AxisSpacing.s8),
+                if (methods.isEmpty && checkoutState.isLoading)
+                  const SkeletonBox(height: 74, borderRadius: AxisRadius.card)
+                else if (methods.isEmpty)
+                  const _ReviewNotice(
+                    message:
+                        'Aucun paiement en ligne n\'est disponible pour le moment.',
+                    isError: true,
+                  )
+                else
+                  ...methods.map((method) {
+                    final selected = _selectedMethod?.id == method.id;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: AxisSpacing.s8),
+                      child: Material(
+                        color: theme.colorScheme.surface,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AxisRadius.card),
+                          side: BorderSide(
+                            color: selected
+                                ? theme.colorScheme.primary
+                                : axis.border,
+                            width: selected ? 2 : 1,
+                          ),
+                        ),
+                        child: InkWell(
+                          onTap: checkout == null
+                              ? () => setState(() => _selectedMethod = method)
+                              : null,
+                          borderRadius: BorderRadius.circular(AxisRadius.card),
+                          child: Padding(
+                            padding: const EdgeInsets.all(AxisSpacing.s14),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: AxisSizes.minTarget,
+                                  height: AxisSizes.minTarget,
+                                  decoration: BoxDecoration(
+                                    color: axis.accentSoft,
+                                    borderRadius: BorderRadius.circular(
+                                      AxisRadius.small,
+                                    ),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    Icons.phone_android_rounded,
+                                    color: axis.onAccentSoft,
+                                    size: AxisSizes.icon,
+                                  ),
+                                ),
+                                const SizedBox(width: AxisSpacing.s12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Mobile Money',
+                                        style: theme.textTheme.titleSmall
+                                            ?.copyWith(color: axis.ink),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Validation sur votre téléphone',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(color: axis.textMuted),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  width: 22,
+                                  height: 22,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: selected
+                                          ? theme.colorScheme.primary
+                                          : axis.borderStrong,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: selected
+                                      ? Container(
+                                          width: 10,
+                                          height: 10,
+                                          decoration: BoxDecoration(
+                                            color: theme.colorScheme.primary,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+
+                // IFU de l'acheteur : facultatif, saisi avant la réservation
+                if (pending == null) ...[
+                  const SizedBox(height: AxisSpacing.s6),
+                  TextFormField(
+                    key: const Key('buyer-ifu'),
+                    initialValue: draft.buyerIfu,
+                    maxLength: 30,
+                    decoration: const InputDecoration(
+                      labelText: 'IFU de l\'acheteur (facultatif)',
+                      helperText: 'Imprimé sur le billet s\'il est rempli.',
+                    ),
+                    onChanged: ref
+                        .read(bookingDraftProvider.notifier)
+                        .setBuyerIfu,
+                  ),
+                ],
+
+                const SizedBox(height: AxisSpacing.s8),
+
+                // Carte Prix TTC (mention "TVA 18 % incluse" exigée sur Recap.html)
+                AxisCard(
+                  padding: const EdgeInsets.all(AxisSpacing.s16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Prix des billets',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: axis.textSecondary,
+                            ),
+                          ),
+                          Text(
+                            formatMoney(baseAmount, currency),
+                            style: AxisTypography.price.copyWith(
+                              color: axis.ink,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AxisSpacing.s10),
+                      const Divider(height: 1),
+                      const SizedBox(height: AxisSpacing.s10),
+                      Text(
+                        'Prix TTC, TVA 18 % incluse. Le billet est émis dès la confirmation du paiement.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: axis.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // États de réservation temporaire / attente / erreur
+                if (pending != null) ...[
+                  const SizedBox(height: AxisSpacing.s12),
+                  AxisCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Réservation en cours · ${pending.reference}',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: axis.ink,
+                          ),
+                        ),
+                        const SizedBox(height: AxisSpacing.s6),
+                        if (pending.reservationExpiresAt != null &&
+                            phase != PaymentPhase.expired &&
+                            phase != PaymentPhase.refundDue)
+                          HoldCountdown(
+                            expiresAt: pending.reservationExpiresAt!,
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AxisSpacing.s10),
+                  switch (phase) {
+                    PaymentPhase.idle => _ReviewNotice(
+                      message: paymentFailed
+                          ? 'Le paiement n\'a pas pu démarrer. Vos sièges restent bloqués'
+                                '${heldUntil == null ? '.' : ' jusqu\'à $heldUntil.'}'
+                          : heldUntil == null
+                          ? 'Sièges réservés temporairement. Finalisez le paiement.'
+                          : 'Sièges bloqués jusqu\'à $heldUntil. Finalisez le paiement avant cette heure.',
+                      isError: paymentFailed,
+                    ),
+                    PaymentPhase.awaiting => _ReviewNotice(
+                      message: _confirming
+                          ? 'Paiement en cours de confirmation… Restez sur cet écran : '
+                                'vos billets s\'affichent dès que Mobile Money confirme le paiement.'
+                          : 'Paiement en attente. Terminez-le sur la page de paiement, puis revenez ici : '
+                                'vos billets sont émis dès que le paiement est confirmé. '
+                                'Vous pouvez aussi le vérifier plus tard depuis l\'onglet Billets.'
+                                '${heldUntil == null ? '' : ' Sièges bloqués jusqu\'à $heldUntil.'}',
+                      isError: false,
+                    ),
+                    PaymentPhase.failed => _ReviewNotice(
+                      message:
+                          'Paiement refusé ou annulé : aucun billet n\'a été émis. '
+                          'Vous pouvez relancer le paiement'
+                          '${heldUntil == null ? '.' : ' tant que vos sièges sont bloqués (jusqu\'à $heldUntil).'}',
+                      isError: true,
+                    ),
+                    PaymentPhase.expired => const _ReviewNotice(
+                      message:
+                          'Le délai de blocage des sièges est dépassé et aucun paiement n\'a été confirmé. '
+                          'Aucun billet n\'a été émis.',
+                      isError: true,
+                    ),
+                    PaymentPhase.refundDue => _ReviewNotice(
+                      message:
+                          'Remboursement à traiter. Votre paiement est arrivé après l\'expiration de la réservation : '
+                          'aucun billet n\'a été émis. Référence à communiquer à Axis : ${pending.reference}.',
+                      isError: true,
+                    ),
+                  },
+                ],
+
+                if (errorMessage != null) ...[
+                  const SizedBox(height: AxisSpacing.s12),
+                  _ReviewNotice(message: errorMessage, isError: true),
+                ],
                 ],
               ),
             ),
-            switch (phase) {
-              PaymentPhase.idle => Notice(
-                paymentFailed
-                    ? 'Le paiement n\'a pas pu démarrer. Vos sièges restent bloqués'
-                          '${heldUntil == null ? '.' : ' jusqu\'à $heldUntil.'}'
-                    : heldUntil == null
-                    ? 'Sièges réservés temporairement. Finalisez le paiement.'
-                    : 'Sièges bloqués jusqu\'à $heldUntil. Finalisez le paiement avant cette heure.',
-                error: paymentFailed,
+          ),
+
+          // Barre inférieure d'action (Recap.html)
+          if (methods.isNotEmpty)
+            Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                border: Border(top: BorderSide(color: axis.border)),
               ),
-              PaymentPhase.awaiting => Notice(
-                _confirming
-                    ? 'Paiement en cours de confirmation… Restez sur cet écran : '
-                          'vos billets s\'affichent dès que FedaPay confirme le paiement.'
-                    : 'Paiement en attente. Terminez-le sur la page de paiement, puis revenez ici : '
-                          'vos billets sont émis dès que le paiement est confirmé. '
-                          'Vous pouvez aussi le vérifier plus tard depuis l\'onglet Billets.'
-                          '${heldUntil == null ? '' : ' Sièges bloqués jusqu\'à $heldUntil.'}',
+              padding: const EdgeInsets.fromLTRB(
+                AxisSpacing.screen,
+                AxisSpacing.s12,
+                AxisSpacing.screen,
+                AxisSpacing.s16,
               ),
-              PaymentPhase.failed => Notice(
-                'Paiement refusé ou annulé : aucun billet n\'a été émis. '
-                'Vous pouvez relancer le paiement'
-                '${heldUntil == null ? '.' : ' tant que vos sièges sont bloqués (jusqu\'à $heldUntil).'}',
-                error: true,
-              ),
-              PaymentPhase.expired => const Notice(
-                'Le délai de blocage des sièges est dépassé et aucun paiement n\'a été confirmé. '
-                'Aucun billet n\'a été émis.',
-                error: true,
-              ),
-              PaymentPhase.refundDue => Notice(
-                'Remboursement à traiter. Votre paiement est arrivé après l\'expiration de la réservation : '
-                'aucun billet n\'a été émis. Référence à communiquer à Axis : ${pending.reference}.',
-                error: true,
-              ),
-            },
-            const SizedBox(height: 16),
-            if (phase == PaymentPhase.expired ||
-                phase == PaymentPhase.refundDue)
-              FilledButton(
-                onPressed: _restart,
-                child: const Text('Recommencer une réservation'),
-              )
-            else ...[
-              if (checkout != null) ...[
-                FilledButton(
-                  onPressed: isBusy ? null : _verifyPayment,
-                  child: Text(
-                    isBusy ? 'Vérification…' : 'J\'ai payé · vérifier',
-                  ),
-                ),
-                if (checkout.paymentUrl != null) ...[
-                  const SizedBox(height: 8),
-                  OutlinedButton(
-                    onPressed: isBusy
-                        ? null
-                        : () => _openPaymentPage(checkout.paymentUrl!),
-                    child: const Text('Reprendre le paiement'),
-                  ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (pending == null)
+                    AxisButton(
+                      onPressed: isBusy || quote == null ? null : _payNow,
+                      icon: const Icon(Icons.lock_outline_rounded),
+                      label: isBusy
+                          ? 'Patientez…'
+                          : quote == null
+                          ? 'Montant en cours de calcul…'
+                          : 'Payer ${formatMoney(quote.total, quote.currency)}',
+                    )
+                  else if (phase == PaymentPhase.expired ||
+                      phase == PaymentPhase.refundDue)
+                    AxisButton(
+                      onPressed: _restart,
+                      label: 'Recommencer une réservation',
+                    )
+                  else ...[
+                    if (checkout != null) ...[
+                      AxisButton(
+                        onPressed: isBusy ? null : _verifyPayment,
+                        label: isBusy
+                            ? 'Vérification…'
+                            : 'J\'ai payé · vérifier',
+                      ),
+                      if (checkout.paymentUrl != null) ...[
+                        const SizedBox(height: AxisSpacing.s8),
+                        AxisButton(
+                          variant: AxisButtonVariant.outline,
+                          height: AxisSizes.secondaryButton,
+                          onPressed: isBusy
+                              ? null
+                              : () => _openPaymentPage(checkout.paymentUrl!),
+                          label: 'Reprendre le paiement',
+                        ),
+                      ],
+                    ] else
+                      AxisButton(
+                        onPressed: isBusy || _selectedMethod == null
+                            ? null
+                            : _payNow,
+                        icon: const Icon(Icons.lock_outline_rounded),
+                        label: isBusy
+                            ? 'Patientez…'
+                            : paymentFailed || phase == PaymentPhase.failed
+                            ? 'Réessayer le paiement'
+                            : 'Payer ${formatMoney(totalToPay, currency)}',
+                      ),
+                    const SizedBox(height: AxisSpacing.s6),
+                    TextButton(
+                      onPressed: isBusy ? null : _cancelBooking,
+                      child: const Text('Annuler la réservation'),
+                    ),
+                  ],
                 ],
-              ] else
-                // Même réservation, même siège, même délai : seul le paiement est relancé.
-                FilledButton(
-                  onPressed: isBusy || _selectedMethod == null ? null : _payNow,
-                  child: Text(
-                    isBusy
-                        ? 'Patientez…'
-                        : paymentFailed || phase == PaymentPhase.failed
-                        ? 'Réessayer le paiement'
-                        : 'Payer ${formatMoney(totalToPay, currency)}',
-                  ),
-                ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: isBusy ? null : _cancelBooking,
-                child: const Text('Annuler la réservation'),
               ),
-            ],
-          ],
-          if (errorMessage != null) ...[
-            const SizedBox(height: 14),
-            Notice(errorMessage, error: true),
-          ],
+            ),
         ],
+      ),
+    );
+  }
+}
+
+class _TripMetaItem extends StatelessWidget {
+  const _TripMetaItem({
+    required this.label,
+    required this.value,
+    required this.valueColor,
+  });
+
+  final String label;
+  final String value;
+  final Color valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final axis = context.axis;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: axis.borderStrong,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: theme.textTheme.titleSmall?.copyWith(color: valueColor),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReviewNotice extends StatelessWidget {
+  const _ReviewNotice({required this.message, required this.isError});
+
+  final String message;
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final axis = context.axis;
+    final bg = isError ? axis.danger.withValues(alpha: 0.1) : axis.primarySoft;
+    final fg = isError ? axis.danger : theme.colorScheme.primary;
+
+    return Container(
+      padding: const EdgeInsets.all(AxisSpacing.s12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AxisRadius.small),
+      ),
+      child: Text(
+        message,
+        style: theme.textTheme.bodySmall?.copyWith(color: fg),
       ),
     );
   }
@@ -520,13 +987,15 @@ class _HoldCountdownState extends State<HoldCountdown> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final axis = context.axis;
     final remaining = widget.expiresAt.difference(DateTime.now());
     final seconds = remaining.isNegative ? 0 : remaining.inSeconds;
     return Text(
       seconds == 0
           ? 'Délai de réservation écoulé.'
           : 'Temps restant : ${seconds ~/ 60} min ${(seconds % 60).toString().padLeft(2, '0')} s',
-      style: const TextStyle(color: AxisColors.muted),
+      style: theme.textTheme.bodySmall?.copyWith(color: axis.textMuted),
     );
   }
 }

@@ -126,14 +126,14 @@ void main() {
       await tester.pumpAndSettle();
 
       // Vérifie qu'on est redirigé vers l'espace client
-      expect(find.text('Où souhaitez-vous aller ?'), findsOneWidget);
+      expect(find.text('Où voyagez-vous aujourd’hui ?'), findsOneWidget);
       expect(find.text('Billets'), findsOneWidget);
       expect(find.text('Scanner'), findsNothing);
 
       // Tenter d'accéder à /staff/vendre
       axisRouter.go('/vendre');
       await tester.pumpAndSettle();
-      expect(find.text('Où souhaitez-vous aller ?'), findsOneWidget);
+      expect(find.text('Où voyagez-vous aujourd’hui ?'), findsOneWidget);
     });
 
     testWidgets('Contrôleur tente d’accéder à une route client : redirection vers accueil contrôleur', (tester) async {

@@ -6,8 +6,8 @@ import 'package:intl/intl.dart';
 import '../../../core/benin_time.dart';
 import '../../../core/models.dart';
 import '../../../core/session.dart';
-import '../../../core/theme.dart';
-import '../../../shared/widgets.dart';
+import '../../../core/theme/axis_theme.dart';
+import '../../../core/widgets/widgets.dart';
 import '../domain/trip_search.dart';
 
 class TripSearchCard extends ConsumerStatefulWidget {
@@ -86,6 +86,7 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
   }
 
   Future<void> _choosePassengers() async {
+    final theme = Theme.of(context);
     final selected = await showModalBottomSheet<int>(
       context: context,
       showDragHandle: true,
@@ -93,22 +94,26 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
         child: ListView(
           shrinkWrap: true,
           children: [
-            const ListTile(
+            ListTile(
               title: Text(
-                'Nombre de voyageurs',
-                style: TextStyle(fontWeight: FontWeight.w900),
+                'Nombre de passagers',
+                style: theme.textTheme.titleMedium,
               ),
               subtitle: Text(
-                'Les informations seront demandées avant les sièges.',
+                'Les informations seront demandées avant le choix des sièges.',
+                style: theme.textTheme.bodySmall,
               ),
             ),
             ...List.generate(8, (index) {
               final count = index + 1;
               return ListTile(
-                title: Text('$count voyageur${count > 1 ? 's' : ''}'),
+                title: Text(
+                  '$count adulte${count > 1 ? 's' : ''}',
+                  style: theme.textTheme.bodyMedium,
+                ),
                 selected: count == _passengers,
                 trailing: count == _passengers
-                    ? const Icon(Icons.check_circle, color: AxisColors.navy)
+                    ? Icon(Icons.check_circle, color: theme.colorScheme.primary)
                     : null,
                 onTap: () => Navigator.pop(context, count),
               );
@@ -145,117 +150,163 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x120F2552),
-            blurRadius: 24,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
+    final theme = Theme.of(context);
+    final axis = context.axis;
+
+    return AxisCard(
+      floating: true,
+      padding: const EdgeInsets.all(AxisSpacing.s16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _LocationField(
-            label: 'Point de départ',
-            icon: Icons.trip_origin,
-            iconColor: AxisColors.navy,
-            value: _originId,
-            places: _places,
-            onChanged: _loading
-                ? null
-                : (value) => setState(() {
-                    _originId = value;
-                    _error = null;
-                  }),
-          ),
-          Align(
+          Stack(
             alignment: Alignment.centerRight,
-            child: IconButton.filledTonal(
-              tooltip: 'Intervertir les villes',
-              onPressed: _loading
-                  ? null
-                  : () => setState(() {
-                      final previous = _originId;
-                      _originId = _destinationId;
-                      _destinationId = previous;
-                    }),
-              icon: const Icon(Icons.swap_vert),
-            ),
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _LocationField(
+                    label: 'Départ',
+                    dotColor: theme.colorScheme.primary,
+                    dotHaloColor: axis.primarySoft,
+                    value: _originId,
+                    places: _places,
+                    onChanged: _loading
+                        ? null
+                        : (value) => setState(() {
+                            _originId = value;
+                            _error = null;
+                          }),
+                  ),
+                  const SizedBox(height: AxisSpacing.s8),
+                  _LocationField(
+                    label: 'Arrivée',
+                    dotColor: axis.accent,
+                    dotHaloColor: axis.accentSoft,
+                    value: _destinationId,
+                    places: _places,
+                    onChanged: _loading
+                        ? null
+                        : (value) => setState(() {
+                            _destinationId = value;
+                            _error = null;
+                          }),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: AxisSpacing.s14),
+                child: Tooltip(
+                  message: 'Inverser le départ et l’arrivée',
+                  child: Semantics(
+                    button: true,
+                    label: 'Inverser le départ et l’arrivée',
+                    child: Container(
+                      width: AxisSizes.minTarget,
+                      height: AxisSizes.minTarget,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: theme.colorScheme.surface,
+                          width: 3,
+                        ),
+                      ),
+                      child: Material(
+                        color: theme.colorScheme.primary,
+                        shape: const CircleBorder(),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: _loading
+                              ? null
+                              : () => setState(() {
+                                  final previous = _originId;
+                                  _originId = _destinationId;
+                                  _destinationId = previous;
+                                }),
+                          child: Icon(
+                            Icons.swap_vert_rounded,
+                            color: theme.colorScheme.onPrimary,
+                            size: AxisSizes.icon,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-          _LocationField(
-            label: 'Destination',
-            icon: Icons.location_on_outlined,
-            iconColor: AxisColors.red,
-            value: _destinationId,
-            places: _places,
-            onChanged: _loading
-                ? null
-                : (value) => setState(() {
-                    _destinationId = value;
-                    _error = null;
-                  }),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AxisSpacing.s10),
           Row(
             children: [
               Expanded(
                 child: _SearchDetail(
-                  label: 'Départ',
+                  label: 'Date',
                   value: DateFormat('EEE d MMM', 'fr_FR').format(_date),
                   icon: Icons.calendar_today_outlined,
                   onTap: _chooseDate,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AxisSpacing.s10),
               Expanded(
                 child: _SearchDetail(
-                  label: 'Voyageurs',
-                  value: '$_passengers voyageur${_passengers > 1 ? 's' : ''}',
-                  icon: Icons.group_outlined,
+                  label: 'Passagers',
+                  value: '$_passengers adulte${_passengers > 1 ? 's' : ''}',
+                  icon: Icons.person_outline_rounded,
                   onTap: _choosePassengers,
                 ),
               ),
             ],
           ),
-          if (_error != null) Notice(_error!, error: true),
+          if (_error != null) ...[
+            const SizedBox(height: AxisSpacing.s10),
+            _InlineAlert(message: _error!, isDanger: true),
+          ],
           if (_loadError != null) ...[
-            Notice(
-              'Impossible de charger les villes de départ et de destination. '
-              'Vérifiez votre connexion Internet, puis réessayez.\n$_loadError',
-              error: true,
+            const SizedBox(height: AxisSpacing.s10),
+            _InlineAlert(
+              message:
+                  'Impossible de charger les villes de départ et de destination. '
+                  'Vérifiez votre connexion Internet, puis réessayez.\n$_loadError',
+              isDanger: true,
             ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
+            const SizedBox(height: AxisSpacing.s8),
+            AxisButton(
+              variant: AxisButtonVariant.outline,
+              height: AxisSizes.secondaryButton,
+              icon: const Icon(Icons.refresh_rounded),
+              label: 'Réessayer',
               onPressed: _loadPlaces,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Réessayer'),
             ),
           ] else if (!_loading && _places.isEmpty) ...[
-            const Notice('Aucune ville n\'est encore ouverte à la réservation.'),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
+            const SizedBox(height: AxisSpacing.s10),
+            const _InlineAlert(
+              message: 'Aucune ville n’est encore ouverte à la réservation.',
+              isDanger: false,
+            ),
+            const SizedBox(height: AxisSpacing.s8),
+            AxisButton(
+              variant: AxisButtonVariant.outline,
+              height: AxisSizes.secondaryButton,
+              icon: const Icon(Icons.refresh_rounded),
+              label: 'Réessayer',
               onPressed: _loadPlaces,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Réessayer'),
             ),
           ],
-          const SizedBox(height: 14),
-          FilledButton.icon(
-            onPressed: _canSearch ? _search : null,
-            icon: const Icon(Icons.search),
-            label: const Text('Rechercher un trajet'),
-          ),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.only(top: 10),
-              child: Center(child: CircularProgressIndicator()),
+          if (_loading) ...[
+            const SizedBox(height: AxisSpacing.s10),
+            const SkeletonBox(
+              height: AxisSpacing.s12,
+              borderRadius: AxisRadius.chip,
             ),
+          ],
+          const SizedBox(height: AxisSpacing.s12),
+          AxisButton(
+            onPressed: _canSearch ? _search : null,
+            icon: const Icon(Icons.search_rounded),
+            label: 'Rechercher les trajets',
+          ),
         ],
       ),
     );
@@ -265,70 +316,105 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
 class _LocationField extends StatelessWidget {
   const _LocationField({
     required this.label,
-    required this.icon,
-    required this.iconColor,
+    required this.dotColor,
+    required this.dotHaloColor,
     required this.value,
     required this.places,
     required this.onChanged,
   });
 
   final String label;
-  final IconData icon;
-  final Color iconColor;
+  final Color dotColor;
+  final Color dotHaloColor;
   final int? value;
   final List<Place> places;
   final ValueChanged<int?>? onChanged;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-    decoration: BoxDecoration(
-      color: AxisColors.surfaceLow,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Row(
-      children: [
-        Icon(icon, color: iconColor),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label.toUpperCase(),
-                style: const TextStyle(
-                  color: AxisColors.muted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.8,
-                ),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final axis = context.axis;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(
+        AxisSpacing.s14,
+        AxisSpacing.s10,
+        56,
+        AxisSpacing.s10,
+      ),
+      decoration: BoxDecoration(
+        color: axis.inputFill,
+        borderRadius: BorderRadius.circular(AxisRadius.field),
+        border: Border.all(color: axis.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: dotHaloColor,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                shape: BoxShape.circle,
+                border: Border.all(color: dotColor, width: 3),
               ),
-              DropdownButtonHideUnderline(
-                child: DropdownButton<int>(
-                  value: value,
-                  isExpanded: true,
-                  isDense: true,
-                  hint: const Text('Choisir une ville'),
-                  items: places
-                      .map(
-                        (place) => DropdownMenuItem<int>(
-                          value: place.id,
-                          child: Text(
-                            place.name,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: onChanged,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+          const SizedBox(width: AxisSpacing.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label.toUpperCase(),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: axis.textMuted,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    value: value,
+                    isExpanded: true,
+                    isDense: true,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: axis.ink,
+                    ),
+                    hint: Text(
+                      'Choisir une ville',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: axis.textMuted,
+                      ),
+                    ),
+                    items: places
+                        .map(
+                          (place) => DropdownMenuItem<int>(
+                            value: place.id,
+                            child: Text(
+                              place.name,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: onChanged,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _SearchDetail extends StatelessWidget {
@@ -345,39 +431,87 @@ class _SearchDetail extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: AxisColors.surfaceLow,
-    borderRadius: BorderRadius.circular(12),
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 16, color: AxisColors.muted),
-                const SizedBox(width: 5),
-                Flexible(
-                  child: Text(
-                    label.toUpperCase(),
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AxisColors.muted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final axis = context.axis;
+
+    return Material(
+      color: axis.inputFill,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AxisRadius.field),
+        side: BorderSide(color: axis.border),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AxisRadius.field),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AxisSpacing.s12,
+            vertical: AxisSpacing.s10,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: AxisSizes.icon,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(width: AxisSpacing.s10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label.toUpperCase(),
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: axis.textMuted,
+                        letterSpacing: 0.6,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 2),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: axis.ink,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 5),
-            Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
+}
+
+class _InlineAlert extends StatelessWidget {
+  const _InlineAlert({required this.message, required this.isDanger});
+
+  final String message;
+  final bool isDanger;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final axis = context.axis;
+    final bg = isDanger ? axis.danger.withValues(alpha: 0.1) : axis.accentSoft;
+    final fg = isDanger ? axis.danger : axis.onAccentSoft;
+
+    return Container(
+      padding: const EdgeInsets.all(AxisSpacing.s12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AxisRadius.small),
+      ),
+      child: Text(
+        message,
+        style: theme.textTheme.bodySmall?.copyWith(color: fg),
+      ),
+    );
+  }
 }

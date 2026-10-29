@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/formatters.dart';
 import '../../../core/models.dart';
 import '../../../core/session.dart';
-import '../../../core/theme.dart';
-import '../../../shared/widgets.dart';
+import '../../../core/theme/axis_theme.dart';
+import '../../../core/widgets/widgets.dart';
 import '../../bookings/application/booking_draft.dart';
 import '../../passengers/domain/passenger.dart';
 
@@ -41,6 +42,10 @@ class _SeatSelectionScreenState extends ConsumerState<SeatSelectionScreen> {
   }
 
   Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final seats = await ref.read(apiClientProvider).seats(widget.tripId);
       if (!mounted) return;
@@ -66,11 +71,19 @@ class _SeatSelectionScreenState extends ConsumerState<SeatSelectionScreen> {
       ref.read(bookingDraftProvider.notifier).unassignSeat(passengerId);
       return;
     }
+    // Si ce siège est déjà attribué à un autre passager de la même réservation, on l'ignore.
+    final assignedToOther = draft.seatsByPassenger.entries.any(
+      (entry) => entry.key != passengerId && entry.value.id == seat.id,
+    );
+    if (assignedToOther) return;
+
     final passenger = draft.passengers.firstWhere(
       (item) => item.id == passengerId,
       orElse: () => draft.passengers.first,
     );
-    if (!seat.allowsPassengerType(passenger.type.apiValue)) return;
+    if (!seat.isAvailable || !seat.allowsPassengerType(passenger.type.apiValue)) {
+      return;
+    }
     ref.read(bookingDraftProvider.notifier).assignSeat(passengerId, seat);
     final updated = ref.read(bookingDraftProvider);
     final next = draft.passengers.where(
@@ -81,36 +94,93 @@ class _SeatSelectionScreenState extends ConsumerState<SeatSelectionScreen> {
     });
   }
 
+  void _onSeatNumberSelected(String number) {
+    final seat = _seats.where((item) => item.number == number).firstOrNull;
+    if (seat != null) {
+      _assign(seat);
+    }
+  }
+
+  List<SeatRowData> _buildSeatRows(
+    Passenger activePassenger,
+    Map<String, Seat> assignments,
+  ) {
+    final ordered = [..._seats]..sort(_compareSeats);
+    final groupedRows = <List<Seat>>[];
+
+    if (ordered.any((seat) => seat.row != null)) {
+      final grouped = <int, List<Seat>>{};
+      for (final seat in ordered) {
+        grouped.putIfAbsent(seat.row ?? 9999, () => []).add(seat);
+      }
+      groupedRows.addAll(grouped.values);
+    } else {
+      for (var i = 0; i < ordered.length; i += 4) {
+        groupedRows.add(
+          ordered.sublist(i, (i + 4).clamp(0, ordered.length)),
+        );
+      }
+    }
+
+    SeatCellData toCell(Seat seat) {
+      final isAssigned = assignments.values.any((s) => s.id == seat.id);
+      final allowed = seat.allowsPassengerType(activePassenger.type.apiValue);
+      final SeatStatus status;
+      if (isAssigned) {
+        status = SeatStatus.selected;
+      } else if (!seat.isAvailable || !allowed) {
+        status = SeatStatus.taken;
+      } else {
+        status = SeatStatus.free;
+      }
+      return SeatCellData.seat(number: seat.number, status: status);
+    }
+
+    return groupedRows.map((rowSeats) {
+      if (rowSeats.length == 5) {
+        return SeatRowData(rowSeats.map(toCell).toList());
+      }
+      final left = rowSeats.take(2).map(toCell).toList();
+      final right = rowSeats.skip(2).take(2).map(toCell).toList();
+      return SeatRowData([
+        ...left,
+        if (right.isNotEmpty) const SeatCellData.aisle(),
+        ...right,
+      ]);
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final draft = ref.watch(bookingDraftProvider);
     final passengers = draft.passengers;
-    if (draft.trip?.id != widget.tripId || passengers.isEmpty) {
+    final trip = draft.trip;
+    final theme = Theme.of(context);
+    final axis = context.axis;
+
+    if (trip?.id != widget.tripId || passengers.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Choix des sièges')),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: AxisCard(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
+        body: Column(
+          children: [
+            AxisHeader(
+              title: 'Choisissez votre siège',
+              onBack: () => context.canPop()
+                  ? context.pop()
+                  : context.go('/billets/booking/${widget.tripId}/passagers'),
+            ),
+            Expanded(
+              child: EmptyState(
+                icon: Icons.person_outline_rounded,
+                title: 'Passagers non renseignés',
+                description:
                     'Renseignez les passagers avant de choisir les sièges.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () => context.go(
-                      '/billets/booking/${widget.tripId}/passagers',
-                    ),
-                    child: const Text('Renseigner les passagers'),
-                  ),
-                ],
+                actionLabel: 'Renseigner les passagers',
+                onAction: () => context.go(
+                  '/billets/booking/${widget.tripId}/passagers',
+                ),
               ),
             ),
-          ),
+          ],
         ),
       );
     }
@@ -119,161 +189,229 @@ class _SeatSelectionScreenState extends ConsumerState<SeatSelectionScreen> {
       (item) => item.id == _activePassengerId,
       orElse: () => passengers.first,
     );
+    final selectedSeats = draft.seatsByPassenger.values.toList();
+    final selectionSummary = selectedSeats.isEmpty
+        ? 'Aucun siège choisi'
+        : 'Siège${selectedSeats.length > 1 ? 's' : ''} ${selectedSeats.map((s) => s.number).join(', ')} · ${passengers.length} passager${passengers.length > 1 ? 's' : ''}';
+    final currency = trip!.currentFare?.currency ?? 'XOF';
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Choix des sièges')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      body: Column(
         children: [
-          const _BookingProgress(),
-          const SizedBox(height: 20),
-          const Text(
-            'Attribuez un siège à chaque passager',
-            style: TextStyle(
-              color: AxisColors.navyDark,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
+          // En-tête blanc (Siege.html)
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              border: Border(bottom: BorderSide(color: axis.border)),
             ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Les informations saisies à l’étape précédente seront contrôlées avec les règles de placement avant confirmation.',
-            style: TextStyle(color: AxisColors.muted, height: 1.4),
-          ),
-          const SizedBox(height: 16),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(
+              AxisSpacing.screen,
+              AxisSpacing.s12,
+              AxisSpacing.screen,
+              AxisSpacing.s12,
+            ),
             child: Row(
-              children: passengers.map((passenger) {
-                final seat = draft.seatsByPassenger[passenger.id];
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    selected: passenger.id == active.id,
-                    avatar: Icon(
-                      seat == null ? Icons.person_outline : Icons.check_circle,
-                      size: 17,
-                      color: seat == null
-                          ? AxisColors.muted
-                          : AxisColors.success,
+              children: [
+                Tooltip(
+                  message: 'Retour',
+                  child: Semantics(
+                    button: true,
+                    label: 'Retour',
+                    child: Material(
+                      color: axis.inputFill,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AxisRadius.small),
+                        side: BorderSide(color: axis.border),
+                      ),
+                      child: InkWell(
+                        onTap: () => context.canPop()
+                            ? context.pop()
+                            : context.go(
+                                '/billets/booking/${widget.tripId}/passagers',
+                              ),
+                        borderRadius: BorderRadius.circular(AxisRadius.small),
+                        child: SizedBox(
+                          width: AxisSizes.minTarget,
+                          height: AxisSizes.minTarget,
+                          child: Icon(
+                            Icons.arrow_back_rounded,
+                            color: axis.ink,
+                            size: AxisSizes.icon,
+                          ),
+                        ),
+                      ),
                     ),
-                    label: Text(
-                      seat == null
-                          ? passenger.fullName
-                          : '${passenger.fullName} · ${seat.number}',
-                    ),
-                    onSelected: (_) =>
-                        setState(() => _activePassengerId = passenger.id),
                   ),
-                );
-              }).toList(),
+                ),
+                const SizedBox(width: AxisSpacing.s10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Choisissez votre siège',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          color: axis.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${draft.segmentLabel ?? trip.route.label} · ${formatDateTime(trip.departureAt)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: axis.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          if (_error != null) Notice(_error!, error: true),
-          const SizedBox(height: 18),
-          if (_loading)
-            const Center(child: CircularProgressIndicator())
-          else if (_seats.isEmpty)
-            const AxisCard(
-              child: Text(
-                'Aucun siège disponible.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.w800),
+
+          // Contenu principal avec sélection du passager et SeatMap
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(
+                AxisSpacing.screen,
+                AxisSpacing.s14,
+                AxisSpacing.screen,
+                AxisSpacing.s24,
               ),
-            )
-          else ...[
-            _SeatLegend(activeName: active.fullName),
-            const SizedBox(height: 12),
-            _SeatMap(
-              seats: _seats,
-              activePassenger: active,
-              assignments: draft.seatsByPassenger,
-              onSelect: _assign,
-            ),
-          ],
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: draft.hasAllSeats
-                ? () => context.push(
-                    '/billets/booking/${widget.tripId}/recapitulatif',
+              children: [
+                // Sélecteur de passager
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: passengers.map((passenger) {
+                      final seat = draft.seatsByPassenger[passenger.id];
+                      final isSelectedPassenger = passenger.id == active.id;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: AxisSpacing.s8),
+                        child: ChoiceChip(
+                          selected: isSelectedPassenger,
+                          avatar: Icon(
+                            seat == null
+                                ? Icons.person_outline_rounded
+                                : Icons.check_circle_rounded,
+                            size: 16,
+                            color: seat == null
+                                ? axis.textMuted
+                                : axis.success,
+                          ),
+                          label: Text(
+                            seat == null
+                                ? passenger.fullName
+                                : '${passenger.fullName} · ${seat.number}',
+                          ),
+                          onSelected: (_) =>
+                              setState(() => _activePassengerId = passenger.id),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: AxisSpacing.s14),
+
+                if (_loading)
+                  const Column(
+                    children: [
+                      SkeletonBox(height: 28, borderRadius: AxisRadius.small),
+                      SizedBox(height: AxisSpacing.s14),
+                      SkeletonBox(height: 320, borderRadius: AxisRadius.card),
+                    ],
                   )
-                : null,
-            icon: const Icon(Icons.receipt_long_outlined),
-            label: Text(
-              draft.hasAllSeats
-                  ? 'Voir le récapitulatif'
-                  : '${draft.seatsByPassenger.length}/${passengers.length} siège(s) attribué(s)',
+                else if (_error != null)
+                  EmptyState(
+                    icon: Icons.wifi_off_rounded,
+                    title: 'Plan de sièges indisponible',
+                    description: _error!,
+                    actionLabel: 'Réessayer',
+                    onAction: _load,
+                  )
+                else if (_seats.isEmpty)
+                  EmptyState(
+                    icon: Icons.event_seat_outlined,
+                    title: 'Aucun siège disponible.',
+                    description:
+                        'Aucun siège n’est disponible pour ce trajet.',
+                    actionLabel: 'Réessayer',
+                    onAction: _load,
+                  )
+                else
+                  SeatMap(
+                    rows: _buildSeatRows(active, draft.seatsByPassenger),
+                    onSeatSelected: _onSeatNumberSelected,
+                  ),
+              ],
+            ),
+          ),
+
+          // Barre inférieure de validation (Siege.html)
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              border: Border(top: BorderSide(color: axis.border)),
+            ),
+            padding: const EdgeInsets.fromLTRB(
+              AxisSpacing.screen,
+              AxisSpacing.s12,
+              AxisSpacing.screen,
+              AxisSpacing.s16,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'SÉLECTION',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: axis.textMuted,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            selectionSummary,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: axis.ink,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AxisSpacing.s12),
+                    Text(
+                      formatMoney(draft.totalAmount, currency),
+                      style: AxisTypography.price.copyWith(color: axis.ink),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AxisSpacing.s10),
+                AxisButton(
+                  onPressed: draft.hasAllSeats
+                      ? () => context.push(
+                          '/billets/booking/${widget.tripId}/recapitulatif',
+                        )
+                      : null,
+                  label: 'Continuer',
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
-}
-
-class _BookingProgress extends StatelessWidget {
-  const _BookingProgress();
-
-  @override
-  Widget build(BuildContext context) => Row(
-    children: List.generate(3, (index) {
-      return Expanded(
-        child: Container(
-          height: 4,
-          margin: EdgeInsets.only(right: index == 2 ? 0 : 6),
-          decoration: BoxDecoration(
-            color: index < 2 ? AxisColors.navy : AxisColors.border,
-            borderRadius: BorderRadius.circular(99),
-          ),
-        ),
-      );
-    }),
-  );
-}
-
-class _SeatLegend extends StatelessWidget {
-  const _SeatLegend({required this.activeName});
-
-  final String activeName;
-
-  @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: 14,
-    runSpacing: 8,
-    children: [
-      const _LegendItem(color: AxisColors.seatIdle, label: 'Libre'),
-      const _LegendItem(color: AxisColors.seatTaken, label: 'Indisponible'),
-      const _LegendItem(color: AxisColors.border, label: 'Non adapté'),
-      _LegendItem(color: AxisColors.red, label: 'Pour $activeName'),
-      const _LegendItem(color: AxisColors.navy, label: 'Déjà attribué'),
-    ],
-  );
-}
-
-class _LegendItem extends StatelessWidget {
-  const _LegendItem({required this.color, required this.label});
-
-  final Color color;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Container(
-        width: 12,
-        height: 12,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(3),
-        ),
-      ),
-      const SizedBox(width: 5),
-      Text(
-        label,
-        style: const TextStyle(fontSize: 11, color: AxisColors.muted),
-      ),
-    ],
-  );
 }
 
 int _compareSeats(Seat a, Seat b) {
@@ -285,188 +423,4 @@ int _compareSeats(Seat a, Seat b) {
   final numB = int.tryParse(b.number);
   if (numA != null && numB != null) return numA.compareTo(numB);
   return a.number.compareTo(b.number);
-}
-
-class _BusRow {
-  final int rowNumber;
-  final List<Seat> left;
-  final Seat? aisleExtra;
-  final List<Seat> right;
-
-  const _BusRow({
-    required this.rowNumber,
-    required this.left,
-    this.aisleExtra,
-    required this.right,
-  });
-}
-
-class _SeatMap extends StatelessWidget {
-  const _SeatMap({
-    required this.seats,
-    required this.activePassenger,
-    required this.assignments,
-    required this.onSelect,
-  });
-
-  final List<Seat> seats;
-  final Passenger activePassenger;
-  final Map<String, Seat> assignments;
-  final ValueChanged<Seat> onSelect;
-
-  List<_BusRow> get _rows {
-    final ordered = [...seats]..sort(_compareSeats);
-    if (ordered.any((seat) => seat.row != null)) {
-      final grouped = <int, List<Seat>>{};
-      for (final seat in ordered) {
-        grouped.putIfAbsent(seat.row ?? 9999, () => []).add(seat);
-      }
-      return grouped.entries.map((entry) {
-        final rowNumber = entry.key;
-        final rowSeats = entry.value;
-        if (rowSeats.length == 5) {
-          return _BusRow(
-            rowNumber: rowNumber,
-            left: rowSeats.sublist(0, 2),
-            aisleExtra: rowSeats[2],
-            right: rowSeats.sublist(3, 5),
-          );
-        }
-        return _BusRow(
-          rowNumber: rowNumber,
-          left: rowSeats.sublist(0, rowSeats.length.clamp(0, 2)),
-          right: rowSeats.length > 2
-              ? rowSeats.sublist(2, rowSeats.length.clamp(2, 4))
-              : const [],
-        );
-      }).toList();
-    }
-    final result = <_BusRow>[];
-    for (var i = 0; i < ordered.length; i += 4) {
-      final slice = ordered.sublist(i, (i + 4).clamp(0, ordered.length));
-      result.add(
-        _BusRow(
-          rowNumber: (i ~/ 4) + 1,
-          left: slice.sublist(0, slice.length.clamp(0, 2)),
-          right: slice.length > 2
-              ? slice.sublist(2, slice.length.clamp(2, 4))
-              : const [],
-        ),
-      );
-    }
-    return result;
-  }
-
-  @override
-  Widget build(BuildContext context) => AxisCard(
-    child: Column(
-      children: [
-        const Row(
-          children: [
-            Icon(Icons.airline_seat_recline_normal, color: AxisColors.muted),
-            Spacer(),
-            Text(
-              'AVANT DU CAR (YUTONG)',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ],
-        ),
-        const Divider(height: 26),
-        ..._rows.map((row) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              children: [
-                // 2 sièges à gauche
-                for (var i = 0; i < 2; i++)
-                  Expanded(
-                    child: i < row.left.length
-                        ? _seatButton(row.left[i])
-                        : const SizedBox(),
-                  ),
-                // Allée centrale (couloir Yutong) ou siège central au fond
-                SizedBox(
-                  width: 32,
-                  child: row.aisleExtra != null
-                      ? _seatButton(row.aisleExtra!)
-                      : Center(
-                          child: Text(
-                            '·',
-                            style: TextStyle(
-                              color: AxisColors.muted.withValues(alpha: 0.4),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                ),
-                // 2 sièges à droite
-                for (var i = 0; i < 2; i++)
-                  Expanded(
-                    child: i < row.right.length
-                        ? _seatButton(row.right[i])
-                        : const SizedBox(),
-                  ),
-              ],
-            ),
-          );
-        }),
-      ],
-    ),
-  );
-
-  Widget _seatButton(Seat seat) {
-    String? assignedTo;
-    for (final entry in assignments.entries) {
-      if (entry.value.id == seat.id) assignedTo = entry.key;
-    }
-    final allowedForActive = seat.allowsPassengerType(
-      activePassenger.type.apiValue,
-    );
-    final active = assignedTo == activePassenger.id;
-    final assignedElsewhere = assignedTo != null && !active;
-    final enabled = seat.isAvailable && !assignedElsewhere && allowedForActive;
-    final color = active
-        ? AxisColors.red
-        : assignedElsewhere
-        ? AxisColors.navy
-        : !allowedForActive
-        ? AxisColors.border
-        : seat.isAvailable
-        ? AxisColors.seatIdle
-        : AxisColors.seatTaken;
-    final foreground = active || assignedElsewhere
-        ? Colors.white
-        : AxisColors.navyDark;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Semantics(
-        button: true,
-        enabled: enabled,
-        label: allowedForActive
-            ? 'Siège ${seat.number}'
-            : 'Siège ${seat.number} non adapté',
-        child: InkWell(
-          onTap: enabled ? () => onSelect(seat) : null,
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            height: 48,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              seat.number,
-              style: TextStyle(color: foreground, fontWeight: FontWeight.w900),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
