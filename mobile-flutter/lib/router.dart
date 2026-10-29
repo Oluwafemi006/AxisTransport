@@ -14,6 +14,7 @@ import 'features/profile/profile_screen.dart';
 import 'features/rentals/rentals_screen.dart';
 import 'features/sales/sell_ticket_screen.dart';
 import 'features/seats/presentation/seat_selection_screen.dart';
+import 'features/staff/presentation/controller_parcel_screen.dart';
 import 'features/staff/presentation/controller_scanner_screen.dart';
 import 'features/staff/presentation/staff_home_screen.dart';
 import 'features/staff/presentation/staff_profile_screen.dart';
@@ -233,6 +234,12 @@ GoRouter buildAxisRouter() => GoRouter(
             GoRoute(
               path: '/staff',
               builder: (context, state) => const StaffHomeScreen(),
+              routes: [
+                GoRoute(
+                  path: 'colis',
+                  builder: (context, state) => const ControllerParcelScreen(),
+                ),
+              ],
             ),
           ],
         ),

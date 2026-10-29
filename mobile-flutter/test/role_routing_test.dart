@@ -100,7 +100,7 @@ void main() {
       expect(find.text('Colis'), findsOneWidget);
       expect(find.text('Scanner'), findsNothing);
       expect(find.text('Vendre'), findsNothing);
-      expect(find.text('Ouvrir le Scanner QR'), findsNothing);
+      expect(find.text('Scanner un billet'), findsNothing);
       expect(api.memory.owner, 'client:7');
     },
   );
@@ -114,7 +114,7 @@ void main() {
       expect(find.text('Scanner'), findsOneWidget);
       expect(find.text('Vendre'), findsOneWidget);
       expect(find.text('Profil'), findsOneWidget);
-      expect(find.text('Ouvrir le Scanner QR'), findsOneWidget);
+      expect(find.text('Scanner un billet'), findsOneWidget);
       // Aucun écran d'achat client dans l'interface du personnel.
       expect(find.text('Billets'), findsNothing);
       expect(find.text('Colis'), findsNothing);

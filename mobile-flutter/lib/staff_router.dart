@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/theme/axis_spacing.dart';
+import 'core/theme/axis_tokens.dart';
 import 'features/sales/sell_ticket_screen.dart';
+import 'features/staff/presentation/controller_parcel_screen.dart';
 import 'features/staff/presentation/controller_scanner_screen.dart';
 import 'features/staff/presentation/staff_home_screen.dart';
 import 'features/staff/presentation/staff_profile_screen.dart';
@@ -20,6 +23,12 @@ GoRouter buildStaffRouter() => GoRouter(
             GoRoute(
               path: '/',
               builder: (context, state) => const StaffHomeScreen(),
+              routes: [
+                GoRoute(
+                  path: 'staff/colis',
+                  builder: (context, state) => const ControllerParcelScreen(),
+                ),
+              ],
             ),
           ],
         ),
@@ -59,12 +68,14 @@ class StaffShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final axis = context.axis;
+    final theme = Theme.of(context);
     return Scaffold(
       body: SafeArea(bottom: false, child: navigationShell),
       bottomNavigationBar: NavigationBar(
-        height: 68,
-        backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFE8F1FB),
+        height: AxisSizes.navigationBar,
+        backgroundColor: theme.colorScheme.surface,
+        indicatorColor: axis.accentSoft,
         selectedIndex: navigationShell.currentIndex,
         onDestinationSelected: (index) => navigationShell.goBranch(
           index,
