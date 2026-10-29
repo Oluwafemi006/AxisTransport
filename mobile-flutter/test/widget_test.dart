@@ -222,14 +222,16 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Se connecter'), findsOneWidget);
-      expect(find.text('Créer un compte client'), findsOneWidget);
+      // Libellés de la maquette Connexion.html (phase 3).
+      expect(find.text('Créer un compte'), findsOneWidget);
       expect(find.text('Où souhaitez-vous aller ?'), findsNothing);
       expect(find.text('Rechercher un trajet'), findsNothing);
       expect(find.text('Billets'), findsNothing);
 
-      await tester.tap(find.text('Créer un compte client'));
+      await tester.tap(find.text('Créer un compte'));
       await tester.pumpAndSettle();
-      expect(find.text('Créer et continuer'), findsOneWidget);
+      expect(find.text('Créer mon compte'), findsOneWidget);
+      expect(find.text('Identifiant'), findsOneWidget);
       expect(find.text('Téléphone'), findsOneWidget);
     },
   );
