@@ -250,7 +250,7 @@ void main() {
     expect(find.text('Où voyagez-vous aujourd’hui ?'), findsOneWidget);
     expect(find.text('Accueil'), findsOneWidget);
     expect(find.text('Billets'), findsOneWidget);
-    expect(find.text('Suivi colis'), findsOneWidget);
+    expect(find.text('Colis'), findsOneWidget);
     expect(find.text('Location'), findsOneWidget);
     expect(find.text('Profil'), findsOneWidget);
     expect(find.text('Espace équipe'), findsNothing);
