@@ -239,8 +239,8 @@ void main() {
       expect(find.text('Se connecter'), findsOneWidget);
       // Libellés de la maquette Connexion.html (phase 3).
       expect(find.text('Créer un compte'), findsOneWidget);
-      expect(find.text('Où souhaitez-vous aller ?'), findsNothing);
-      expect(find.text('Rechercher un trajet'), findsNothing);
+      expect(find.text('Où voyagez-vous aujourd’hui ?'), findsNothing);
+      expect(find.text('Rechercher les trajets'), findsNothing);
       expect(find.text('Billets'), findsNothing);
 
       await tester.tap(find.text('Créer un compte'));
@@ -262,10 +262,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Où souhaitez-vous aller ?'), findsOneWidget);
+    expect(find.text('Où voyagez-vous aujourd’hui ?'), findsOneWidget);
     expect(find.text('Accueil'), findsOneWidget);
     expect(find.text('Billets'), findsOneWidget);
-    expect(find.text('Suivi colis'), findsOneWidget);
+    expect(find.text('Colis'), findsOneWidget);
     expect(find.text('Location'), findsOneWidget);
     expect(find.text('Profil'), findsOneWidget);
     expect(find.text('Espace équipe'), findsNothing);
@@ -366,13 +366,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Parakou').last);
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Rechercher un trajet'));
-      await tester.tap(find.text('Rechercher un trajet'));
+      await tester.ensureVisible(find.text('Rechercher les trajets'));
+      await tester.tap(find.text('Rechercher les trajets'));
       await tester.pumpAndSettle();
 
       expect(api.lastSearch?.originId, 1);
       expect(api.lastSearch?.destinationId, 2);
-      expect(find.text('Résultats des trajets'), findsOneWidget);
+      expect(find.text('Choisir ce trajet'), findsOneWidget);
       expect(find.text('Cotonou → Parakou'), findsWidgets);
     },
   );
@@ -416,8 +416,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('3B'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Voir le récapitulatif'));
-    await tester.tap(find.text('Voir le récapitulatif'));
+    await tester.ensureVisible(find.text('Continuer'));
+    await tester.tap(find.text('Continuer'));
     await tester.pumpAndSettle();
 
     expect(find.text('Siège 3A'), findsOneWidget);

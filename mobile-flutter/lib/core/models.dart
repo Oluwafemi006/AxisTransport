@@ -892,6 +892,8 @@ class Vehicle {
     required this.description,
     required this.dailyRate,
     required this.driverAvailable,
+    this.dailyRateWithDriver,
+    this.onlyWithDriver = false,
     this.baseLocation,
   });
 
@@ -903,6 +905,8 @@ class Vehicle {
   final String description;
   final num? dailyRate;
   final bool driverAvailable;
+  final num? dailyRateWithDriver;
+  final bool onlyWithDriver;
   final Place? baseLocation;
 
   factory Vehicle.fromJson(Map<String, dynamic> json) {
@@ -917,6 +921,10 @@ class Vehicle {
           ? null
           : asNum(json['rental_daily_rate']),
       driverAvailable: json['driver_available'] as bool? ?? false,
+      dailyRateWithDriver: json['rental_daily_rate_with_driver'] == null
+          ? null
+          : asNum(json['rental_daily_rate_with_driver']),
+      onlyWithDriver: json['only_with_driver'] as bool? ?? false,
       baseLocation: json['base_location_detail'] is Map
           ? Place.fromJson(
               Map<String, dynamic>.from(json['base_location_detail'] as Map),
@@ -1066,12 +1074,20 @@ class ParcelTracking {
     required this.origin,
     required this.destination,
     required this.steps,
+    this.photos = const [],
+    this.senderLabel,
+    this.recipientLabel,
+    this.description,
   });
 
   final String trackingNumber;
   final String origin;
   final String destination;
   final List<ParcelStep> steps;
+  final List<String> photos;
+  final String? senderLabel;
+  final String? recipientLabel;
+  final String? description;
 
   factory ParcelTracking.fromJson(Map<String, dynamic> json) {
     return ParcelTracking(
@@ -1082,6 +1098,14 @@ class ParcelTracking {
           .whereType<Map>()
           .map((item) => ParcelStep.fromJson(Map<String, dynamic>.from(item)))
           .toList(),
+      photos: (json['photos'] as List? ?? const [])
+          .whereType<String>()
+          .where((url) => url.trim().isNotEmpty)
+          .take(3)
+          .toList(),
+      senderLabel: json['sender_label'] as String?,
+      recipientLabel: json['recipient_label'] as String?,
+      description: json['description'] as String?,
     );
   }
 }

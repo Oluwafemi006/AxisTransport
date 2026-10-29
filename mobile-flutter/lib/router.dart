@@ -199,16 +199,16 @@ GoRouter buildAxisRouter() => GoRouter(
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/colis',
-              builder: (context, state) => const ParcelsScreen(),
+              path: '/location',
+              builder: (context, state) => const RentalsScreen(),
             ),
           ],
         ),
         StatefulShellBranch(
           routes: [
             GoRoute(
-              path: '/location',
-              builder: (context, state) => const RentalsScreen(),
+              path: '/colis',
+              builder: (context, state) => const ParcelsScreen(),
             ),
           ],
         ),

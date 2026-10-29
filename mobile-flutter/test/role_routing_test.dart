@@ -95,9 +95,9 @@ void main() {
     'un client arrive sur l’interface client, sans Scanner ni Vendre',
     (tester) async {
       final api = await _open(tester, role: 'CLIENT');
-      expect(find.text('Où souhaitez-vous aller ?'), findsOneWidget);
+      expect(find.text('Où voyagez-vous aujourd’hui ?'), findsOneWidget);
       expect(find.text('Billets'), findsOneWidget);
-      expect(find.text('Suivi colis'), findsOneWidget);
+      expect(find.text('Colis'), findsOneWidget);
       expect(find.text('Scanner'), findsNothing);
       expect(find.text('Vendre'), findsNothing);
       expect(find.text('Ouvrir le Scanner QR'), findsNothing);
@@ -117,7 +117,7 @@ void main() {
       expect(find.text('Ouvrir le Scanner QR'), findsOneWidget);
       // Aucun écran d'achat client dans l'interface du personnel.
       expect(find.text('Billets'), findsNothing);
-      expect(find.text('Suivi colis'), findsNothing);
+      expect(find.text('Colis'), findsNothing);
       expect(find.text('Où souhaitez-vous aller ?'), findsNothing);
       expect(api.memory.owner, 'staff:7');
     });
