@@ -77,6 +77,19 @@ flutter:
     - assets/axis-logo-transparent.png
     - assets/axis-logo-ticket.png
 
+  # Police Plus Jakarta Sans embarquée (licence OFL : assets/fonts/OFL.txt) : aucun téléchargement à l'exécution.
+  fonts:
+    - family: PlusJakartaSans
+      fonts:
+        - asset: assets/fonts/PlusJakartaSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/PlusJakartaSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/PlusJakartaSans-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/PlusJakartaSans-ExtraBold.ttf
+          weight: 800
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

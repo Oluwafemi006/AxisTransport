@@ -117,17 +117,46 @@ class ApiClient {
     required String password,
     required String firstName,
     required String phone,
+    String? lastName,
+    String? email,
   }) async {
+    final payload = <String, dynamic>{
+      'username': username,
+      'password': password,
+      'first_name': firstName,
+      'phone': phone,
+    };
+    if (lastName != null && lastName.isNotEmpty) {
+      payload['last_name'] = lastName;
+    }
+    if (email != null && email.isNotEmpty) {
+      payload['email'] = email;
+    }
     await _request<dynamic>(
       '/auth/register/',
-      data: {
-        'username': username,
-        'password': password,
-        'first_name': firstName,
-        'phone': phone,
-      },
+      data: payload,
     );
     await login(username, password);
+  }
+
+  Future<Map<String, dynamic>> checkStaffInvitation(String token) async {
+    return _request<Map<String, dynamic>>(
+      '/auth/invite/accept/',
+      queryParameters: {'token': token},
+    );
+  }
+
+  Future<Map<String, dynamic>> acceptStaffInvitation({
+    required String token,
+    required String password,
+  }) async {
+    return _request<Map<String, dynamic>>(
+      '/auth/invite/accept/',
+      data: {
+        'token': token,
+        'password': password,
+      },
+    );
   }
 
   Future<void> logout() => _store.clearTokens();

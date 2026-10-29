@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
 import 'core/session.dart';
-import 'core/theme.dart';
-import 'features/auth/login_screen.dart';
+import 'core/theme/axis_theme.dart';
 import 'router.dart';
-import 'staff_router.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,9 +23,8 @@ class AxisTransportApp extends ConsumerStatefulWidget {
 }
 
 class _AxisTransportAppState extends ConsumerState<AxisTransportApp> {
-  // Navigation du personnel, recréée à chaque connexion d'un agent (aucun écran d'un compte précédent).
-  GoRouter? _staffRouter;
-  int? _staffUserId;
+  // Dernier compte connecté : à chaque changement de compte, la navigation repart de zéro.
+  int? _lastUserId;
 
   static const _delegates = [
     GlobalMaterialLocalizations.delegate,
@@ -39,43 +35,36 @@ class _AxisTransportAppState extends ConsumerState<AxisTransportApp> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
-    // Connexion ou inscription obligatoire avant toute action : tant qu'aucun client
-    // n'est connecté, aucune autre page de l'application n'est accessible.
-    if (session.user == null) {
+    final userId = session.user?.id;
+    if (userId != null && userId != _lastUserId) {
+      if (_lastUserId != null) resetAxisRouter();
+      _lastUserId = userId;
+    }
+
+    // Tant que la restauration de session est en cours, afficher un écran d'attente
+    if (!session.ready) {
       return MaterialApp(
         title: 'Axis Transport',
         debugShowCheckedModeBanner: false,
-        theme: axisTheme(),
+        theme: AxisTheme.light(),
         locale: const Locale('fr'),
-        supportedLocales: const [Locale('fr')],
-        localizationsDelegates: _delegates,
-        home: session.ready
-            ? const LoginScreen(required: true)
-            : const Scaffold(body: Center(child: CircularProgressIndicator())),
+        home: const Scaffold(
+          body: Center(
+            child: CircularProgressIndicator(),
+          ),
+        ),
       );
     }
-    // L'interface dépend uniquement du rôle renvoyé par le serveur : un client n'a jamais
-    // accès à la navigation du personnel, et inversement.
-    final user = session.user!;
-    final GoRouter router;
-    if (user.isStaff) {
-      if (_staffRouter == null || _staffUserId != user.id) {
-        _staffRouter = buildStaffRouter();
-        _staffUserId = user.id;
-      }
-      router = _staffRouter!;
-    } else {
-      router = axisRouter;
-    }
+
     return MaterialApp.router(
-      key: ValueKey(user.isStaff ? 'personnel' : 'client'),
       title: 'Axis Transport',
       debugShowCheckedModeBanner: false,
-      theme: axisTheme(),
+      theme: AxisTheme.light(),
       locale: const Locale('fr'),
       supportedLocales: const [Locale('fr')],
       localizationsDelegates: _delegates,
-      routerConfig: router,
+      key: ValueKey(_lastUserId),
+      routerConfig: axisRouter,
     );
   }
 }
