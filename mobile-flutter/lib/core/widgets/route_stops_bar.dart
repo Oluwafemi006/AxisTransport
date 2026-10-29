@@ -48,7 +48,7 @@ class RouteStopsBar extends StatelessWidget {
     final theme = Theme.of(context);
 
     final trackColor = isDark
-        ? Colors.white.withValues(alpha: 0.20)
+        ? tokens.onDark.withValues(alpha: 0.20)
         : tokens.borderStrong;
 
     return LayoutBuilder(
@@ -94,8 +94,8 @@ class RouteStopsBar extends StatelessWidget {
                       dotWidget = Container(
                         width: 14,
                         height: 14,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
+                        decoration: BoxDecoration(
+                          color: tokens.onDark,
                           shape: BoxShape.circle,
                         ),
                       );
@@ -106,13 +106,7 @@ class RouteStopsBar extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: tokens.accent,
                           shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: tokens.accent.withValues(alpha: 0.35),
-                              blurRadius: 0,
-                              spreadRadius: 4,
-                            ),
-                          ],
+                          boxShadow: tokens.accentGlow,
                         ),
                       );
                     case RouteStopState.upcoming:
@@ -123,7 +117,7 @@ class RouteStopsBar extends StatelessWidget {
                           color: tokens.ink,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.4),
+                            color: tokens.onDark.withValues(alpha: 0.4),
                             width: 2,
                           ),
                         ),
@@ -138,13 +132,7 @@ class RouteStopsBar extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: tokens.accent,
                         shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: tokens.accent.withValues(alpha: 0.35),
-                            blurRadius: 0,
-                            spreadRadius: 4,
-                          ),
-                        ],
+                        boxShadow: tokens.accentGlow,
                       ),
                     );
                   } else if (isEndpoint || stop.state == RouteStopState.passed) {
@@ -161,7 +149,7 @@ class RouteStopsBar extends StatelessWidget {
                       width: 14,
                       height: 14,
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: tokens.surface,
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: tokens.iconMuted,
@@ -176,7 +164,6 @@ class RouteStopsBar extends StatelessWidget {
                 TextStyle? labelStyle;
                 if (isDark) {
                   labelStyle = theme.textTheme.labelSmall?.copyWith(
-                    fontSize: 11,
                     fontWeight: stop.state == RouteStopState.current
                         ? FontWeight.w800
                         : (stop.state == RouteStopState.passed
@@ -185,13 +172,12 @@ class RouteStopsBar extends StatelessWidget {
                     color: stop.state == RouteStopState.current
                         ? tokens.accent
                         : (stop.state == RouteStopState.passed
-                            ? Colors.white
+                            ? tokens.onDark
                             : tokens.iconMuted),
                   );
                 } else {
                   final isBold = isEndpoint || stop.state == RouteStopState.current;
                   labelStyle = theme.textTheme.labelSmall?.copyWith(
-                    fontSize: 11,
                     fontWeight: isBold ? FontWeight.w800 : FontWeight.w600,
                     color: isBold ? tokens.ink : tokens.textSecondary,
                   );

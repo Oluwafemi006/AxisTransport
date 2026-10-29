@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/axis_spacing.dart';
+import '../theme/axis_tokens.dart';
 import 'widgets.dart';
 
 /// Page galerie de vitrine des composants AXIS.
@@ -264,7 +265,7 @@ class _AxisWidgetGalleryPageState extends State<AxisWidgetGalleryPage> {
 
                 _sectionTitle('11. QrScanFrame'),
                 Container(
-                  color: const Color(0xFF0E1B2C),
+                  color: context.axis.ink,
                   padding: const EdgeInsets.symmetric(vertical: AxisSpacing.lg),
                   child: const Center(
                     child: QrScanFrame(
@@ -330,12 +331,12 @@ class _AxisWidgetGalleryPageState extends State<AxisWidgetGalleryPage> {
   }
 
   Widget _sectionTitle(String title) {
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: AxisSpacing.sm),
       child: Text(
         title,
-        style: const TextStyle(
-          fontSize: 16,
+        style: theme.textTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w800,
         ),
       ),

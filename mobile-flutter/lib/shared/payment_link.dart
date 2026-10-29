@@ -6,7 +6,7 @@ typedef ModeSupport = Future<bool> Function(LaunchMode mode);
 Future<bool> _launch(Uri url, {LaunchMode mode = LaunchMode.platformDefault}) =>
     launchUrl(url, mode: mode);
 
-/// Ouvre la page de paiement FedaPay sans quitter l'application : onglet Chrome intégré
+/// Ouvre la page de paiement Mobile Money sans quitter l'application : onglet Chrome intégré
 /// (Custom Tab), avec l'adresse et le cadenas visibles. Jamais de WebView pour un paiement :
 /// si le téléphone n'a pas de navigateur compatible, la page s'ouvre dans le navigateur, comme avant.
 Future<bool> openPaymentPage(

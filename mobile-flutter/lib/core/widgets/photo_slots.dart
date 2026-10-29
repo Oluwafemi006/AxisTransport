@@ -55,9 +55,8 @@ class PhotoSlots extends StatelessWidget {
           children: [
             Text(
               title,
-              style: theme.textTheme.titleMedium?.copyWith(
+              style: theme.textTheme.labelLarge?.copyWith(
                 fontWeight: FontWeight.w800,
-                fontSize: 15,
                 color: tokens.ink,
               ),
             ),
@@ -72,7 +71,6 @@ class PhotoSlots extends StatelessWidget {
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: hasPhoto ? tokens.success : tokens.onAccentSoft,
                   fontWeight: FontWeight.w800,
-                  fontSize: 11,
                 ),
               ),
             ),
@@ -83,7 +81,6 @@ class PhotoSlots extends StatelessWidget {
           subtitle,
           style: theme.textTheme.bodySmall?.copyWith(
             color: tokens.textSecondary,
-            fontSize: 12,
           ),
         ),
         const SizedBox(height: AxisSpacing.sm),
@@ -135,26 +132,39 @@ class PhotoSlots extends StatelessWidget {
               color: tokens.onAccentSoft,
             ),
           ),
-          // Bouton supprimer (28 × 28)
+          // Bouton supprimer (cible tactile ≥ 44 × 44, pastille visuelle 28 × 28)
           Positioned(
-            top: 4,
-            right: 4,
-            child: Semantics(
-              label: 'Supprimer la photo ${index + 1}',
-              button: true,
-              child: Material(
-                color: tokens.ink.withValues(alpha: 0.8),
-                shape: const CircleBorder(),
-                child: InkWell(
-                  customBorder: const CircleBorder(),
+            top: 0,
+            right: 0,
+            child: Tooltip(
+              message: 'Supprimer la photo ${index + 1}',
+              child: Semantics(
+                label: 'Supprimer la photo ${index + 1}',
+                button: true,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onTap: () => onRemove(index),
-                  child: const SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: Icon(
-                      Icons.close_rounded,
-                      size: 16,
-                      color: Colors.white,
+                  child: SizedBox(
+                    width: AxisSizes.minTarget,
+                    height: AxisSizes.minTarget,
+                    child: Align(
+                      alignment: Alignment.topRight,
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: tokens.ink.withValues(alpha: 0.8),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 16,
+                            color: tokens.onDark,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -170,36 +180,39 @@ class PhotoSlots extends StatelessWidget {
     final tokens = context.axis;
     final theme = Theme.of(context);
 
-    return Material(
-      color: tokens.primarySoft,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AxisRadius.sm),
-        side: BorderSide(
-          color: theme.colorScheme.primary,
-          width: 2,
+    return Semantics(
+      button: true,
+      label: 'Ajouter une photo',
+      child: Material(
+        color: tokens.primarySoft,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AxisRadius.sm),
+          side: BorderSide(
+            color: theme.colorScheme.primary,
+            width: 2,
+          ),
         ),
-      ),
-      child: InkWell(
-        onTap: onAdd,
-        borderRadius: BorderRadius.circular(AxisRadius.sm),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.camera_alt_outlined,
-              size: 26,
-              color: theme.colorScheme.primary,
-            ),
-            const SizedBox(height: AxisSpacing.xxs),
-            Text(
-              'Photo',
-              style: theme.textTheme.labelMedium?.copyWith(
+        child: InkWell(
+          onTap: onAdd,
+          borderRadius: BorderRadius.circular(AxisRadius.sm),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.camera_alt_outlined,
+                size: 26,
                 color: theme.colorScheme.primary,
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
               ),
-            ),
-          ],
+              const SizedBox(height: AxisSpacing.xxs),
+              Text(
+                'Photo',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -85,7 +85,7 @@ class _QrScanFrameState extends State<QrScanFrame>
                       left: BorderSide(color: tokens.accent, width: 4),
                     ),
                     borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(14),
+                      topLeft: Radius.circular(AxisRadius.md),
                     ),
                   ),
                 ),
@@ -103,7 +103,7 @@ class _QrScanFrameState extends State<QrScanFrame>
                       right: BorderSide(color: tokens.accent, width: 4),
                     ),
                     borderRadius: const BorderRadius.only(
-                      topRight: Radius.circular(14),
+                      topRight: Radius.circular(AxisRadius.md),
                     ),
                   ),
                 ),
@@ -121,7 +121,7 @@ class _QrScanFrameState extends State<QrScanFrame>
                       left: BorderSide(color: tokens.accent, width: 4),
                     ),
                     borderRadius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(14),
+                      bottomLeft: Radius.circular(AxisRadius.md),
                     ),
                   ),
                 ),
@@ -139,7 +139,7 @@ class _QrScanFrameState extends State<QrScanFrame>
                       right: BorderSide(color: tokens.accent, width: 4),
                     ),
                     borderRadius: const BorderRadius.only(
-                      bottomRight: Radius.circular(14),
+                      bottomRight: Radius.circular(AxisRadius.md),
                     ),
                   ),
                 ),
@@ -159,13 +159,7 @@ class _QrScanFrameState extends State<QrScanFrame>
                       height: 2,
                       decoration: BoxDecoration(
                         color: tokens.accent,
-                        boxShadow: [
-                          BoxShadow(
-                            color: tokens.accent.withValues(alpha: 0.6),
-                            blurRadius: 6,
-                            spreadRadius: 1,
-                          ),
-                        ],
+                        boxShadow: tokens.scanLaserShadow,
                       ),
                     ),
                   );
@@ -180,7 +174,6 @@ class _QrScanFrameState extends State<QrScanFrame>
           style: theme.textTheme.bodyMedium?.copyWith(
             color: tokens.borderStrong,
             fontWeight: FontWeight.w600,
-            fontSize: 14,
           ),
           textAlign: TextAlign.center,
         ),

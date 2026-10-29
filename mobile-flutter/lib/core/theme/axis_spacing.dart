@@ -26,8 +26,17 @@ abstract final class AxisSpacing {
 }
 
 abstract final class AxisRadius {
+  /// Voyants de légende (plan de sièges).
+  static const double legendDot = 5;
+
+  /// Badge compact d'en-tête contrôleur.
+  static const double badge = 6;
+
   /// Puces.
   static const double chip = 8;
+
+  /// Cadre de porte dans le plan de sièges.
+  static const double door = 10;
 
   /// Petits boutons, champs compacts.
   static const double small = 12;
@@ -41,6 +50,15 @@ abstract final class AxisRadius {
 
   /// Feuilles du bas et en-têtes arrondis.
   static const double sheet = 22;
+
+  /// Feuille modale de résultat de scan.
+  static const double scanSheet = 26;
+
+  /// En-tête arrondi de l'écran de connexion.
+  static const double authHeader = 28;
+
+  /// Avant arrondi de la silhouette du car (plan de sièges).
+  static const double busFront = 40;
 
   /// Pastilles.
   static const double pill = 999;

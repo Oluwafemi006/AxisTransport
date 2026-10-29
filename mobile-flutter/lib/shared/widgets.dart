@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
+import '../core/theme/axis_spacing.dart';
+import '../core/theme/axis_tokens.dart';
 
 class Brand extends StatelessWidget {
   const Brand({super.key});
@@ -25,13 +27,14 @@ class Notice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.axis;
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(top: 14),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: error ? const Color(0xFFFEECEB) : const Color(0xFFE9F7F1),
-        borderRadius: BorderRadius.circular(12),
+        color: error ? tokens.danger.withValues(alpha: 0.1) : tokens.successSoft,
+        borderRadius: BorderRadius.circular(AxisRadius.sm),
       ),
       child: Text(
         text,
@@ -53,12 +56,13 @@ class AxisCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.axis;
     final content = Container(
       width: double.infinity,
       padding: padding ?? const EdgeInsets.all(17),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(AxisRadius.lg),
         border: Border.all(color: AxisColors.border),
       ),
       child: child,
@@ -70,7 +74,7 @@ class AxisCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AxisRadius.lg),
           child: content,
         ),
       ),
@@ -86,6 +90,7 @@ class ComingSoon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.all(18),
       child: AxisCard(
@@ -95,9 +100,8 @@ class ComingSoon extends StatelessWidget {
           children: [
             Text(
               title,
-              style: const TextStyle(
+              style: theme.textTheme.headlineSmall?.copyWith(
                 color: AxisColors.text,
-                fontSize: 22,
                 fontWeight: FontWeight.w900,
               ),
             ),

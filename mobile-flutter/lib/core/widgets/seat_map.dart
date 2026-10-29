@@ -87,10 +87,10 @@ class SeatMap extends StatelessWidget {
           decoration: BoxDecoration(
             color: theme.colorScheme.surface,
             borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(40),
-              topRight: Radius.circular(40),
-              bottomLeft: Radius.circular(22),
-              bottomRight: Radius.circular(22),
+              topLeft: Radius.circular(AxisRadius.busFront),
+              topRight: Radius.circular(AxisRadius.busFront),
+              bottomLeft: Radius.circular(AxisRadius.xl),
+              bottomRight: Radius.circular(AxisRadius.xl),
             ),
             border: Border.all(color: tokens.border),
           ),
@@ -108,7 +108,6 @@ class SeatMap extends StatelessWidget {
                         color: tokens.textSecondary,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.2,
-                        fontSize: 11,
                       ),
                     ),
                     Container(
@@ -175,7 +174,7 @@ class SeatMap extends StatelessWidget {
             height: 16,
             decoration: BoxDecoration(
               color: theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(5),
+              borderRadius: BorderRadius.circular(AxisRadius.legendDot),
               border: Border.all(color: tokens.borderStrong, width: 2),
             ),
           ),
@@ -189,7 +188,7 @@ class SeatMap extends StatelessWidget {
             height: 16,
             decoration: BoxDecoration(
               color: tokens.disabled,
-              borderRadius: BorderRadius.circular(5),
+              borderRadius: BorderRadius.circular(AxisRadius.legendDot),
             ),
           ),
           context: context,
@@ -202,7 +201,7 @@ class SeatMap extends StatelessWidget {
             height: 16,
             decoration: BoxDecoration(
               color: tokens.accent,
-              borderRadius: BorderRadius.circular(5),
+              borderRadius: BorderRadius.circular(AxisRadius.legendDot),
             ),
           ),
           context: context,
@@ -229,7 +228,6 @@ class SeatMap extends StatelessWidget {
           style: theme.textTheme.bodySmall?.copyWith(
             color: tokens.textSecondary,
             fontWeight: FontWeight.w600,
-            fontSize: 12,
           ),
         ),
       ],
@@ -248,7 +246,7 @@ class SeatMap extends StatelessWidget {
           width: 96,
           height: 46,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AxisRadius.door),
             border: Border.all(
               color: tokens.iconMuted,
               width: 1.5,
@@ -261,7 +259,6 @@ class SeatMap extends StatelessWidget {
             style: theme.textTheme.labelSmall?.copyWith(
               color: tokens.textSecondary,
               fontWeight: FontWeight.w700,
-              fontSize: 11,
               letterSpacing: 1.0,
             ),
           ),
@@ -281,13 +278,7 @@ class SeatMap extends StatelessWidget {
         } else if (isSelected) {
           bg = tokens.accent;
           fg = theme.colorScheme.primary;
-          shadows = [
-            BoxShadow(
-              color: tokens.accent.withValues(alpha: 0.45),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
-          ];
+          shadows = tokens.seatSelectedShadow;
         } else {
           bg = theme.colorScheme.surface;
           fg = tokens.ink;
@@ -295,10 +286,10 @@ class SeatMap extends StatelessWidget {
         }
 
         const seatRadius = BorderRadius.only(
-          topLeft: Radius.circular(12),
-          topRight: Radius.circular(12),
-          bottomLeft: Radius.circular(8),
-          bottomRight: Radius.circular(8),
+          topLeft: Radius.circular(AxisRadius.sm),
+          topRight: Radius.circular(AxisRadius.sm),
+          bottomLeft: Radius.circular(AxisRadius.xs),
+          bottomRight: Radius.circular(AxisRadius.xs),
         );
 
         final label = 'Siège ${cell.number}'
@@ -326,10 +317,9 @@ class SeatMap extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Text(
                   cell.number,
-                  style: theme.textTheme.labelMedium?.copyWith(
+                  style: theme.textTheme.titleSmall?.copyWith(
                     color: fg,
                     fontWeight: FontWeight.w800,
-                    fontSize: 14,
                   ),
                 ),
               ),

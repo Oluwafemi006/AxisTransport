@@ -133,25 +133,28 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Semantics(
-                    label: 'Retour',
-                    button: true,
-                    child: Material(
-                      color: tokens.surfaceSoft,
-                      borderRadius: BorderRadius.circular(AxisRadius.small),
-                      child: InkWell(
-                        onTap: () {
-                          if (context.canPop()) {
-                            context.pop();
-                          } else {
-                            context.go('/connexion');
-                          }
-                        },
+                  Tooltip(
+                    message: 'Retour',
+                    child: Semantics(
+                      label: 'Retour',
+                      button: true,
+                      child: Material(
+                        color: tokens.surfaceSoft,
                         borderRadius: BorderRadius.circular(AxisRadius.small),
-                        child: const SizedBox(
-                          width: AxisSizes.minTarget,
-                          height: AxisSizes.minTarget,
-                          child: Icon(Icons.arrow_back_rounded, size: 22),
+                        child: InkWell(
+                          onTap: () {
+                            if (context.canPop()) {
+                              context.pop();
+                            } else {
+                              context.go('/connexion');
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(AxisRadius.small),
+                          child: const SizedBox(
+                            width: AxisSizes.minTarget,
+                            height: AxisSizes.minTarget,
+                            child: Icon(Icons.arrow_back_rounded, size: 22),
+                          ),
                         ),
                       ),
                     ),
@@ -159,10 +162,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   const SizedBox(height: AxisSpacing.sm),
                   Text(
                     'Créer un compte',
-                    style: theme.textTheme.headlineSmall?.copyWith(
+                    style: theme.textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                       color: tokens.ink,
-                      fontSize: 26,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -170,7 +172,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     'Le même compte sur l’app et sur le site.',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: tokens.textSecondary,
-                      fontSize: 14,
                     ),
                   ),
                 ],
@@ -303,23 +304,25 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         'Déjà un compte ? ',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: tokens.textSecondary,
-                          fontSize: 14,
                         ),
                       ),
-                      GestureDetector(
-                        onTap: () {
+                      TextButton(
+                        onPressed: () {
                           if (context.canPop()) {
                             context.pop();
                           } else {
                             context.go('/connexion');
                           }
                         },
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(0, AxisSizes.minTarget),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                        ),
                         child: Text(
                           'Se connecter',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.primary,
                             fontWeight: FontWeight.w800,
-                            fontSize: 14,
                           ),
                         ),
                       ),

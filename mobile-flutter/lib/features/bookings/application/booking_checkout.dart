@@ -89,7 +89,7 @@ PaymentPhase phaseFromRefusal(
   return reservationExpired ? PaymentPhase.expired : PaymentPhase.awaiting;
 }
 
-/// Au retour de la page de paiement, FedaPay peut valider le paiement une minute plus tard :
+/// Au retour de la page de paiement, le prestataire Mobile Money peut valider le paiement une minute plus tard :
 /// on relance la vérification (`stillPending`, vrai tant que la réponse est « en attente »)
 /// toutes les [delay], au plus [attempts] fois, tant que l'écran est ouvert (`active`).
 /// Renvoie vrai si l'attente a pris fin (billet émis, paiement refusé, réservation expirée).

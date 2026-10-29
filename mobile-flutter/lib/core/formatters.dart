@@ -1,8 +1,11 @@
 import 'package:intl/intl.dart';
 
+final _time = DateFormat('HH:mm', 'fr_FR');
 final _dateTime = DateFormat("d MMM y, HH:mm", 'fr_FR');
 final _fullDateTime = DateFormat("EEEE d MMMM y, HH:mm", 'fr_FR');
 final _money = NumberFormat.decimalPattern('fr_FR');
+
+String formatTime(DateTime value) => _time.format(value);
 
 String formatDateTime(DateTime value) => _dateTime.format(value);
 

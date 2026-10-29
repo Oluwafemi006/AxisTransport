@@ -71,13 +71,7 @@ class TimelineSteps extends StatelessWidget {
               decoration: BoxDecoration(
                 color: tokens.accent,
                 shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: tokens.accentSoft,
-                    blurRadius: 0,
-                    spreadRadius: 4,
-                  ),
-                ],
+                boxShadow: tokens.accentSoftGlow,
               ),
             );
           case TimelineStepState.todo:
@@ -100,7 +94,6 @@ class TimelineSteps extends StatelessWidget {
             : tokens.border;
 
         final titleStyle = theme.textTheme.titleSmall?.copyWith(
-          fontSize: 14,
           fontWeight: step.state == TimelineStepState.todo
               ? FontWeight.w600
               : FontWeight.w800,
@@ -151,7 +144,6 @@ class TimelineSteps extends StatelessWidget {
                                 step.meta!,
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: tokens.textSecondary,
-                                  fontSize: 12,
                                 ),
                               ),
                             ],

@@ -174,14 +174,13 @@ class _InvitationScreenState extends ConsumerState<InvitationScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                     decoration: BoxDecoration(
                       color: tokens.accent,
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(AxisRadius.badge),
                     ),
                     child: Text(
                       'INVITATION ${_invitationGroup?.toUpperCase() ?? "CONTRÔLEUR"}',
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: tokens.ink,
                         fontWeight: FontWeight.w800,
-                        fontSize: 11,
                         letterSpacing: 0.6,
                       ),
                     ),
@@ -190,9 +189,8 @@ class _InvitationScreenState extends ConsumerState<InvitationScreen> {
                   Text(
                     'Activez votre compte',
                     style: theme.textTheme.headlineSmall?.copyWith(
-                      color: Colors.white,
+                      color: tokens.onDark,
                       fontWeight: FontWeight.w800,
-                      fontSize: 25,
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -200,7 +198,6 @@ class _InvitationScreenState extends ConsumerState<InvitationScreen> {
                     'AXIS TRANSPORT LOGISTIQUE vous a invité à rejoindre l’équipe.',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: tokens.borderStrong,
-                      fontSize: 14,
                       height: 1.4,
                     ),
                   ),
@@ -221,7 +218,6 @@ class _InvitationScreenState extends ConsumerState<InvitationScreen> {
                         style: theme.textTheme.labelMedium?.copyWith(
                           color: tokens.textSecondary,
                           fontWeight: FontWeight.w700,
-                          fontSize: 13,
                         ),
                       ),
                       const SizedBox(height: AxisSpacing.xxs),
@@ -242,10 +238,9 @@ class _InvitationScreenState extends ConsumerState<InvitationScreen> {
                               _invitationEmail?.isNotEmpty == true
                                   ? _invitationEmail!
                                   : '[e-mail invité]',
-                              style: theme.textTheme.bodyMedium?.copyWith(
+                              style: theme.textTheme.bodyLarge?.copyWith(
                                 color: tokens.textSecondary,
                                 fontWeight: FontWeight.w600,
-                                fontSize: 15,
                               ),
                             ),
                             Icon(
@@ -315,7 +310,6 @@ class _InvitationScreenState extends ConsumerState<InvitationScreen> {
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: tokens.onAccentSoft,
                         fontWeight: FontWeight.w600,
-                        fontSize: 12,
                         height: 1.4,
                       ),
                     ),

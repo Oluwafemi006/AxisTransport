@@ -49,51 +49,56 @@ class SegmentedToggle<T> extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.all(AxisSpacing.xxs),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.15),
+          color: tokens.onDark.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(AxisRadius.md),
         ),
         child: Row(
           children: options.map((option) {
             final isSelected = option.value == selectedValue;
             return Expanded(
-              child: InkWell(
-                onTap: () => onChanged(option.value),
-                borderRadius: BorderRadius.circular(AxisRadius.sm),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeInOut,
-                  height: 44,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: isSelected ? Colors.white : Colors.transparent,
-                    borderRadius: BorderRadius.circular(AxisRadius.sm),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (option.icon != null) ...[
-                        Icon(
-                          option.icon,
-                          size: 16,
-                          color: isSelected
-                              ? theme.colorScheme.primary
-                              : Colors.white,
+              child: Semantics(
+                button: true,
+                selected: isSelected,
+                label: option.label,
+                child: InkWell(
+                  onTap: () => onChanged(option.value),
+                  borderRadius: BorderRadius.circular(AxisRadius.sm),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeInOut,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isSelected ? tokens.onDark : Colors.transparent,
+                      borderRadius: BorderRadius.circular(AxisRadius.sm),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (option.icon != null) ...[
+                          Icon(
+                            option.icon,
+                            size: 16,
+                            color: isSelected
+                                ? theme.colorScheme.primary
+                                : tokens.onDark,
+                          ),
+                          const SizedBox(width: AxisSpacing.xs),
+                        ],
+                        Text(
+                          option.label,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: isSelected
+                                ? theme.colorScheme.primary
+                                : tokens.onDark,
+                            fontWeight:
+                                isSelected ? FontWeight.w800 : FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(width: AxisSpacing.xs),
                       ],
-                      Text(
-                        option.label,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: isSelected
-                              ? theme.colorScheme.primary
-                              : Colors.white,
-                          fontWeight:
-                              isSelected ? FontWeight.w800 : FontWeight.w600,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -110,48 +115,53 @@ class SegmentedToggle<T> extends StatelessWidget {
         return Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: AxisSpacing.xxs),
-            child: Material(
-              color: isSelected ? tokens.ink : theme.colorScheme.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AxisRadius.sm),
-                side: BorderSide(
-                  color: isSelected ? tokens.ink : tokens.border,
-                  width: 2,
-                ),
-              ),
-              child: InkWell(
-                onTap: () => onChanged(option.value),
-                borderRadius: BorderRadius.circular(AxisRadius.sm),
-                child: Container(
-                  height: 46,
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AxisSpacing.xs,
+            child: Semantics(
+              button: true,
+              selected: isSelected,
+              label: option.label,
+              child: Material(
+                color: isSelected ? tokens.ink : theme.colorScheme.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AxisRadius.sm),
+                  side: BorderSide(
+                    color: isSelected ? tokens.ink : tokens.border,
+                    width: 2,
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (option.icon != null) ...[
-                        Icon(
-                          option.icon,
-                          size: 16,
-                          color: isSelected ? Colors.white : tokens.ink,
-                        ),
-                        const SizedBox(width: AxisSpacing.xs),
-                      ],
-                      Flexible(
-                        child: Text(
-                          option.label,
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: isSelected ? Colors.white : tokens.ink,
-                            fontWeight:
-                                isSelected ? FontWeight.w800 : FontWeight.w600,
+                ),
+                child: InkWell(
+                  onTap: () => onChanged(option.value),
+                  borderRadius: BorderRadius.circular(AxisRadius.sm),
+                  child: Container(
+                    height: 46,
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AxisSpacing.xs,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (option.icon != null) ...[
+                          Icon(
+                            option.icon,
+                            size: 16,
+                            color: isSelected ? tokens.onDark : tokens.ink,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          const SizedBox(width: AxisSpacing.xs),
+                        ],
+                        Flexible(
+                          child: Text(
+                            option.label,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: isSelected ? tokens.onDark : tokens.ink,
+                              fontWeight:
+                                  isSelected ? FontWeight.w800 : FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

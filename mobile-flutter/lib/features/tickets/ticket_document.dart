@@ -7,6 +7,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../core/formatters.dart';
 import '../../core/models.dart';
+import '../../core/theme/axis_pdf_theme.dart';
 
 /// Texte affiché quand une information obligatoire du billet manque. Rien n'est inventé.
 const missingValue = 'À renseigner';
@@ -125,12 +126,12 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) async {
           else
             pw.Text(
               'AXIS Transport',
-              style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
+              style: AxisPdfTypography.brandTitle,
             ),
           pw.SizedBox(height: 4),
           pw.Text(
             pdfSafe('Billet de transport'),
-            style: const pw.TextStyle(fontSize: 12),
+            style: AxisPdfTypography.subtitle,
           ),
           pw.SizedBox(height: 18),
           if (ticket.isConfirmed && ticket.qrToken.isNotEmpty)
@@ -155,16 +156,13 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) async {
                     width: 105,
                     child: pw.Text(
                       pdfSafe(label),
-                      style: pw.TextStyle(
-                        fontWeight: pw.FontWeight.bold,
-                        fontSize: 11,
-                      ),
+                      style: AxisPdfTypography.fieldLabel,
                     ),
                   ),
                   pw.Expanded(
                     child: pw.Text(
                       pdfSafe(value),
-                      style: const pw.TextStyle(fontSize: 11),
+                      style: AxisPdfTypography.fieldValue,
                     ),
                   ),
                 ],
@@ -173,11 +171,11 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) async {
           pw.Spacer(),
           pw.Text(
             pdfSafe('Présentez ce QR code à l\'embarquement.'),
-            style: const pw.TextStyle(fontSize: 10),
+            style: AxisPdfTypography.notice,
           ),
           pw.SizedBox(height: 8),
           for (final line in ticketFooter(ticket))
-            pw.Text(pdfSafe(line), style: const pw.TextStyle(fontSize: 8)),
+            pw.Text(pdfSafe(line), style: AxisPdfTypography.footer),
         ],
       ),
     ),

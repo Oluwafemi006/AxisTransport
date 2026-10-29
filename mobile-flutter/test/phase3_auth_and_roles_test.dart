@@ -100,6 +100,8 @@ class _MockApi extends ApiClient {
   Future<List<Ticket>> tickets() async => [];
   @override
   Future<List<Place>> locations() async => [];
+  @override
+  Future<Map<String, dynamic>> saleOptions() async => {'trips': <dynamic>[]};
 }
 
 Future<_MockApi> _setupApp(WidgetTester tester, {String? role}) async {
@@ -152,7 +154,7 @@ void main() {
       // Tenter d'accéder à /location
       axisRouter.go('/location');
       await tester.pumpAndSettle();
-      expect(find.text('Ouvrir le Scanner QR'), findsOneWidget);
+      expect(find.text('Scanner un billet'), findsOneWidget);
     });
 
     testWidgets('Non connecté tente d’accéder à l’accueil : redirection vers /connexion', (tester) async {

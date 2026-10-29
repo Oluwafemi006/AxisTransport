@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/session.dart';
 import '../../core/theme.dart';
+import '../../core/theme/axis_spacing.dart';
+import '../../core/theme/axis_tokens.dart';
 import '../../shared/contact_actions.dart';
 import '../../shared/widgets.dart';
 
@@ -47,6 +49,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     final user = session.user;
+    final theme = Theme.of(context);
+    final tokens = context.axis;
     if (!session.ready) return const Center(child: CircularProgressIndicator());
     if (user == null) {
       return Center(
@@ -55,11 +59,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           child: AxisCard(
             child: Column(
               children: [
-                const Text(
+                Text(
                   'Mon profil',
-                  style: TextStyle(
+                  style: theme.textTheme.headlineSmall?.copyWith(
                     color: AxisColors.text,
-                    fontSize: 22,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -94,10 +97,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     backgroundColor: AxisColors.navy,
                     child: Text(
                       user.displayName.characters.first.toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: tokens.onDark,
                         fontWeight: FontWeight.w900,
-                        fontSize: 20,
                       ),
                     ),
                   ),
@@ -108,9 +110,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       children: [
                         Text(
                           user.displayName,
-                          style: const TextStyle(
+                          style: theme.textTheme.titleLarge?.copyWith(
                             color: AxisColors.text,
-                            fontSize: 20,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
@@ -157,29 +158,34 @@ class _Count extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) => Expanded(
-    child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEFF5FB),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: [
-          Text(
-            '$value',
-            style: const TextStyle(
-              color: AxisColors.navy,
-              fontWeight: FontWeight.w900,
-              fontSize: 22,
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = context.axis;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+        decoration: BoxDecoration(
+          color: tokens.primarySoft,
+          borderRadius: BorderRadius.circular(AxisRadius.sm),
+        ),
+        child: Column(
+          children: [
+            Text(
+              '$value',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                color: AxisColors.navy,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
-          Text(
-            label,
-            style: const TextStyle(color: AxisColors.muted, fontSize: 11),
-          ),
-        ],
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: AxisColors.muted,
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
