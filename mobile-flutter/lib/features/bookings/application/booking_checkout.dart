@@ -165,7 +165,7 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
       final current = state.value;
       if (current == null) return null;
       if (current.reservation == null) {
-        if (!draft.hasAllSeats || draft.trip == null) return null;
+        if (!draft.hasAllPassengers || draft.trip == null) return null;
         state = AsyncData(current.copyWith(busy: true));
         try {
           final reservation = await _createReservation(draft);
@@ -228,20 +228,22 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
           buyerIfu: draft.buyerIfu,
           origin: draft.originId != null ? '${draft.originId}' : null,
           destination: draft.destinationId != null ? '${draft.destinationId}' : null,
+          boardingPointId: draft.boardingPointId,
+          alightingPointId: draft.alightingPointId,
           passengers: draft.passengers.map((passenger) {
-            final seat = draft.seatsByPassenger[passenger.id]!;
+            final seat = draft.seatsByPassenger[passenger.id];
             return {
               'full_name': passenger.fullName,
               'phone': passenger.phone,
               'passenger_type': passenger.type.apiValue,
-              'seat': seat.id,
+              if (seat != null) 'seat': seat.id,
             };
           }).toList(),
         );
   }
 
   Future<void> reserve(BookingDraft draft) async {
-    if (!draft.hasAllSeats || draft.trip == null) return;
+    if (!draft.hasAllPassengers || draft.trip == null) return;
 
     final currentState = state;
     state = const AsyncLoading<BookingCheckoutState>();
@@ -259,13 +261,15 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
         buyerIfu: draft.buyerIfu,
         origin: draft.originId != null ? '${draft.originId}' : null,
         destination: draft.destinationId != null ? '${draft.destinationId}' : null,
+        boardingPointId: draft.boardingPointId,
+        alightingPointId: draft.alightingPointId,
         passengers: draft.passengers.map((passenger) {
-          final seat = draft.seatsByPassenger[passenger.id]!;
+          final seat = draft.seatsByPassenger[passenger.id];
           return {
             'full_name': passenger.fullName,
             'phone': passenger.phone,
             'passenger_type': passenger.type.apiValue,
-            'seat': seat.id,
+            if (seat != null) 'seat': seat.id,
           };
         }).toList(),
       );
@@ -378,6 +382,19 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
       state = AsyncData(current.copyWith(error: e.toString()));
       return null;
     }
+  }
+
+  /// Reprend une réservation en attente depuis « Mes réservations ».
+  void loadExistingReservation(BookingReservation reservation) {
+    final current = state.value;
+    final methods = current?.methods ?? const <PaymentMethod>[];
+    state = AsyncData(
+      BookingCheckoutState(
+        methods: methods,
+        tripQuotes: reservation.paymentQuotes,
+        reservation: reservation,
+      ),
+    );
   }
 
   /// Abandonne la réservation en cours (expirée ou à rembourser) pour en démarrer une nouvelle.

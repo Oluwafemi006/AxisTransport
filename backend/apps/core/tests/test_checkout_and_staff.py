@@ -195,6 +195,12 @@ class PaidAfterExpiryTests(APITestCase):
         Booking.objects.filter(pk=self.booking.pk).update(reservation_expires_at=past)
         Ticket.objects.filter(booking=self.booking).update(reservation_expires_at=past)
         Seat.objects.filter(tickets__booking=self.booking).update(hold_expires_at=past)
+        # Les autres places du voyage sont occupées (PAID) et l'une des places a été vendue :
+        # il ne reste plus assez de places libres pour les 2 passagers de la réservation.
+        booking_seat_ids = list(self.booking.tickets.values_list("seat_id", flat=True))
+        Seat.objects.filter(trip=self.context["trip"]).exclude(pk__in=booking_seat_ids).update(status=Seat.Status.PAID)
+        Seat.objects.filter(pk=booking_seat_ids[0]).update(status=Seat.Status.PAID, hold_expires_at=None)
+        Ticket.objects.filter(booking=self.booking, seat_id=booking_seat_ids[0]).update(status=Ticket.Status.EXPIRED)
         self.client.force_authenticate(self.context["client"])
 
     def pay(self):
@@ -214,7 +220,7 @@ class PaidAfterExpiryTests(APITestCase):
         self.assertFalse(Ticket.objects.filter(booking=self.booking, status=Ticket.Status.ISSUED).exists())
         self.assertEqual(Transaction.objects.count(), 0)
         self.assertEqual(
-            Seat.objects.filter(tickets__booking=self.booking, status=Seat.Status.AVAILABLE).count(), 2
+            Seat.objects.filter(tickets__booking=self.booking, status=Seat.Status.AVAILABLE).count(), 1
         )
 
     def test_payment_after_expiry_keeps_receipt_and_issues_nothing(self):

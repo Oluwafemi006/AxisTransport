@@ -44,6 +44,24 @@ class Location(TimeStampedModel):
         return self.name
 
 
+class BoardingPoint(TimeStampedModel):
+    """Point d'embarquement et de débarquement rattaché à une ville."""
+
+    location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="boarding_points")
+    name = models.CharField(max_length=160)
+    active = models.BooleanField(default=True)
+    order = models.PositiveSmallIntegerField(default=1, help_text="Ordre d'affichage")
+
+    class Meta:
+        ordering = ["location__name", "order", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["location", "name"], name="unique_boarding_point_per_location"),
+        ]
+
+    def __str__(self):
+        return f"{self.location.name} – {self.name}"
+
+
 class Route(TimeStampedModel):
     origin = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="routes_from")
     destination = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="routes_to")
@@ -494,6 +512,10 @@ class Seat(TimeStampedModel):
         return f"{self.trip} · siège {self.number}"
 
 
+# Alias utilisé dans certaines vues pour désigner un siège occupé/payé sans modifier les choix en base.
+setattr(Seat.Status, "BOOKED", Seat.Status.PAID)
+
+
 class Booking(TimeStampedModel):
     class Status(models.TextChoices):
         HELD = "HELD", "Réservation temporaire"
@@ -536,6 +558,32 @@ class Booking(TimeStampedModel):
         blank=True,
         help_text="Arrêt de descente du voyageur (null = terminus du trajet complet)",
     )
+    boarding_point = models.ForeignKey(
+        BoardingPoint,
+        on_delete=models.SET_NULL,
+        related_name="bookings_as_boarding_point",
+        null=True,
+        blank=True,
+        help_text="Point d'embarquement choisi dans la ville de départ",
+    )
+    alighting_point = models.ForeignKey(
+        BoardingPoint,
+        on_delete=models.SET_NULL,
+        related_name="bookings_as_alighting_point",
+        null=True,
+        blank=True,
+        help_text="Point de débarquement choisi dans la ville d'arrivée",
+    )
+    boarding_point_name = models.CharField(
+        max_length=160,
+        blank=True,
+        help_text="Copie figée du nom du point d'embarquement au moment de la réservation",
+    )
+    alighting_point_name = models.CharField(
+        max_length=160,
+        blank=True,
+        help_text="Copie figée du nom du point de débarquement au moment de la réservation",
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -557,12 +605,58 @@ class Booking(TimeStampedModel):
         return self.destination or (self.trip.route.destination if self.trip_id and self.trip.route_id else None)
 
     @property
+    def boarding_display(self):
+        loc = self.boarding_location
+        if not loc:
+            return ""
+        pt = (self.boarding_point_name or "").strip()
+        return f"{loc.name} – {pt}" if pt else loc.name
+
+    @property
+    def alighting_display(self):
+        loc = self.alighting_location
+        if not loc:
+            return ""
+        pt = (self.alighting_point_name or "").strip()
+        return f"{loc.name} – {pt}" if pt else loc.name
+
+    @property
     def segment_label(self):
         orig = self.boarding_location
         dest = self.alighting_location
         if orig and dest:
             return f"{orig.name} → {dest.name}"
         return ""
+
+    @property
+    def client_status_display(self):
+        if self.status == self.Status.HELD:
+            if self.reservation_expires_at and self.reservation_expires_at <= timezone.now():
+                return "Expirée"
+            return "En attente de paiement"
+        if self.status == self.Status.CONFIRMED:
+            return "Payée"
+        if self.status == self.Status.EXPIRED:
+            return "Expirée"
+        if self.status == self.Status.CANCELLED:
+            return "Annulée"
+        if self.status == self.Status.REFUND_DUE:
+            return "Payée, places indisponibles"
+        return self.get_status_display()
+
+    def get_departure_time_and_label(self):
+        if not self.trip_id or not self.trip.route_id:
+            return None, "", False
+        terminus = self.trip.route.origin
+        boarding = self.boarding_location
+        if not boarding or boarding.pk == terminus.pk:
+            return self.trip.departure_at, f"Départ de {terminus.name}", False
+
+        route_stop = self.trip.route.stops.filter(location=boarding).first()
+        if route_stop and route_stop.offset_minutes is not None:
+            est_time = self.trip.departure_at + timedelta(minutes=route_stop.offset_minutes)
+            return est_time, f"Départ de {boarding.name}", True
+        return self.trip.departure_at, f"Départ de {terminus.name}", False
 
     def save(self, *args, **kwargs):
         if not self.reference:
@@ -643,6 +737,32 @@ class Ticket(TimeStampedModel):
         blank=True,
         help_text="Arrêt de descente du passager (null = terminus du trajet complet)",
     )
+    boarding_point = models.ForeignKey(
+        BoardingPoint,
+        on_delete=models.SET_NULL,
+        related_name="tickets_as_boarding_point",
+        null=True,
+        blank=True,
+        help_text="Point d'embarquement choisi dans la ville de départ",
+    )
+    alighting_point = models.ForeignKey(
+        BoardingPoint,
+        on_delete=models.SET_NULL,
+        related_name="tickets_as_alighting_point",
+        null=True,
+        blank=True,
+        help_text="Point de débarquement choisi dans la ville d'arrivée",
+    )
+    boarding_point_name = models.CharField(
+        max_length=160,
+        blank=True,
+        help_text="Copie figée du nom du point d'embarquement au moment de l'émission",
+    )
+    alighting_point_name = models.CharField(
+        max_length=160,
+        blank=True,
+        help_text="Copie figée du nom du point de débarquement au moment de l'émission",
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -657,12 +777,48 @@ class Ticket(TimeStampedModel):
         return self.destination or (self.trip.route.destination if self.trip_id and self.trip.route_id else None)
 
     @property
+    def boarding_display(self):
+        loc = self.boarding_location
+        if not loc:
+            return ""
+        pt = (self.boarding_point_name or "").strip()
+        return f"{loc.name} – {pt}" if pt else loc.name
+
+    @property
+    def alighting_display(self):
+        loc = self.alighting_location
+        if not loc:
+            return ""
+        pt = (self.alighting_point_name or "").strip()
+        return f"{loc.name} – {pt}" if pt else loc.name
+
+    @property
     def segment_label(self):
         orig = self.boarding_location
         dest = self.alighting_location
         if orig and dest:
             return f"{orig.name} → {dest.name}"
         return ""
+
+    @property
+    def seat_preference(self):
+        """Vrai si le passager a choisi son siège sur le plan, Faux si attribué automatiquement."""
+        history = list(self.status_history.all())
+        if history:
+            return not any(
+                h.note == "Attribution automatique du siège"
+                for h in history
+                if h.to_status == self.Status.HELD
+            )
+        return True
+
+    @property
+    def seat_summary_label(self):
+        if self.status in {self.Status.PAID, self.Status.ISSUED, self.Status.CHECKED, self.Status.COMPLETED}:
+            return f"Siège {self.seat.number}" if self.seat_id else ""
+        if self.seat_preference:
+            return f"Siège {self.seat.number} (préférence)" if self.seat_id else "Préférence"
+        return "Places attribuées après paiement"
 
     def get_departure_time_and_label(self):
         """

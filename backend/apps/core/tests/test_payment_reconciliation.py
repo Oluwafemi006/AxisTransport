@@ -136,6 +136,8 @@ class ReconciliationTests(ReconciliationBase):
         attempt = self.start_checkout()
         Booking.objects.filter(pk=self.booking.pk).update(reservation_expires_at=timezone.now() - timedelta(minutes=1))
         self.booking.tickets.update(reservation_expires_at=timezone.now() - timedelta(minutes=1))
+        # Toutes les places du voyage ont été prises entre-temps : plus aucune place libre
+        self.booking.trip.seats.update(status="PAID")
         counts, _ = self.reconcile(fedapay_transaction(self.booking))
         self.assertEqual(counts["refund_due"], 1)
         self.assertEqual(self.issued(), 0)

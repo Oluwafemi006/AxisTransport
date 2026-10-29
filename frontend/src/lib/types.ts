@@ -11,19 +11,31 @@ export interface User {
   role_display: string;
 }
 
+export interface BoardingPoint {
+  id: number;
+  location: number;
+  location_name?: string;
+  name: string;
+  active: boolean;
+  order: number;
+  is_used?: boolean;
+}
+
 export interface Location {
   id: number;
   name: string;
   address: string;
   active: boolean;
+  boarding_points?: BoardingPoint[];
 }
 
 export interface RouteStop {
   id: number;
   position: number;
-  location_id: number;
+  location_id?: number;
   name: string;
   offset_minutes?: number | null;
+  boarding_points?: BoardingPoint[];
 }
 
 export interface Route {
@@ -116,11 +128,19 @@ export interface Ticket {
   destination_name?: string;
   origin_detail?: Location;
   destination_detail?: Location;
+  boarding_point?: number | null;
+  alighting_point?: number | null;
+  boarding_point_name?: string;
+  alighting_point_name?: string;
+  boarding_display?: string;
+  alighting_display?: string;
   segment_label?: string;
   departure_label?: string;
   effective_departure_at?: string;
   seat: number;
   seat_detail: Seat;
+  seat_preference?: boolean;
+  seat_summary_label?: string;
   passenger_name: string;
   passenger_phone: string;
   status: string;
@@ -131,6 +151,48 @@ export interface Ticket {
   reservation_expires_at: string | null;
   amount: string;
   currency: string;
+  created_at: string;
+}
+
+export interface BookingPassenger {
+  id: number;
+  full_name: string;
+  phone: string;
+  passenger_type: string;
+  passenger_type_display: string;
+}
+
+export interface Booking {
+  id: number;
+  reference: string;
+  trip: number;
+  trip_detail: Trip;
+  origin?: number | null;
+  destination?: number | null;
+  origin_name?: string;
+  destination_name?: string;
+  segment_label?: string;
+  departure_label?: string;
+  effective_departure_at?: string | null;
+  contact_phone: string;
+  buyer_ifu: string;
+  status: "HELD" | "CONFIRMED" | "CANCELLED" | "EXPIRED" | "REFUND_DUE" | string;
+  status_display: string;
+  client_status_display?: string;
+  reservation_expires_at: string | null;
+  amount: string;
+  currency: string;
+  passengers: BookingPassenger[];
+  tickets: Ticket[];
+  payment_quotes: Array<{
+    payment_method: number;
+    label: string;
+    amount: string | number;
+    fee_amount: string | number;
+    total: string | number;
+    currency: string;
+  }>;
+  guest_access_token?: string;
   created_at: string;
 }
 
@@ -281,6 +343,10 @@ export interface TicketPrintInfo {
   boarding_place: string;
   origin?: string;
   destination?: string;
+  boarding_point_name?: string;
+  alighting_point_name?: string;
+  boarding_display?: string;
+  alighting_display?: string;
   segment_label?: string;
   departure_label?: string;
   departure_at?: string;
@@ -336,4 +402,19 @@ export interface FareRule {
   currency: string;
   advance_days: number | null;
   active: boolean;
+}
+
+export interface TripBanner {
+  banner_text: string;
+  today_trips_count: number;
+  has_departure_today: boolean;
+}
+
+export interface NextAvailable {
+  trip_id: number;
+  date: string;
+  departure_at: string;
+  formatted_date: string;
+  formatted_time: string;
+  route_label?: string;
 }

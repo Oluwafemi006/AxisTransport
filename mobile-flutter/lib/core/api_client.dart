@@ -175,6 +175,13 @@ class ApiClient {
     return _list('/client/trips/', (json) => Trip.fromJson(json));
   }
 
+  Future<TripBanner> tripBanner() async {
+    final payload = await _request<Map<String, dynamic>>(
+      '/client/trips/banner/',
+    );
+    return TripBanner.fromJson(payload);
+  }
+
   Future<Trip> trip(int tripId) async {
     final payload = await _request<Map<String, dynamic>>(
       '/client/trips/$tripId/',
@@ -187,6 +194,43 @@ class ApiClient {
     (json) => Trip.fromJson(json),
     queryParameters: search.queryParameters,
   );
+
+  Future<({List<Trip> trips, NextAvailable? nextAvailable})> searchTripsDetailed(
+    TripSearch search,
+  ) async {
+    try {
+      final payload = await _request<dynamic>(
+        '/client/trips/',
+        queryParameters: search.queryParameters,
+      );
+      if (payload is Map<String, dynamic>) {
+        final items = payload['results'];
+        final trips = items is List
+            ? items
+                .whereType<Map>()
+                .map((item) => Trip.fromJson(Map<String, dynamic>.from(item)))
+                .toList()
+            : <Trip>[];
+        final nextJson = payload['next_available'] as Map<String, dynamic>?;
+        final nextAvailable =
+            nextJson != null ? NextAvailable.fromJson(nextJson) : null;
+        return (trips: trips, nextAvailable: nextAvailable);
+      }
+      if (payload is List) {
+        final trips = payload
+            .whereType<Map>()
+            .map((item) => Trip.fromJson(Map<String, dynamic>.from(item)))
+            .toList();
+        return (trips: trips, nextAvailable: null);
+      }
+    } catch (_) {
+      // Repli sur searchTrips (ex: tests ou mocks personnalisés)
+      final fallback = await searchTrips(search);
+      return (trips: fallback, nextAvailable: null);
+    }
+    final fallback = await searchTrips(search);
+    return (trips: fallback, nextAvailable: null);
+  }
 
   Future<List<Place>> locations() {
     return _list('/client/locations/', (json) => Place.fromJson(json));
@@ -220,6 +264,15 @@ class ApiClient {
     return _list(
       '/client/tickets/',
       (json) => Ticket.fromJson(json),
+      auth: true,
+    );
+  }
+
+  /// « Mes réservations » du client connecté.
+  Future<List<BookingReservation>> myBookings() {
+    return _list(
+      '/client/bookings/mine/',
+      (json) => BookingReservation.fromJson(json),
       auth: true,
     );
   }
@@ -294,6 +347,8 @@ class ApiClient {
     String buyerIfu = '',
     String? origin,
     String? destination,
+    int? boardingPointId,
+    int? alightingPointId,
     required List<Map<String, dynamic>> passengers,
   }) async {
     final payload = await _request<Map<String, dynamic>>(
@@ -305,6 +360,10 @@ class ApiClient {
         'buyer_ifu': buyerIfu.trim(),
         if (origin != null && origin.isNotEmpty) 'origin': origin,
         if (destination != null && destination.isNotEmpty) 'destination': destination,
+        // ignore: use_null_aware_elements
+        if (boardingPointId != null) 'boarding_point_id': boardingPointId,
+        // ignore: use_null_aware_elements
+        if (alightingPointId != null) 'alighting_point_id': alightingPointId,
         'passengers': passengers,
       },
       auth: true,
@@ -451,6 +510,8 @@ class ApiClient {
     required int paymentMethod,
     String? origin,
     String? destination,
+    int? boardingPointId,
+    int? alightingPointId,
   }) {
     return _request<Map<String, dynamic>>(
       '/staff/sales/sell/',
@@ -463,6 +524,10 @@ class ApiClient {
         'payment_method': paymentMethod,
         if (origin != null && origin.isNotEmpty) 'origin': origin,
         if (destination != null && destination.isNotEmpty) 'destination': destination,
+        // ignore: use_null_aware_elements
+        if (boardingPointId != null) 'boarding_point_id': boardingPointId,
+        // ignore: use_null_aware_elements
+        if (alightingPointId != null) 'alighting_point_id': alightingPointId,
       },
       auth: true,
     );

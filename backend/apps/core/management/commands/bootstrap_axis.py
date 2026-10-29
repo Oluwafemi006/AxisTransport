@@ -83,6 +83,11 @@ class Command(BaseCommand):
         except CommandError as exc:
             self.stdout.write(self.style.WARNING(f"Planning hebdomadaire non initialisé : {exc}"))
 
+        try:
+            call_command("load_boarding_points", stdout=self.stdout)
+        except CommandError as exc:
+            self.stdout.write(self.style.WARNING(f"Points d'embarquement non chargés : {exc}"))
+
         self.stdout.write(self.style.SUCCESS("Données Axis confirmées initialisées."))
         self.stdout.write(
             self.style.WARNING(

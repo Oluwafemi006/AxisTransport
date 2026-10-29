@@ -55,22 +55,68 @@ class User {
   }
 }
 
+class BoardingPointInfo {
+  const BoardingPointInfo({
+    required this.id,
+    required this.name,
+    this.order = 1,
+    this.active = true,
+  });
+
+  final int id;
+  final String name;
+  final int order;
+  final bool active;
+
+  factory BoardingPointInfo.fromJson(Map<String, dynamic> json) {
+    return BoardingPointInfo(
+      id: json['id'] as int? ?? 0,
+      name: json['name'] as String? ?? '',
+      order: json['order'] as int? ?? 1,
+      active: json['active'] as bool? ?? true,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'order': order,
+    'active': active,
+  };
+}
+
 class Place {
-  const Place({required this.id, required this.name, required this.address});
+  const Place({
+    required this.id,
+    required this.name,
+    required this.address,
+    this.boardingPoints = const [],
+  });
 
   final int id;
   final String name;
   final String address;
+  final List<BoardingPointInfo> boardingPoints;
 
   factory Place.fromJson(Map<String, dynamic> json) {
     return Place(
       id: json['id'] as int,
       name: json['name'] as String? ?? '',
       address: json['address'] as String? ?? '',
+      boardingPoints: (json['boarding_points'] as List<dynamic>?)
+              ?.map((item) => BoardingPointInfo.fromJson(item as Map<String, dynamic>))
+              .toList() ??
+          const [],
     );
   }
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'address': address};
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'address': address,
+    if (boardingPoints.isNotEmpty)
+      'boarding_points': [for (final p in boardingPoints) p.toJson()],
+  };
 }
 
 class RouteStopInfo {
@@ -78,17 +124,23 @@ class RouteStopInfo {
     required this.id,
     required this.name,
     required this.position,
+    this.boardingPoints = const [],
   });
 
   final int id;
   final String name;
   final int position;
+  final List<BoardingPointInfo> boardingPoints;
 
   factory RouteStopInfo.fromJson(Map<String, dynamic> json) {
     return RouteStopInfo(
       id: json['id'] as int? ?? 0,
       name: json['name'] as String? ?? '',
       position: json['position'] as int? ?? 0,
+      boardingPoints: (json['boarding_points'] as List<dynamic>?)
+              ?.map((item) => BoardingPointInfo.fromJson(item as Map<String, dynamic>))
+              .toList() ??
+          const [],
     );
   }
 
@@ -96,6 +148,8 @@ class RouteStopInfo {
     'id': id,
     'name': name,
     'position': position,
+    if (boardingPoints.isNotEmpty)
+      'boarding_points': [for (final p in boardingPoints) p.toJson()],
   };
 }
 
@@ -237,6 +291,55 @@ class Trip {
             'currency': currentFare!.currency,
           },
   };
+}
+
+class TripBanner {
+  const TripBanner({
+    required this.bannerText,
+    required this.todayTripsCount,
+    required this.hasDepartureToday,
+  });
+
+  final String bannerText;
+  final int todayTripsCount;
+  final bool hasDepartureToday;
+
+  factory TripBanner.fromJson(Map<String, dynamic> json) {
+    return TripBanner(
+      bannerText: json['banner_text'] as String? ?? '',
+      todayTripsCount: json['today_trips_count'] as int? ?? 0,
+      hasDepartureToday: json['has_departure_today'] as bool? ?? false,
+    );
+  }
+}
+
+class NextAvailable {
+  const NextAvailable({
+    required this.tripId,
+    required this.date,
+    required this.departureAt,
+    required this.formattedDate,
+    required this.formattedTime,
+    this.routeLabel,
+  });
+
+  final int tripId;
+  final DateTime date;
+  final DateTime departureAt;
+  final String formattedDate;
+  final String formattedTime;
+  final String? routeLabel;
+
+  factory NextAvailable.fromJson(Map<String, dynamic> json) {
+    return NextAvailable(
+      tripId: json['trip_id'] as int,
+      date: DateTime.parse(json['date'] as String),
+      departureAt: DateTime.parse(json['departure_at'] as String).toLocal(),
+      formattedDate: json['formatted_date'] as String? ?? '',
+      formattedTime: json['formatted_time'] as String? ?? '',
+      routeLabel: json['route_label'] as String?,
+    );
+  }
 }
 
 class Seat {
@@ -430,6 +533,10 @@ class TicketPrintInfo {
     this.boardingPlace = '',
     this.origin = '',
     this.destination = '',
+    this.boardingPointName = '',
+    this.alightingPointName = '',
+    this.boardingDisplay = '',
+    this.alightingDisplay = '',
     this.segmentLabel = '',
     this.departureLabel = '',
     this.departureAt,
@@ -448,6 +555,10 @@ class TicketPrintInfo {
   final String boardingPlace;
   final String origin;
   final String destination;
+  final String boardingPointName;
+  final String alightingPointName;
+  final String boardingDisplay;
+  final String alightingDisplay;
   final String segmentLabel;
   final String departureLabel;
   final DateTime? departureAt;
@@ -469,6 +580,10 @@ class TicketPrintInfo {
         boardingPlace: json['boarding_place'] as String? ?? '',
         origin: json['origin'] as String? ?? '',
         destination: json['destination'] as String? ?? '',
+        boardingPointName: json['boarding_point_name'] as String? ?? '',
+        alightingPointName: json['alighting_point_name'] as String? ?? '',
+        boardingDisplay: json['boarding_display'] as String? ?? '',
+        alightingDisplay: json['alighting_display'] as String? ?? '',
         segmentLabel: json['segment_label'] as String? ?? '',
         departureLabel: json['departure_label'] as String? ?? '',
         departureAt: json['departure_at'] == null
@@ -495,6 +610,16 @@ class TicketPrintInfo {
     'payment_mode': paymentMode,
     'buyer_ifu': buyerIfu,
     'boarding_place': boardingPlace,
+    'origin': origin,
+    'destination': destination,
+    'boarding_point_name': boardingPointName,
+    'alighting_point_name': alightingPointName,
+    'boarding_display': boardingDisplay,
+    'alighting_display': alightingDisplay,
+    'segment_label': segmentLabel,
+    'departure_label': departureLabel,
+    'departure_at': departureAt?.toUtc().toIso8601String(),
+    'is_offset': isOffset,
     'price_incl_tax': priceInclTax,
     'price_excl_tax': priceExclTax,
     'tax_lines': [for (final line in taxLines) line.toJson()],
@@ -542,6 +667,10 @@ class Ticket {
     required this.currency,
     this.originName,
     this.destinationName,
+    this.boardingPointName,
+    this.alightingPointName,
+    this.boardingDisplay,
+    this.alightingDisplay,
     this.segmentLabel,
     this.departureLabel,
     this.effectiveDepartureAt,
@@ -549,6 +678,8 @@ class Ticket {
     this.publicUrl = '',
     this.printInfo,
     this.bookingId,
+    this.seatPreference = true,
+    this.seatSummaryLabel,
   });
 
   final int id;
@@ -567,6 +698,10 @@ class Ticket {
   final String currency;
   final String? originName;
   final String? destinationName;
+  final String? boardingPointName;
+  final String? alightingPointName;
+  final String? boardingDisplay;
+  final String? alightingDisplay;
   final String? segmentLabel;
   final String? departureLabel;
   final DateTime? effectiveDepartureAt;
@@ -577,6 +712,12 @@ class Ticket {
 
   /// Données d'impression (vendeur, mode de paiement, agence, taxes) ; absentes sur un ancien billet en cache.
   final TicketPrintInfo? printInfo;
+
+  /// Vrai si le client a choisi son siège ; faux si le siège a été attribué automatiquement.
+  final bool seatPreference;
+
+  /// Libellé du siège selon l'étape (avant paiement : préférence ou attribution après paiement ; après paiement : numéro définitif).
+  final String? seatSummaryLabel;
 
   bool get isConfirmed =>
       status == 'ISSUED' || status == 'CHECKED' || status == 'COMPLETED';
@@ -604,6 +745,10 @@ class Ticket {
       currency: json['currency'] as String? ?? 'XOF',
       originName: json['origin_name'] as String?,
       destinationName: json['destination_name'] as String?,
+      boardingPointName: json['boarding_point_name'] as String?,
+      alightingPointName: json['alighting_point_name'] as String?,
+      boardingDisplay: json['boarding_display'] as String?,
+      alightingDisplay: json['alighting_display'] as String?,
       segmentLabel: json['segment_label'] as String?,
       departureLabel: json['departure_label'] as String?,
       effectiveDepartureAt: json['effective_departure_at'] == null
@@ -612,6 +757,8 @@ class Ticket {
       reservationExpiresAt: json['reservation_expires_at'] == null
           ? null
           : DateTime.parse(json['reservation_expires_at'] as String).toLocal(),
+      seatPreference: json['seat_preference'] as bool? ?? true,
+      seatSummaryLabel: json['seat_summary_label'] as String?,
     );
   }
 
@@ -630,7 +777,18 @@ class Ticket {
     'qr_token': qrToken,
     'amount': amount,
     'currency': currency,
+    'origin_name': originName,
+    'destination_name': destinationName,
+    'boarding_point_name': boardingPointName,
+    'alighting_point_name': alightingPointName,
+    'boarding_display': boardingDisplay,
+    'alighting_display': alightingDisplay,
+    'segment_label': segmentLabel,
+    'departure_label': departureLabel,
+    'effective_departure_at': effectiveDepartureAt?.toUtc().toIso8601String(),
     'reservation_expires_at': reservationExpiresAt?.toUtc().toIso8601String(),
+    'seat_preference': seatPreference,
+    if (seatSummaryLabel != null) 'seat_summary_label': seatSummaryLabel,
   };
 }
 
@@ -643,6 +801,13 @@ class BookingReservation {
     required this.amount,
     required this.currency,
     required this.tickets,
+    this.clientStatusDisplay,
+    this.segmentLabel,
+    this.originName,
+    this.destinationName,
+    this.departureLabel,
+    this.effectiveDepartureAt,
+    this.tripDetail,
     this.paymentQuotes = const [],
     this.guestAccessToken,
     this.reservationExpiresAt,
@@ -652,6 +817,13 @@ class BookingReservation {
   final String reference;
   final String status;
   final String statusDisplay;
+  final String? clientStatusDisplay;
+  final String? segmentLabel;
+  final String? originName;
+  final String? destinationName;
+  final String? departureLabel;
+  final DateTime? effectiveDepartureAt;
+  final Trip? tripDetail;
   final num amount;
   final String currency;
   final List<Ticket> tickets;
@@ -681,6 +853,17 @@ class BookingReservation {
       reference: json['reference'] as String? ?? '',
       status: json['status'] as String? ?? '',
       statusDisplay: json['status_display'] as String? ?? '',
+      clientStatusDisplay: json['client_status_display'] as String?,
+      segmentLabel: json['segment_label'] as String?,
+      originName: json['origin_name'] as String?,
+      destinationName: json['destination_name'] as String?,
+      departureLabel: json['departure_label'] as String?,
+      effectiveDepartureAt: json['effective_departure_at'] == null
+          ? null
+          : DateTime.parse(json['effective_departure_at'] as String).toLocal(),
+      tripDetail: json['trip_detail'] is Map<String, dynamic>
+          ? Trip.fromJson(json['trip_detail'] as Map<String, dynamic>)
+          : null,
       amount: asNum(json['amount']),
       currency: json['currency'] as String? ?? 'XOF',
       guestAccessToken: json['guest_access_token'] as String?,

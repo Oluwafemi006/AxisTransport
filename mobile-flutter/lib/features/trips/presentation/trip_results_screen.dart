@@ -21,6 +21,7 @@ class TripResultsScreen extends ConsumerStatefulWidget {
 
 class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
   List<Trip> _trips = [];
+  NextAvailable? _nextAvailable;
   List<Place> _places = [];
   bool _loading = true;
   String? _error;
@@ -50,11 +51,12 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
     });
     final placesFuture = api.locations().catchError((_) => <Place>[]);
     try {
-      final trips = await api.searchTrips(search);
+      final result = await api.searchTripsDetailed(search);
       final places = await placesFuture;
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
-        _trips = trips;
+        _trips = result.trips;
+        _nextAvailable = result.nextAvailable;
         _places = places;
         _loading = false;
       });
@@ -62,6 +64,7 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _trips = [];
+        _nextAvailable = null;
         _loading = false;
         _error =
             'Connexion nécessaire pour connaître les places et tarifs actuels.';
@@ -332,14 +335,49 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
                 onAction: _load,
               )
             else if (_trips.isEmpty)
-              EmptyState(
-                icon: Icons.directions_bus_outlined,
-                title: 'Aucun départ disponible pour cette recherche.',
-                description:
-                    'Sélectionnez un autre jour ci-dessus ou modifiez vos critères.',
-                actionLabel: 'Modifier la recherche',
-                onAction: () => context.push(search.searchLocation),
-              )
+              if (_nextAvailable != null)
+                Padding(
+                  padding: const EdgeInsets.all(AxisSpacing.screen),
+                  child: AxisCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Aucun départ ce jour. Prochain départ pour ce trajet : ${_nextAvailable!.formattedDate} à ${_nextAvailable!.formattedTime}',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: axis.ink,
+                          ),
+                        ),
+                        const SizedBox(height: AxisSpacing.s14),
+                        AxisButton(
+                          label:
+                              'Voir le départ du ${_nextAvailable!.formattedDate}',
+                          icon: const Icon(Icons.arrow_forward_rounded),
+                          onPressed: () => context.go(
+                            search.withDate(_nextAvailable!.date).resultsLocation,
+                          ),
+                        ),
+                        const SizedBox(height: AxisSpacing.s10),
+                        AxisButton(
+                          variant: AxisButtonVariant.outline,
+                          height: AxisSizes.secondaryButton,
+                          label: 'Modifier la recherche',
+                          onPressed: () => context.push(search.searchLocation),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                EmptyState(
+                  icon: Icons.directions_bus_outlined,
+                  title: 'Aucun départ disponible pour cette recherche.',
+                  description:
+                      'Sélectionnez un autre jour ci-dessus ou modifiez vos critères.',
+                  actionLabel: 'Modifier la recherche',
+                  onAction: () => context.push(search.searchLocation),
+                )
             else ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(

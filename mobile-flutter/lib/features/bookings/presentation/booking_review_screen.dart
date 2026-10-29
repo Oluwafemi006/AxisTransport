@@ -103,7 +103,13 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
     final checkout = await ref
         .read(bookingCheckoutProvider.notifier)
         .payNow(ref.read(bookingDraftProvider), method);
-    if (checkout == null) return;
+    if (checkout == null) {
+      final err = ref.read(bookingCheckoutProvider).value?.error ?? '';
+      if (err.contains("Cette place vient d'être prise") && mounted) {
+        context.go('/billets/booking/${widget.tripId}/sieges');
+      }
+      return;
+    }
     if (checkout.paymentUrl == null) {
       await _verifyPayment();
     } else {
@@ -195,7 +201,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
     final theme = Theme.of(context);
     final axis = context.axis;
 
-    if (trip?.id != widget.tripId || !draft.hasAllSeats) {
+    if (trip?.id != widget.tripId || !draft.hasAllPassengers) {
       return Scaffold(
         body: Column(
           children: [
@@ -505,7 +511,7 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                 ),
                 const SizedBox(height: AxisSpacing.s6),
                 ...draft.passengers.map((passenger) {
-                  final seat = draft.seatsByPassenger[passenger.id]!;
+                  final seat = draft.seatsByPassenger[passenger.id];
                   final subtitleText = passenger.phone.trim().isNotEmpty
                       ? passenger.phone.trim()
                       : passenger.type.label;
@@ -563,7 +569,9 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                               ),
                             ),
                             child: Text(
-                              'Siège ${seat.number}',
+                              seat == null
+                                  ? 'Places attribuées après paiement'
+                                  : 'Siège ${seat.number}',
                               style: theme.textTheme.labelMedium?.copyWith(
                                 color: axis.onAccentSoft,
                               ),

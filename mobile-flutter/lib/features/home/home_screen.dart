@@ -19,6 +19,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<Trip> _trips = [];
   List<Ticket> _tickets = [];
+  TripBanner? _banner;
   bool _loading = true;
   String? _error;
 
@@ -45,6 +46,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     }
+    try {
+      final banner = await api.tripBanner();
+      if (mounted) setState(() => _banner = banner);
+    } catch (_) {}
     try {
       final user = await api.me();
       if (user.isClient) {
@@ -184,6 +189,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ],
           ),
+
+          // Bandeau dynamique du jour (si fourni par l'API)
+          if (_banner != null && _banner!.bannerText.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AxisSpacing.screen,
+                AxisSpacing.s14,
+                AxisSpacing.screen,
+                0,
+              ),
+              child: AxisCard(
+                backgroundColor: axis.surfaceSoft,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AxisSpacing.s14,
+                  vertical: AxisSpacing.s12,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.directions_bus_outlined,
+                      color: theme.colorScheme.primary,
+                      size: AxisSizes.icon,
+                    ),
+                    const SizedBox(width: AxisSpacing.s10),
+                    Expanded(
+                      child: Text(
+                        _banner!.bannerText,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: axis.ink,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           // Bandeau d'information d'embarquement (départ − 30 min)
           Padding(

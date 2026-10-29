@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import { beninDateKey, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
-import type { Checkout, Contact, Location, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
+import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { BusSeatMap } from "./bus-seat-map";
 import { PassengerForm, type PassengerItem } from "./passenger-form";
@@ -19,9 +19,12 @@ export function ClientPortal() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
   const [parcels, setParcels] = useState<Parcel[]>([]);
   const [rentals, setRentals] = useState<RentalBooking[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [banner, setBanner] = useState<TripBanner | null>(null);
+  const [nextAvailable, setNextAvailable] = useState<NextAvailable | null>(null);
   // Coordonnées lues dans les réglages admin ; vides tant qu'elles ne sont pas renseignées.
   const [contact, setContact] = useState<Contact>({ contact_phone: "", contact_whatsapp: "" });
   const [loading, setLoading] = useState(true);
@@ -34,17 +37,20 @@ export function ClientPortal() {
       if (me.role !== "CLIENT") {
         setUser(null);
         setTickets([]);
+        setBookings([]);
         setParcels([]);
         setRentals([]);
         return;
       }
-      const [myTickets, myParcels, myRentals] = await Promise.all([
+      const [myTickets, myBookings, myParcels, myRentals] = await Promise.all([
         apiList<Ticket>("/client/tickets/"),
+        apiList<Booking>("/client/bookings/mine/").catch(() => []),
         apiList<Parcel>("/client/parcels/"),
         apiList<RentalBooking>("/client/rentals/"),
       ]);
       setUser(me);
       setTickets(myTickets);
+      setBookings(myBookings);
       setParcels(myParcels);
       setRentals(myRentals);
     } catch {
@@ -67,6 +73,7 @@ export function ClientPortal() {
       setLocations(activeLocations);
       setVehicles(rentalVehicles);
       setPaymentMethods(methods);
+      apiFetch<TripBanner>("/client/trips/banner/", {}, false).then(setBanner).catch(() => undefined);
       apiFetch<Contact>("/client/contact/", {}, false).then(setContact).catch(() => undefined);
       await loadPrivate();
     } catch (reason) {
@@ -82,6 +89,7 @@ export function ClientPortal() {
     clearTokens();
     setUser(null);
     setTickets([]);
+    setBookings([]);
     setParcels([]);
     setRentals([]);
     setTab("accueil");
@@ -101,6 +109,7 @@ export function ClientPortal() {
   async function runSearch() {
     const problem = searchError(searchOrigin, searchDestination) ?? searchDateError(searchDate, beninDateKey());
     setSearchMessage(problem ?? "");
+    setNextAvailable(null);
     if (!problem) {
       try {
         const query = new URLSearchParams({
@@ -108,7 +117,14 @@ export function ClientPortal() {
           destination: searchDestination,
           ...(searchDate ? { date: searchDate } : {}),
         });
-        const serverTrips = await apiList<Trip>(`/client/trips/?${query.toString()}`, false);
+        const payload = await apiFetch<Trip[] | { results: Trip[]; next_available?: NextAvailable | null }>(
+          `/client/trips/?${query.toString()}`,
+          {},
+          false
+        );
+        const serverTrips = Array.isArray(payload) ? payload : (payload.results || []);
+        const nextAvail = !Array.isArray(payload) && payload.next_available ? payload.next_available : null;
+        setNextAvailable(nextAvail);
         if (serverTrips.length > 0) {
           setTrips(current => {
             const serverIds = new Set(serverTrips.map(t => t.id));
@@ -168,7 +184,7 @@ export function ClientPortal() {
     <>
       <div className="top">
         <div className="wrap">
-          <span>Axe Parakou – Cotonou</span>
+          <span>{banner?.banner_text ? banner.banner_text.split('.')[0] : "Voyages interurbains au Bénin"}</span>
           {contact.contact_phone && <span>Téléphone : <PhoneText value={contact.contact_phone} /></span>}
           <WhatsAppIcon value={contact.contact_whatsapp} />
           <span>Voyagez en toute confiance</span>
@@ -218,13 +234,12 @@ export function ClientPortal() {
                   <small>AXIS TRANSPORT</small>
                   <h1>Voyagez simplement avec AXIS Transport</h1>
                   <p>Réservez votre place en ligne, payez par Mobile Money et voyagez avec un billet électronique.</p>
-                  <div className="axe">
-                    <span>Parakou</span><em>›</em>
-                    <span>Savè</span><em>›</em>
-                    <span>Kétou</span><em>›</em>
-                    <span>Porto-Novo</span><em>›</em>
-                    <span>Cotonou</span>
-                  </div>
+                  {banner?.banner_text ? (
+                    <div className="axe" style={{ padding: '12px 20px', fontSize: '15px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '10px', lineHeight: 1.4 }}>
+                      <span style={{ fontSize: '20px' }}>🚌</span>
+                      <span>{banner.banner_text}</span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -272,8 +287,45 @@ export function ClientPortal() {
                   </div>
                   
                   {filteredTrips.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '40px', background: '#fff', borderRadius: '16px', border: '1px dashed var(--line)', color: 'var(--mute)' }}>
-                      Aucun départ publié pour ces critères.
+                    <div style={{ textAlign: 'center', padding: '36px 20px', background: '#fff', borderRadius: '16px', border: '1px dashed var(--line)', color: 'var(--mute)' }}>
+                      {nextAvailable ? (
+                        <div>
+                          <p style={{ color: 'var(--text)', fontWeight: 700, fontSize: '16px', marginBottom: '8px' }}>
+                            Aucun départ ce jour. Prochain départ pour ce trajet : {nextAvailable.formatted_date} à {nextAvailable.formatted_time}
+                          </p>
+                          <button
+                            type="button"
+                            className="btn p"
+                            style={{ marginTop: '10px' }}
+                            onClick={() => {
+                              setSearchDate(nextAvailable.date);
+                              setSearchMessage("");
+                              const query = new URLSearchParams({
+                                origin: searchOrigin,
+                                destination: searchDestination,
+                                date: nextAvailable.date,
+                              });
+                              apiFetch<Trip[] | { results: Trip[]; next_available?: NextAvailable | null }>(`/client/trips/?${query.toString()}`, {}, false)
+                                .then(payload => {
+                                  const resTrips = Array.isArray(payload) ? payload : (payload.results || []);
+                                  if (resTrips.length > 0) {
+                                    setTrips(current => {
+                                      const ids = new Set(resTrips.map(t => t.id));
+                                      return [...resTrips, ...current.filter(t => !ids.has(t.id))];
+                                    });
+                                    setPreselectedTripId(String(resTrips[0].id));
+                                  }
+                                  setNextAvailable(null);
+                                })
+                                .catch(() => undefined);
+                            }}
+                          >
+                            Voir le départ du {nextAvailable.formatted_date} à {nextAvailable.formatted_time} →
+                          </button>
+                        </div>
+                      ) : (
+                        <p>Aucun départ publié pour ces critères.</p>
+                      )}
                     </div>
                   ) : (
                     <div className="grid3">
@@ -288,7 +340,9 @@ export function ClientPortal() {
                           <div className="d">Date : {formatDate(trip.departure_at)}</div>
                           <div className="times">
                             <span>Départ <b>{new Date(trip.departure_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</b></span>
-                            <span>Arrivée <b>{trip.arrival_at ? new Date(trip.arrival_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'}) : "--:--"}</b></span>
+                            {trip.arrival_at && (
+                              <span>Arrivée <b>{new Date(trip.arrival_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</b></span>
+                            )}
                           </div>
                           <div className="b">
                             <span className="price">{trip.current_fare ? money(trip.current_fare.amount, trip.current_fare.currency) : "Sur devis"}</span>
@@ -334,7 +388,7 @@ export function ClientPortal() {
                       <div className="pic" style={ { backgroundImage: "url('/images/service-passenger.jpg')" } }></div>
                       <div>
                         <h3>Transport de voyageurs</h3>
-                        <p>Réservez votre place sur l'axe Parakou – Cotonou.</p>
+                        <p>Réservez votre place pour vos voyages interurbains.</p>
                       </div>
                     </div>
                     <div className="card" onClick={() => setTab("colis")}>
@@ -361,8 +415,10 @@ export function ClientPortal() {
           {tab === "billets" && (
             <main className="wrap section-margin" style={{ paddingBottom: '60px' }}>
               <h2>Billetterie & Réservation</h2>
-              <p className="sub">Trouvez un départ, choisissez votre siège et recevez votre billet électronique.</p>
-              <Tickets user={user} trips={trips} tickets={tickets} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} />
+
+              <p className="sub">Trouvez un départ, choisissez votre siège (facultatif) et recevez votre billet électronique.</p>
+              <Tickets user={user} trips={trips} locations={locations} tickets={tickets} bookings={bookings} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} />
+
             </main>
           )}
           
@@ -438,12 +494,14 @@ export function ClientPortal() {
 // ==============================================
 
 type Quote = Omit<Checkout, "transaction_id" | "payment_url" | "simulated">;
-type BookingPayload = { id: number; status: string; tickets: Ticket[]; payment_quotes: Quote[]; guest_access_token?: string };
+type BookingPayload = Booking & { guest_access_token?: string };
 
 function Tickets({
   user,
   trips,
+  locations,
   tickets,
+  bookings = [],
   paymentMethods,
   onAuthenticated,
   onChanged,
@@ -453,7 +511,9 @@ function Tickets({
 }: {
   user: User | null;
   trips: Trip[];
+  locations: Location[];
   tickets: Ticket[];
+  bookings?: Booking[];
   paymentMethods: PaymentMethod[];
   onAuthenticated: () => Promise<void>;
   onChanged: () => Promise<void>;
@@ -464,6 +524,12 @@ function Tickets({
   const [tripId, setTripId] = useState(preselectedTripId || "");
   const [originId, setOriginId] = useState(searchOrigin || "");
   const [destinationId, setDestinationId] = useState(searchDestination || "");
+  const [boardingPointId, setBoardingPointId] = useState("");
+  const [alightingPointId, setAlightingPointId] = useState("");
+
+  const defaultUserFullName = user
+    ? [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username
+    : "";
 
   useEffect(() => {
     if (preselectedTripId) setTripId(preselectedTripId);
@@ -475,10 +541,13 @@ function Tickets({
   }, [searchOrigin, searchDestination]);
   const [paymentCheck, setPaymentCheck] = useState<{ ticketId: number; busy: boolean; text: string } | null>(null);
   const [seats, setSeats] = useState<Seat[]>([]);
-  const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([]);
-  const [passengers, setPassengers] = useState<PassengerItem[]>([]);
+  const [passengers, setPassengers] = useState<PassengerItem[]>(() => [
+    { seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" },
+  ]);
+  const selectedSeatIds = passengers.map((p) => p.seatId).filter((id): id is number => id !== null);
   const [contactPhone, setContactPhone] = useState("");
   const [buyerIfu, setBuyerIfu] = useState("");
+  const [pendingBooking, setPendingBooking] = useState<BookingPayload | null>(null);
   const [pendingTickets, setPendingTickets] = useState<Ticket[]>([]);
   const [checkout, setCheckout] = useState<Checkout | null>(null);
   // Réservation en cours. Sans compte, le serveur renvoie un jeton qui autorise le paiement.
@@ -493,6 +562,46 @@ function Tickets({
   const [now, setNow] = useState(() => Date.now());
   const [message, setMessage] = useState("");
   const selectedTrip = trips.find((trip) => String(trip.id) === tripId);
+  const effectiveOriginId = originId || searchOrigin || (selectedTrip ? String(selectedTrip.route_detail.origin) : "");
+  const effectiveDestId = destinationId || searchDestination || (selectedTrip ? String(selectedTrip.route_detail.destination) : "");
+
+  const getActivePointsForCity = useCallback((cityIdStr: string) => {
+    if (!cityIdStr) return [];
+    const numId = Number(cityIdStr);
+    const fromStop = selectedTrip?.route_detail?.stops?.find((s) => s.id === numId || s.location_id === numId);
+    if (fromStop?.boarding_points) return fromStop.boarding_points.filter((p) => p.active);
+    if (selectedTrip?.route_detail?.origin === numId && selectedTrip.route_detail.origin_detail?.boarding_points) {
+      return selectedTrip.route_detail.origin_detail.boarding_points.filter((p) => p.active);
+    }
+    if (selectedTrip?.route_detail?.destination === numId && selectedTrip.route_detail.destination_detail?.boarding_points) {
+      return selectedTrip.route_detail.destination_detail.boarding_points.filter((p) => p.active);
+    }
+    const fromLoc = locations.find((l) => l.id === numId);
+    return (fromLoc?.boarding_points || []).filter((p) => p.active);
+  }, [selectedTrip, locations]);
+
+  const activeBoardingPoints = getActivePointsForCity(effectiveOriginId);
+  const activeAlightingPoints = getActivePointsForCity(effectiveDestId);
+
+  useEffect(() => {
+    if (activeBoardingPoints.length === 1) {
+      setBoardingPointId(String(activeBoardingPoints[0].id));
+    } else if (activeBoardingPoints.length === 0) {
+      setBoardingPointId("");
+    } else if (!activeBoardingPoints.some((p) => String(p.id) === boardingPointId)) {
+      setBoardingPointId("");
+    }
+  }, [effectiveOriginId, activeBoardingPoints, boardingPointId]);
+
+  useEffect(() => {
+    if (activeAlightingPoints.length === 1) {
+      setAlightingPointId(String(activeAlightingPoints[0].id));
+    } else if (activeAlightingPoints.length === 0) {
+      setAlightingPointId("");
+    } else if (!activeAlightingPoints.some((p) => String(p.id) === alightingPointId)) {
+      setAlightingPointId("");
+    }
+  }, [effectiveDestId, activeAlightingPoints, alightingPointId]);
   const onlineMethods = paymentMethods.filter((method) => method.online);
   // Un seul moyen de paiement en ligne : une seule action « Payer [total] ». Plusieurs : le choix reste à l'écran.
   const singleQuote = tripQuotes.length === 1 ? tripQuotes[0] : null;
@@ -505,8 +614,17 @@ function Tickets({
   useEffect(() => {
     if (user) {
       setContactPhone((current) => current || user.phone || "");
+      setPassengers((prev) => {
+        if (prev.length === 0) {
+          return [{ seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user.phone || "" }];
+        }
+        if (prev.length === 1 && !prev[0].fullName.trim()) {
+          return [{ ...prev[0], fullName: defaultUserFullName, phone: prev[0].phone || user.phone || "" }];
+        }
+        return prev;
+      });
     }
-  }, [user]);
+  }, [user, defaultUserFullName]);
 
   // Au chargement, reprend la réservation conservée dans le navigateur (retour de la page de paiement,
   // onglet fermé, page rechargée). Un invité y accède par son jeton, un client connecté par son compte.
@@ -520,6 +638,7 @@ function Tickets({
         const first = found.tickets[0];
         if (first.status !== "HELD" && first.status !== "ISSUED") { clearGuestBooking(); return; }
         setBooking({ id: stored.id, token: stored.token });
+        setPendingBooking(found);
         setPendingTickets(found.tickets);
         setBookingQuotes(found.payment_quotes);
         const quote = found.payment_quotes.find((item) => item.payment_method === stored.paymentMethod);
@@ -550,7 +669,7 @@ function Tickets({
   useEffect(() => {
     setTripQuotes([]);
     if (!tripId) return;
-    const count = Math.max(1, selectedSeatIds.length);
+    const count = Math.max(1, passengers.length);
     let cancelled = false;
     const params = new URLSearchParams({ passengers: String(count) });
     const orig = originId || searchOrigin;
@@ -559,35 +678,64 @@ function Tickets({
     if (dest) params.set("destination", dest);
     apiFetch<Quote[]>(`/client/trips/${tripId}/payment-quotes/?${params.toString()}`, {}, false).then((quotes) => { if (!cancelled) setTripQuotes(quotes); }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [tripId, selectedSeatIds.length, originId, destinationId, searchOrigin, searchDestination]);
+  }, [tripId, passengers.length, originId, destinationId, searchOrigin, searchDestination]);
 
   function handleToggleSeat(seat: Seat) {
-    setSelectedSeatIds((current) => {
-      const exists = current.includes(seat.id);
-      let next: number[];
-      if (exists) {
-        next = current.filter((id) => id !== seat.id);
-      } else {
-        if (current.length >= 8) return current;
-        next = [...current, seat.id];
+    setPassengers((prev) => {
+      const existingIdx = prev.findIndex((p) => p.seatId === seat.id);
+      if (existingIdx !== -1) {
+        const updated = [...prev];
+        updated[existingIdx] = { ...updated[existingIdx], seatId: null, seatNumber: null };
+        return updated;
       }
+      const emptySeatIdx = prev.findIndex((p) => p.seatId === null);
+      if (emptySeatIdx !== -1) {
+        const updated = [...prev];
+        updated[emptySeatIdx] = { ...updated[emptySeatIdx], seatId: seat.id, seatNumber: seat.number };
+        return updated;
+      }
+      if (prev.length >= 8) return prev;
+      return [
+        ...prev,
+        {
+          seatId: seat.id,
+          seatNumber: seat.number,
+          fullName: prev.length === 0 ? defaultUserFullName : "",
+          phone: prev.length === 0 ? (user?.phone || contactPhone) : "",
+        },
+      ];
+    });
+  }
 
-      setPassengers((prev) => {
-        const defaultName = user ? [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username : "";
-        return next.map((sId, index) => {
-          const found = prev.find((p) => p.seatId === sId);
-          if (found) return found;
-          const sObj = seats.find((s) => s.id === sId);
-          return {
-            seatId: sId,
-            seatNumber: sObj?.number ?? String(sId),
-            fullName: index === 0 && !prev.length ? defaultName : "",
-            phone: index === 0 && !prev.length ? (user?.phone || contactPhone) : "",
-          };
-        });
-      });
+  function handleAddPassenger() {
+    setPassengers((prev) => {
+      if (prev.length >= 8) return prev;
+      return [
+        ...prev,
+        {
+          seatId: null,
+          seatNumber: null,
+          fullName: prev.length === 0 ? defaultUserFullName : "",
+          phone: prev.length === 0 ? (user?.phone || contactPhone) : "",
+        },
+      ];
+    });
+  }
 
-      return next;
+  function handleRemovePassenger(index: number) {
+    setPassengers((prev) => {
+      if (prev.length <= 1) return prev;
+      return prev.filter((_, idx) => idx !== index);
+    });
+  }
+
+  function handleClearSeat(index: number) {
+    setPassengers((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], seatId: null, seatNumber: null };
+      }
+      return updated;
     });
   }
 
@@ -601,21 +749,22 @@ function Tickets({
     });
   }
 
-  // Compte à rebours de la tenue du siège.
+  // Compte à rebours de la tenue du siège (et pour « Mes réservations »).
+  const hasHeldBookings = bookings.some((b) => b.status === "HELD");
   const expiresAt = held && pending?.reservation_expires_at ? new Date(pending.reservation_expires_at).getTime() : null;
   useEffect(() => {
-    if (!expiresAt) return;
+    if (!expiresAt && !hasHeldBookings) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [expiresAt]);
+  }, [expiresAt, hasHeldBookings]);
   const remainingSeconds = expiresAt ? Math.max(0, Math.floor((expiresAt - now) / 1000)) : null;
   const expired = remainingSeconds === 0;
   useEffect(() => { if (expired) void loadSeats(); }, [expired, loadSeats]);
 
   function forget() {
     clearGuestBooking();
-    setBooking(null); setPendingTickets([]); setCheckout(null); setBookingQuotes([]); setPaymentFailed(false); setMessage("");
-    setSelectedSeatIds([]); setPassengers([]);
+    setBooking(null); setPendingBooking(null); setPendingTickets([]); setCheckout(null); setBookingQuotes([]); setPaymentFailed(false); setMessage("");
+    setPassengers([{ seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" }]);
     void loadSeats();
   }
 
@@ -627,26 +776,54 @@ function Tickets({
   }
 
   // Annulation d'une réservation non payée : le serveur libère le siège tout de suite.
-  async function cancelBooking() {
-    if (locked.current || !booking) return;
+  async function cancelBooking(targetBooking?: { id: number; token: string | null }) {
+    const target = targetBooking ?? booking;
+    if (locked.current || !target) return;
     if (!window.confirm("Annuler cette réservation ? Les sièges seront libérés.")) return;
     locked.current = true;
     setBusy(true);
     try {
-      await apiFetch(`/client/bookings/${booking.id}/cancel/`, { method: "POST", headers: access(booking) }, !booking.token);
-      forget();
+      await apiFetch(`/client/bookings/${target.id}/cancel/`, { method: "POST", headers: access(target) }, !target.token);
+      if (!targetBooking || (booking && booking.id === target.id)) {
+        forget();
+      }
       setMessage("Réservation annulée. Les sièges sont libérés.");
-      void onChanged();
+      await Promise.all([onChanged(), loadSeats()]);
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Annulation impossible."); }
     finally { locked.current = false; setBusy(false); }
   }
 
+  async function resumeBookingFromList(b: Booking) {
+    setBooking({ id: b.id, token: null });
+    setPendingBooking(b);
+    setPendingTickets(b.tickets);
+    setBookingQuotes(b.payment_quotes);
+    setCheckout(null);
+    const onlineMethod = onlineMethods[0];
+    if (onlineMethod) {
+      locked.current = true;
+      setBusy(true);
+      setMessage("");
+      const redirecting = await openPayment({ id: b.id, token: null }, onlineMethod.id);
+      if (!redirecting) {
+        locked.current = false;
+        setBusy(false);
+      }
+    }
+  }
+
   async function createBooking() {
-    if (passengers.length === 0) throw new Error("Veuillez sélectionner au moins une place sur le plan.");
+    if (passengers.length === 0) throw new Error("Veuillez renseigner au moins un passager.");
     for (let i = 0; i < passengers.length; i++) {
       if (!passengers[i].fullName.trim()) {
-        throw new Error(`Veuillez renseigner le nom du passager pour le siège N° ${passengers[i].seatNumber}.`);
+        throw new Error(`Veuillez renseigner le nom du passager ${i + 1}.`);
       }
+    }
+    if (activeBoardingPoints.length > 1 && !boardingPointId) {
+      throw new Error("Veuillez choisir un point d’embarquement.");
+    }
+    if (activeAlightingPoints.length > 1 && !alightingPointId) {
+      throw new Error("Veuillez choisir un point de débarquement.");
     }
     const orig = originId || searchOrigin;
     const dest = destinationId || searchDestination;
@@ -656,21 +833,23 @@ function Tickets({
       buyer_ifu: buyerIfu.trim(),
       origin: orig || undefined,
       destination: dest || undefined,
+      boarding_point_id: boardingPointId ? Number(boardingPointId) : undefined,
+      alighting_point_id: alightingPointId ? Number(alightingPointId) : undefined,
       passengers: passengers.map((p) => ({
         full_name: p.fullName.trim(),
         phone: p.phone.trim() || contactPhone,
-        seat: p.seatId,
+        ...(p.seatId !== null ? { seat: p.seatId } : {}),
       })),
     };
     const created = await apiFetch<BookingPayload>("/client/bookings/", { method: "POST", body: JSON.stringify(payload) }, !!user);
     const current = { id: created.id, token: created.guest_access_token ?? null };
     saveGuestBooking(current.id, current.token);
     setBooking(current);
+    setPendingBooking(created);
     setPendingTickets(created.tickets);
     setBookingQuotes(created.payment_quotes);
     setCheckout(null);
-    setSelectedSeatIds([]);
-    setPassengers([]);
+    setPassengers([{ seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" }]);
     void Promise.all([onChanged(), loadSeats()]);
     return current;
   }
@@ -708,6 +887,7 @@ function Tickets({
       redirecting = await openPayment(current, singleQuote.payment_method);
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Réservation impossible.");
+      void loadSeats();
     } finally {
       if (!redirecting) { locked.current = false; setBusy(false); }
     }
@@ -722,7 +902,10 @@ function Tickets({
     try {
       await createBooking();
       setMessage("Sièges réservés temporairement. Finalisez le paiement avant l’expiration.");
-    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Réservation impossible."); }
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Réservation impossible.");
+      void loadSeats();
+    }
     finally { locked.current = false; setBusy(false); }
   }
 
@@ -755,12 +938,12 @@ function Tickets({
     setBusy(true);
     setMessage("Vérification du paiement…");
     try {
-      const response = await apiFetch<{ booking: { tickets: Ticket[] } }>(`/client/bookings/${target.id}/pay/`, { method: "POST", headers: access(target), body: JSON.stringify({ payment_method: current.payment_method, external_reference: current.transaction_id }) }, !target.token);
+      const response = await apiFetch<{ booking: BookingPayload }>(`/client/bookings/${target.id}/pay/`, { method: "POST", headers: access(target), body: JSON.stringify({ payment_method: current.payment_method, external_reference: current.transaction_id }) }, !target.token);
+      setPendingBooking(response.booking);
       setPendingTickets(response.booking.tickets);
       setCheckout(null);
       setMessage("Paiement confirmé, billet(s) émis.");
-      setSelectedSeatIds([]);
-      setPassengers([]);
+      setPassengers([{ seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" }]);
       await Promise.all([onChanged(), loadSeats()]);
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Paiement non confirmé."); }
     finally { locked.current = false; setBusy(false); }
@@ -771,10 +954,48 @@ function Tickets({
   const heldQuote = payableQuotes.find((item) => item.payment_method === checkout?.payment_method) ?? (payableQuotes.length === 1 ? payableQuotes[0] : null);
   const countdown = remainingSeconds === null ? "—" : `${Math.floor(remainingSeconds / 60)} min ${String(remainingSeconds % 60).padStart(2, "0")} s`;
 
+  const currentStep = issued ? 3 : held ? 2 : 1;
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }} className="responsive-grid">
       <div className="card">
         <h3>Réserver un billet</h3>
+        {/* Indicateur d'étapes */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr",
+            gap: "8px",
+            marginTop: "12px",
+            marginBottom: "16px",
+            fontSize: "12px",
+            fontWeight: 700,
+          }}
+        >
+          {[
+            [1, "1. Trajet & Passagers"],
+            [2, "2. Récapitulatif & Paiement"],
+            [3, "3. Billets émis"],
+          ].map(([stepNum, stepLabel]) => {
+            const active = currentStep === stepNum;
+            const done = currentStep > (stepNum as number);
+            return (
+              <div
+                key={stepNum}
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: "8px",
+                  textAlign: "center",
+                  background: active ? "var(--blue)" : done ? "var(--okbg)" : "var(--bg)",
+                  color: active ? "#fff" : done ? "var(--ok)" : "var(--mute)",
+                  border: active ? "1px solid var(--blue)" : "1px solid var(--line)",
+                }}
+              >
+                {stepLabel}
+              </div>
+            );
+          })}
+        </div>
         <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
         {trips.length === 0 ? <p>Aucun trajet disponible.</p> : (
           <form onSubmit={singleQuote ? payNow : reserveOnly} className="f">
@@ -784,8 +1005,9 @@ function Tickets({
               onChange={(e) => {
                 const newId = e.target.value;
                 setTripId(newId);
-                setSelectedSeatIds([]);
-                setPassengers([]);
+                setPassengers([
+                  { seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" },
+                ]);
                 const found = trips.find((t) => String(t.id) === newId);
                 const stops = found?.route_detail?.stops || [];
                 if (stops.length >= 2) {
@@ -842,6 +1064,41 @@ function Tickets({
                 </div>
               </div>
             )}
+
+            {selectedTrip && (activeBoardingPoints.length > 0 || activeAlightingPoints.length > 0) && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
+                {activeBoardingPoints.length > 0 && (
+                  <div>
+                    <label style={{ fontSize: '13px' }}>Point d’embarquement</label>
+                    <select
+                      value={boardingPointId}
+                      onChange={(e) => setBoardingPointId(e.target.value)}
+                      required={activeBoardingPoints.length > 1}
+                    >
+                      {activeBoardingPoints.length > 1 && <option value="">Choisir un point…</option>}
+                      {activeBoardingPoints.map((pt) => (
+                        <option key={pt.id} value={pt.id}>{pt.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {activeAlightingPoints.length > 0 && (
+                  <div>
+                    <label style={{ fontSize: '13px' }}>Point de débarquement</label>
+                    <select
+                      value={alightingPointId}
+                      onChange={(e) => setAlightingPointId(e.target.value)}
+                      required={activeAlightingPoints.length > 1}
+                    >
+                      {activeAlightingPoints.length > 1 && <option value="">Choisir un point…</option>}
+                      {activeAlightingPoints.map((pt) => (
+                        <option key={pt.id} value={pt.id}>{pt.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
             
             {seats.length > 0 && (
               <BusSeatMap
@@ -855,6 +1112,9 @@ function Tickets({
             <PassengerForm
               passengers={passengers}
               onPassengerChange={handlePassengerChange}
+              onAddPassenger={handleAddPassenger}
+              onRemovePassenger={handleRemovePassenger}
+              onClearSeat={handleClearSeat}
               contactPhone={contactPhone}
               onContactPhoneChange={setContactPhone}
               buyerIfu={buyerIfu}
@@ -863,18 +1123,59 @@ function Tickets({
             />
 
             {singleQuote && !held && !issued && (
-              <p style={{ marginTop: '20px', fontSize: '14px', color: 'var(--mute)' }}>
-                Total : <b>{money(singleQuote.total, singleQuote.currency)}</b>
-                {selectedSeatIds.length > 1 && ` (${selectedSeatIds.length} billets)`}
-              </p>
+              <div
+                style={{
+                  marginTop: "20px",
+                  padding: "14px",
+                  borderRadius: "10px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--line)",
+                  fontSize: "13px",
+                }}
+              >
+                <div style={{ fontWeight: 700, color: "var(--navy)", marginBottom: "6px" }}>
+                  Récapitulatif avant paiement
+                </div>
+                <div>
+                  Trajet :{" "}
+                  <b>
+                    {(() => {
+                      const stops = selectedTrip?.route_detail?.stops || [];
+                      const origName = stops.find((s) => String(s.id) === originId)?.name || selectedTrip?.route_detail?.origin_detail?.name;
+                      const destName = stops.find((s) => String(s.id) === destinationId)?.name || selectedTrip?.route_detail?.destination_detail?.name;
+                      return origName && destName ? `${origName} → ${destName}` : selectedTrip?.route_detail?.label;
+                    })()}
+                  </b>
+                </div>
+                {selectedTrip && (
+                  <div>
+                    Date et passage : <b>{formatDate(selectedTrip.departure_at)}</b>
+                  </div>
+                )}
+                <div style={{ marginTop: "6px" }}>
+                  Passagers ({passengers.length}) :{" "}
+                  {passengers
+                    .map(
+                      (p, idx) =>
+                        `${p.fullName.trim() || `Passager ${idx + 1}`} (${
+                          p.seatNumber ? `Siège ${p.seatNumber} — préférence` : "places attribuées après paiement"
+                        })`
+                    )
+                    .join(" · ")}
+                </div>
+                <div style={{ marginTop: "6px", fontSize: "14px" }}>
+                  Total (sans frais FedaPay ajoutés) : <b>{money(singleQuote.total, singleQuote.currency)}</b>
+                  {passengers.length > 1 && ` (${passengers.length} billets)`}
+                </div>
+              </div>
             )}
             {!held && !issued && (singleQuote ? (
-              <button className="btn p" style={{ marginTop: '16px', width: '100%' }} disabled={busy || selectedSeatIds.length === 0}>
-                {busy ? "Patientez…" : selectedSeatIds.length === 0 ? "Sélectionnez au moins un siège" : `Payer ${money(singleQuote.total, singleQuote.currency)}${selectedSeatIds.length > 1 ? ` (${selectedSeatIds.length} billets)` : ""}`}
+              <button className="btn p" style={{ marginTop: '16px', width: '100%' }} disabled={busy || !tripId || passengers.length === 0}>
+                {busy ? "Patientez…" : !tripId ? "Choisissez un départ" : `Payer ${money(singleQuote.total, singleQuote.currency)}${passengers.length > 1 ? ` (${passengers.length} billets)` : ""}`}
               </button>
             ) : (
-              <button className="btn p" style={{ marginTop: '24px', width: '100%' }} disabled={busy || selectedSeatIds.length === 0 || !selectedTrip?.current_fare}>
-                {busy ? "Patientez…" : selectedSeatIds.length === 0 ? "Sélectionnez au moins un siège" : <>Réserver {selectedTrip?.current_fare ? ` · ${selectedSeatIds.length} place(s)` : ""}</>}
+              <button className="btn p" style={{ marginTop: '24px', width: '100%' }} disabled={busy || !tripId || passengers.length === 0 || !selectedTrip?.current_fare}>
+                {busy ? "Patientez…" : !tripId ? "Choisissez un départ" : <>Réserver {selectedTrip?.current_fare ? ` · ${passengers.length} place(s)` : ""}</>}
               </button>
             ))}
           </form>
@@ -884,10 +1185,25 @@ function Tickets({
         
         {held && pending && booking && (
           <div style={{ background: 'var(--warnbg)', color: 'var(--warn)', padding: '20px', borderRadius: '12px', marginTop: '20px', border: '1px solid #f2dfb6' }}>
-            <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>Réservation en cours · {pending.reference}</p>
-            <p style={{ fontSize: '14px' }}>
-              Siège(s) : <b>{pendingTickets.map((t) => t.seat_detail?.number ?? t.seat).join(", ")}</b> · {pending.segment_label || pending.trip_detail.route_detail.label}
-            </p>
+            <p style={{ fontWeight: 'bold', marginBottom: '8px' }}>Récapitulatif de la réservation · {pendingBooking?.reference || pending.reference}</p>
+            <div style={{ fontSize: '13px', display: 'grid', gap: '4px', marginBottom: '10px' }}>
+              <div>Trajet : <b>{pending.segment_label || pending.trip_detail.route_detail.label}</b></div>
+              <div>{pendingBooking?.departure_label || pending.departure_label || "Heure de passage"} : <b>{formatDate(pendingBooking?.effective_departure_at || pending.effective_departure_at || pending.trip_detail.departure_at)}</b></div>
+              <div>Embarquement : <b>{pendingBooking?.origin_name || pending.origin_name || pending.trip_detail.route_detail.origin_detail.name}</b> · Débarquement : <b>{pendingBooking?.destination_name || pending.destination_name || pending.trip_detail.route_detail.destination_detail.name}</b></div>
+              <div>
+                Passagers & places :
+                <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
+                  {pendingTickets.map((t) => (
+                    <li key={t.id}>
+                      <b>{t.passenger_name}</b> —{" "}
+                      {t.seat_preference === false
+                        ? "places attribuées après paiement"
+                        : `Siège N° ${t.seat_detail?.number ?? t.seat} (préférence)`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
             {expired ? (
               <>
                 <p style={{ fontSize: '14px', margin: '8px 0 16px' }}>Le délai de réservation est écoulé : les sièges ne sont plus tenus.</p>
@@ -899,7 +1215,7 @@ function Tickets({
                 <p style={{ fontSize: '14px', margin: '8px 0 16px' }}>Temps restant : <b>{countdown}</b></p>
                 {heldQuote && (
                   <p style={{ fontSize: '14px', marginBottom: '12px' }}>
-                    Total à régler : <b>{money(heldQuote.total, heldQuote.currency)}</b>
+                    Total à régler (sans frais FedaPay ajoutés) : <b>{money(heldQuote.total, heldQuote.currency)}</b>
                     {pendingTickets.length > 1 && ` (${pendingTickets.length} billets)`}
                   </p>
                 )}
@@ -980,6 +1296,110 @@ function Tickets({
         )}
       </div>
 
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        {user && (
+          <div className="card">
+            <h3>Mes réservations</h3>
+            <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
+            {bookings.length === 0 ? (
+              <p style={{ color: 'var(--mute)' }}>Vos réservations apparaîtront ici.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {bookings.map((b) => {
+                  const bExpiresMs = b.status === "HELD" && b.reservation_expires_at ? new Date(b.reservation_expires_at).getTime() : null;
+                  const bRemSec = bExpiresMs ? Math.max(0, Math.floor((bExpiresMs - now) / 1000)) : 0;
+                  const isHoldValid = b.status === "HELD" && bRemSec > 0;
+                  const statusLabel =
+                    b.status === "HELD" && bRemSec === 0
+                      ? "Expirée"
+                      : b.client_status_display ||
+                        (b.status === "HELD"
+                          ? "En attente de paiement"
+                          : b.status === "CONFIRMED"
+                          ? "Payée"
+                          : b.status === "EXPIRED"
+                          ? "Expirée"
+                          : b.status === "CANCELLED"
+                          ? "Annulée"
+                          : b.status === "REFUND_DUE"
+                          ? "Payée, places indisponibles"
+                          : b.status_display);
+                  const bCountdown = `${Math.floor(bRemSec / 60)} min ${String(bRemSec % 60).padStart(2, "0")} s`;
+                  return (
+                    <div
+                      key={b.id}
+                      style={{
+                        border: '1px solid var(--line)',
+                        borderRadius: '12px',
+                        padding: '16px',
+                        background: 'var(--bg)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, color: 'var(--navy)' }}>
+                            {b.segment_label || b.trip_detail.route_detail.label}
+                          </div>
+                          <div style={{ fontSize: '12px', color: 'var(--mute)' }}>
+                            Réf. {b.reference} · {b.departure_label || "Départ"} : {formatDate(b.effective_departure_at || b.trip_detail.departure_at)}
+                          </div>
+                        </div>
+                        <span className={b.status === "CONFIRMED" ? "pill" : "pill ex"}>{statusLabel}</span>
+                      </div>
+
+                      <div style={{ fontSize: '13px', marginBottom: '8px' }}>
+                        <div>
+                          Passagers ({b.tickets.length}) :{" "}
+                          {b.tickets
+                            .map((t) =>
+                              b.status === "CONFIRMED"
+                                ? `${t.passenger_name} (Siège N° ${t.seat_detail?.number ?? t.seat})`
+                                : t.seat_preference === false
+                                ? `${t.passenger_name} (places attribuées après paiement)`
+                                : `${t.passenger_name} (Siège N° ${t.seat_detail?.number ?? t.seat} — préférence)`
+                            )
+                            .join(" · ")}
+                        </div>
+                        <div style={{ marginTop: '4px' }}>
+                          Total : <b>{money(b.amount, b.currency)}</b>
+                        </div>
+                        {isHoldValid && (
+                          <div style={{ marginTop: '4px', color: 'var(--warn)', fontWeight: 700 }}>
+                            Temps restant : {bCountdown}
+                          </div>
+                        )}
+                      </div>
+
+                      {isHoldValid && (
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '10px' }}>
+                          <button
+                            type="button"
+                            className="btn p"
+                            disabled={busy}
+                            onClick={() => void resumeBookingFromList(b)}
+                            style={{ fontSize: '13px', padding: '6px 14px' }}
+                          >
+                            Payer
+                          </button>
+                          <button
+                            type="button"
+                            className="btn"
+                            disabled={busy}
+                            onClick={() => void cancelBooking({ id: b.id, token: null })}
+                            style={{ fontSize: '13px', padding: '6px 14px', borderColor: '#B42318', color: '#B42318' }}
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
       <div className="card">
         <h3>Vos Billets</h3>
         <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
@@ -990,8 +1410,10 @@ function Tickets({
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                   <div>
                     <h4 style={{ color: 'var(--navy)', marginBottom: '4px' }}>{ticket.segment_label || ticket.trip_detail.route_detail.label}</h4>
+                    {ticket.boarding_display && <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Embarquement : {ticket.boarding_display}</p>}
+                    {ticket.alighting_display && <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Débarquement : {ticket.alighting_display}</p>}
                     <p style={{ fontSize: '13px', color: 'var(--mute)' }}>{ticket.departure_label || "Départ"} : {formatDate(ticket.effective_departure_at || ticket.trip_detail.departure_at)}</p>
-                    {ticket.trip_detail.boarding_at && <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Embarquement : {formatDate(ticket.trip_detail.boarding_at)}</p>}
+                    {ticket.trip_detail.boarding_at && <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Heure d’embarquement : {formatDate(ticket.trip_detail.boarding_at)}</p>}
                   </div>
                   <span className={ticket.status === "ISSUED" ? "pill" : "pill ex"} style={{ alignSelf: 'flex-start' }}>{ticket.status_display}</span>
                 </div>
@@ -1021,6 +1443,7 @@ function Tickets({
             ))}
           </div>
         )}
+      </div>
       </div>
       <style>{`
         @media(max-width: 800px) {

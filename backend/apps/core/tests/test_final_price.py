@@ -135,6 +135,7 @@ class FinalPriceTests(APITestCase):
         self.checkout(booking, token, transaction_id=4003)
         Booking.objects.filter(pk=booking.pk).update(reservation_expires_at=timezone.now() - timedelta(minutes=1))
         Ticket.objects.filter(booking=booking).update(reservation_expires_at=timezone.now() - timedelta(minutes=1))
+        booking.trip.seats.update(status="PAID")
         self.assertEqual(self.webhook(booking, 4003, 7500).status_code, 200)
         booking.refresh_from_db()
         self.assertEqual(booking.status, Booking.Status.REFUND_DUE)

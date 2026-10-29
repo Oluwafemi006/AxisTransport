@@ -105,7 +105,7 @@ class ClientLocationViewSet(viewsets.ReadOnlyModelViewSet):
     Villes et arrêts actifs. Lecture publique. Pas d'écriture (Admin uniquement).
     Ordonnés selon l'ordre de la ligne de car (1=Parakou, 2=Savè, ...), puis par nom.
     """
-    queryset = Location.objects.filter(active=True).order_by(
+    queryset = Location.objects.filter(active=True).prefetch_related("boarding_points").order_by(
         models.F("line_stop__position").asc(nulls_last=True), "name"
     )
     serializer_class = LocationSerializer
@@ -120,6 +120,7 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
     """
     serializer_class = TripSerializer
     permission_classes = [AllowAny]
+    pagination_class = None
 
     def get_queryset(self):
         from django.utils import timezone
@@ -144,6 +145,35 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
                 raise ValidationError({"date": "Format attendu : AAAA-MM-JJ."}) from exc
             queryset = queryset.filter(departure_at__date=selected_date)
         return queryset
+
+    def list(self, request, *args, **kwargs):
+        from .services import find_next_available_trip
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        data = serializer.data
+
+        origin = request.query_params.get("origin")
+        destination = request.query_params.get("destination")
+        date_value = request.query_params.get("date")
+
+        if origin or destination:
+            next_available = None
+            if len(data) == 0 and origin and destination:
+                next_available = find_next_available_trip(
+                    origin=origin, destination=destination, after_date=date_value
+                )
+            return Response({"results": data, "next_available": next_available})
+        return Response(data)
+
+    @action(detail=False, methods=["get"], url_path="banner")
+    def banner(self, request):
+        """Bandeau d'accueil dynamique construit côté serveur selon les voyages du jour et à venir."""
+        from .services import build_homepage_banner
+        return Response(build_homepage_banner())
 
     @action(detail=False, methods=["get"], url_path="search")
     def search(self, request):
@@ -276,6 +306,12 @@ class ClientTicketViewSet(viewsets.GenericViewSet):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
+            b_point = data.get("boarding_point_id")
+            if b_point is None:
+                b_point = data.get("boarding_point")
+            a_point = data.get("alighting_point_id")
+            if a_point is None:
+                a_point = data.get("alighting_point")
             ticket = reserve_ticket(
                 trip=data["trip"],
                 seat=data["seat"],
@@ -283,6 +319,10 @@ class ClientTicketViewSet(viewsets.GenericViewSet):
                 passenger_name=data["passenger_name"],
                 passenger_phone=data.get("passenger_phone", ""),
                 channel=Ticket.Channel.ONLINE,  # Forcé : jamais COUNTER sur cette surface.
+                origin=data.get("origin") or None,
+                destination=data.get("destination") or None,
+                boarding_point=b_point,
+                alighting_point=a_point,
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc)
@@ -413,6 +453,12 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
                 {"contact_phone": "Un numéro de téléphone valide est obligatoire pour réserver sans compte."}
             )
         try:
+            b_point = data.get("boarding_point_id")
+            if b_point is None:
+                b_point = data.get("boarding_point")
+            a_point = data.get("alighting_point_id")
+            if a_point is None:
+                a_point = data.get("alighting_point")
             booking, guest_token = reserve_booking(
                 trip=data["trip"],
                 passengers=data["passengers"],
@@ -422,6 +468,8 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
                 buyer_ifu=data.get("buyer_ifu", ""),
                 origin=data.get("origin"),
                 destination=data.get("destination"),
+                boarding_point=b_point,
+                alighting_point=a_point,
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc)
@@ -433,6 +481,19 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
         """Consulter une réservation. Vérifie l'ownership ou le guest_token."""
         booking = self._get_booking(pk)
         return Response(self._serialized_booking(booking))
+
+    @action(detail=False, methods=["get"], url_path="mine")
+    def mine(self, request):
+        """
+        « Mes réservations » : réservations du client connecté uniquement (En attente, Payée, Expirée, Annulée).
+        """
+        if not request.user.is_authenticated:
+            raise PermissionDenied("Authentification requise pour consulter vos réservations.")
+        if request.user.role != User.Role.CLIENT:
+            raise PermissionDenied("Le personnel interne ne doit pas utiliser la surface client pour accéder aux réservations.")
+        release_expired_holds()
+        bookings = self.BASE_QUERYSET.filter(customer=request.user).order_by("-created_at")
+        return Response(BookingSerializer(bookings, many=True, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):

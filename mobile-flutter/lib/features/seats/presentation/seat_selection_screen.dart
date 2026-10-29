@@ -398,11 +398,9 @@ class _SeatSelectionScreenState extends ConsumerState<SeatSelectionScreen> {
                 ),
                 const SizedBox(height: AxisSpacing.s10),
                 AxisButton(
-                  onPressed: draft.hasAllSeats
-                      ? () => context.push(
-                          '/billets/booking/${widget.tripId}/recapitulatif',
-                        )
-                      : null,
+                  onPressed: () => context.push(
+                    '/billets/booking/${widget.tripId}/recapitulatif',
+                  ),
                   label: 'Continuer',
                 ),
               ],

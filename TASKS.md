@@ -5,6 +5,9 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Bandeau dynamique d'accueil (sens du bus), prochains départs tous sens et next_available | `ag/accueil-bandeau-sens-du-bus` | Antigravity | à valider par Eddy |
+| Réservation multi-passagers, choix/attribution de places et paiements tardifs | `ag/reservation-places-attribution` | Antigravity | fusionnée dans main |
+| Points d'embarquement et de débarquement par ville | `ag/points-embarquement` | Antigravity | fusionnée dans main |
 | Vente par tronçon : réservation, tarification, montée/descente et billets de bout en bout | `ag/vente-par-troncon` | Antigravity | terminée, en attente de fusion sur GitHub |
 | Escales ordonnées, sens de circulation et recherche multi-tronçons | `ag/feature-waypoint-direction-search` | Antigravity | fusionnée dans main |
 | Planning hebdomadaire par défaut et validation des dates | `ag/fix-planning-and-dates` | Antigravity | fusionnée dans main |

@@ -80,6 +80,21 @@ class _FakeApi extends ApiClient {
   Future<List<Place>> locations() async => [];
 
   @override
+  Future<TripBanner> tripBanner() async => const TripBanner(
+    bannerText: '',
+    todayTripsCount: 0,
+    hasDepartureToday: false,
+  );
+
+  @override
+  Future<({List<Trip> trips, NextAvailable? nextAvailable})> searchTripsDetailed(
+    TripSearch search,
+  ) async {
+    final t = await searchTrips(search);
+    return (trips: t, nextAvailable: null);
+  }
+
+  @override
   Future<User> me() async => const User(
     id: 1,
     username: 'eddy',
