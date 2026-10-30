@@ -134,9 +134,17 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
   }
 
   Future<void> _shareTicket(Ticket ticket) async {
+    final bytes = await buildTicketPdf(ticket);
     await SharePlus.instance.share(
       ShareParams(
-        text: ticketShareText(ticket),
+        files: [
+          XFile.fromData(
+            bytes,
+            name: ticketFileName(ticket),
+            mimeType: 'application/pdf',
+          ),
+        ],
+        fileNameOverrides: [ticketFileName(ticket)],
         subject: 'Billet AXIS Transport ${ticket.reference}',
       ),
     );

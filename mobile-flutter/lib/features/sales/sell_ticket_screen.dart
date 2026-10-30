@@ -20,6 +20,7 @@ import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/segmented_toggle.dart';
 import '../../core/widgets/skeleton_box.dart';
 import '../../shared/payment_link.dart';
+import '../tickets/ticket_document.dart';
 import 'sale_controller.dart';
 import 'sale_models.dart';
 
@@ -184,10 +185,18 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
     await _sale.reset();
   }
 
-  Future<void> _share(SaleTicket ticket) {
-    return SharePlus.instance.share(
+  Future<void> _share(SaleTicket ticket) async {
+    final bytes = await buildSaleTicketPdf(ticket);
+    await SharePlus.instance.share(
       ShareParams(
-        text: saleShareText(ticket, formatFullDateTime),
+        files: [
+          XFile.fromData(
+            bytes,
+            name: saleTicketFileName(ticket),
+            mimeType: 'application/pdf',
+          ),
+        ],
+        fileNameOverrides: [saleTicketFileName(ticket)],
         subject: 'Billet AXIS Transport ${ticket.reference}',
       ),
     );
@@ -247,7 +256,11 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
                   borderRadius: BorderRadius.circular(AxisRadius.lg),
                   border: Border.all(color: axis.border),
                 ),
-                child: PrettyQrView.data(data: ticket.reference),
+                child: PrettyQrView.data(
+                  data: ticket.qrToken.isNotEmpty
+                      ? ticket.qrToken
+                      : ticket.reference,
+                ),
               ),
               const SizedBox(height: AxisSpacing.sm),
               Text(

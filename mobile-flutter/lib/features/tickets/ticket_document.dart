@@ -8,6 +8,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../../core/formatters.dart';
 import '../../core/models.dart';
 import '../../core/theme/axis_pdf_theme.dart';
+import '../sales/sale_models.dart';
 
 /// Texte affiché quand une information obligatoire du billet manque (jamais une mention de l'agence).
 const missingValue = 'À renseigner';
@@ -98,7 +99,51 @@ String ticketFileName(Ticket ticket) =>
     'billet-axis-${ticket.reference.replaceAll(RegExp(r'[^A-Za-z0-9-]'), '')}.pdf';
 
 /// Billet au format PDF : QR code et informations du serveur, rien d'autre.
-Future<Uint8List> buildTicketPdf(Ticket ticket) async {
+Future<Uint8List> buildTicketPdf(Ticket ticket) => _buildPdf(
+  reference: ticket.reference,
+  qrToken: ticket.isConfirmed ? ticket.qrToken : '',
+  fields: ticketFields(ticket),
+  footer: ticketFooter(ticket),
+);
+
+/// Même billet PDF pour une vente du personnel.
+Future<Uint8List> buildSaleTicketPdf(SaleTicket ticket) {
+  final info = ticket.printInfo;
+  return _buildPdf(
+    reference: ticket.reference,
+    qrToken: ticket.isIssued ? ticket.qrToken : '',
+    fields: [
+      ('Référence', _orMissing(ticket.reference)),
+      ('Trajet', _orMissing(ticket.routeLabel)),
+      if (ticket.boardingDisplay.trim().isNotEmpty)
+        ('Embarquement', ticket.boardingDisplay.trim()),
+      if (ticket.alightingDisplay.trim().isNotEmpty)
+        ('Débarquement', ticket.alightingDisplay.trim()),
+      if (ticket.departureAt != null)
+        ('Départ', formatFullDateTime(ticket.departureAt!)),
+      ('Siège', _orMissing(ticket.seatNumber)),
+      ('Passager', _orMissing(ticket.passengerName)),
+      ('Prix du billet', formatMoney(ticket.amount, ticket.currency)),
+      if ((info != null && info.paid) || ticket.isIssued) ('Statut', 'Payé'),
+      if (info != null && info.sale.isNotEmpty) ('Vente', info.sale),
+      if (info != null && info.paymentMode.isNotEmpty)
+        ('Mode de paiement', info.paymentMode),
+      if (info != null && info.buyerIfu.trim().isNotEmpty)
+        ('IFU de l\'acheteur', info.buyerIfu.trim()),
+    ],
+    footer: ticketFooterLines(info),
+  );
+}
+
+String saleTicketFileName(SaleTicket ticket) =>
+    'billet-axis-${ticket.reference.replaceAll(RegExp(r'[^A-Za-z0-9-]'), '')}.pdf';
+
+Future<Uint8List> _buildPdf({
+  required String reference,
+  required String qrToken,
+  required List<(String, String)> fields,
+  required List<String> footer,
+}) async {
   // Logo officiel ; s'il ne peut pas être chargé, le nom est écrit en texte.
   pw.MemoryImage? logo;
   try {
@@ -108,9 +153,8 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) async {
     logo = null;
   }
   final document = pw.Document(
-    title: pdfSafe('Billet de transport ${ticket.reference}'),
+    title: pdfSafe('Billet de transport $reference'),
   );
-  final fields = ticketFields(ticket);
   document.addPage(
     pw.Page(
       pageFormat: PdfPageFormat.a4,
@@ -134,11 +178,11 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) async {
             style: AxisPdfTypography.subtitle,
           ),
           pw.SizedBox(height: 18),
-          if (ticket.isConfirmed && ticket.qrToken.isNotEmpty)
+          if (qrToken.isNotEmpty)
             pw.Center(
               child: pw.BarcodeWidget(
                 barcode: pw.Barcode.qrCode(),
-                data: ticket.qrToken,
+                data: qrToken,
                 width: 190,
                 height: 190,
               ),
@@ -174,7 +218,7 @@ Future<Uint8List> buildTicketPdf(Ticket ticket) async {
             style: AxisPdfTypography.notice,
           ),
           pw.SizedBox(height: 8),
-          for (final line in ticketFooter(ticket))
+          for (final line in footer)
             pw.Text(pdfSafe(line), style: AxisPdfTypography.footer),
         ],
       ),

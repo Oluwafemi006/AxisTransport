@@ -5,6 +5,7 @@ import 'package:axis_transport_flutter/core/session_store.dart';
 import 'package:axis_transport_flutter/features/sales/sale_controller.dart';
 import 'package:axis_transport_flutter/features/sales/sale_models.dart';
 import 'package:axis_transport_flutter/features/sales/sell_ticket_screen.dart';
+import 'package:axis_transport_flutter/features/tickets/ticket_document.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -560,5 +561,17 @@ void main() {
     expect(find.textContaining('TVA'), findsNothing);
     expect(find.textContaining('Prix HT'), findsNothing);
     expect(find.textContaining('Prix TTC'), findsNothing);
+  });
+
+  test('le billet partagé par le contrôleur est un vrai PDF', () async {
+    final ticket = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'qr_token': 'TEST-QR',
+    });
+    expect(ticket.qrToken, 'TEST-QR');
+    final bytes = await buildSaleTicketPdf(ticket);
+    expect(String.fromCharCodes(bytes.take(4)), '%PDF');
+    expect(saleTicketFileName(ticket), endsWith('.pdf'));
   });
 }

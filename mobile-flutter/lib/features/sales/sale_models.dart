@@ -119,8 +119,11 @@ class SaleTicket {
     this.boardingDisplay = '',
     this.alightingDisplay = '',
     this.printInfo,
+    this.qrToken = '',
   });
 
+  /// Jeton lu par le scanner ; vide tant que le billet n'est pas émis.
+  final String qrToken;
   final String reference;
   final String status;
   final String statusDisplay;
@@ -168,6 +171,7 @@ class SaleTicket {
       boardingDisplay: bDisp.isNotEmpty ? bDisp : (info?.boardingDisplay.trim() ?? ''),
       alightingDisplay: aDisp.isNotEmpty ? aDisp : (info?.alightingDisplay.trim() ?? ''),
       printInfo: info,
+      qrToken: json['qr_token'] as String? ?? '',
     );
   }
 }
