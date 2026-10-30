@@ -225,6 +225,7 @@ void main() {
       expect(find.byType(RouteStopsBar), findsOneWidget);
       expect(find.text('23 places libres'), findsOneWidget);
       expect(find.text('Choisir ce trajet'), findsOneWidget);
+      expect(find.textContaining('TTC'), findsNothing);
     });
 
     testWidgets('2b. Résultats (Resultats.html) : erreur réseau affiche EmptyState et bouton Réessayer', (

@@ -9,7 +9,7 @@ import '../../core/formatters.dart';
 import '../../core/models.dart';
 import '../../core/theme/axis_pdf_theme.dart';
 
-/// Texte affiché quand une information obligatoire du billet manque. Rien n'est inventé.
+/// Texte affiché quand une information obligatoire du billet manque (jamais une mention de l'agence).
 const missingValue = 'À renseigner';
 
 String _orMissing(String? value) {

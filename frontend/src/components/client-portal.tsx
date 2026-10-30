@@ -476,8 +476,8 @@ export function ClientPortal() {
             </div>
             <div>
               <h4>Contact</h4>
-              <p style={{ opacity: '.8', marginBottom: '6px' }}>Téléphone : {contact.contact_phone ? <PhoneText value={contact.contact_phone} /> : "À renseigner"}</p>
-              <p style={{ opacity: '.8', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>WhatsApp : {contact.contact_whatsapp || "À renseigner"} <WhatsAppIcon value={contact.contact_whatsapp} /></p>
+              {contact.contact_phone && <p style={{ opacity: '.8', marginBottom: '6px' }}>Téléphone : <PhoneText value={contact.contact_phone} /></p>}
+              {contact.contact_whatsapp && <p style={{ opacity: '.8', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>WhatsApp : {contact.contact_whatsapp} <WhatsAppIcon value={contact.contact_whatsapp} /></p>}
               {phoneHref(contact.contact_phone) && <a className="btn s" href={phoneHref(contact.contact_phone)!}>Appeler</a>}
             </div>
           </div>

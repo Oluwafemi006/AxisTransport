@@ -1382,7 +1382,7 @@ function AgencyPanel() {
     <div className="space-y-5">
       <section className="card">
         <SectionHeading eyebrow="Imprimé en bas du billet" title="Informations de l’agence" />
-        <p className="mb-4 text-sm text-slate-500">Un champ vide est imprimé « À renseigner ». Les comptes bancaires ne sont jamais imprimés.</p>
+        <p className="mb-4 text-sm text-slate-500">Un champ vide n’apparaît pas sur le billet. Les comptes bancaires ne sont jamais imprimés.</p>
         <form onSubmit={saveAgency} className="grid gap-3 md:grid-cols-2">
           {agencyFields.map(([key, label]) => (
             <label key={key} className={key === "bank_accounts" || key === "address" ? "md:col-span-2" : ""}>

@@ -2,7 +2,7 @@ import { money } from "./api";
 import type { TicketPrintInfo } from "./types";
 
 // Mise en page du billet (page web et image) : uniquement des données du serveur, rien n'est inventé.
-// Une information facultative absente est masquée ; une information de l'agence absente s'écrit « À renseigner ».
+// Une information facultative absente, dont toutes les mentions de l'agence, est masquée.
 
 export const TO_FILL = "À renseigner";
 
@@ -60,15 +60,20 @@ export function ticketRows(ticket: PrintableTicket, formatDate: (iso: string) =>
   return rows;
 }
 
-// Bas du billet : agence (jamais les comptes bancaires) et conditions.
+// Bas du billet : agence (jamais les comptes bancaires) et conditions ; une mention vide n'a pas de ligne.
 export function ticketFooter(info: TicketPrintInfo | undefined): string[] {
   const agency = info?.agency;
-  const value = (text: string | undefined) => (text && text.trim() ? text.trim() : TO_FILL);
+  const clean = (text: string | undefined) => text?.trim() ?? "";
+  const legalIds = [
+    clean(agency?.ifu) && `IFU : ${clean(agency?.ifu)}`,
+    clean(agency?.rccm) && `RCCM : ${clean(agency?.rccm)}`,
+  ].filter(Boolean).join(" · ");
+  const contacts = [clean(agency?.phones), clean(agency?.email)].filter(Boolean).join(" · ");
   return [
-    `Raison sociale : ${value(agency?.legal_name)}`,
-    `IFU : ${value(agency?.ifu)} · RCCM : ${value(agency?.rccm)}`,
-    `Adresse : ${value(agency?.address)}`,
-    `Contacts : ${value([agency?.phones, agency?.email].filter((item) => item && item.trim()).join(" · "))}`,
-    `Conditions : ${value(info?.conditions)}`,
-  ];
+    clean(agency?.legal_name) && `Raison sociale : ${clean(agency?.legal_name)}`,
+    legalIds,
+    clean(agency?.address) && `Adresse : ${clean(agency?.address)}`,
+    contacts && `Contacts : ${contacts}`,
+    clean(info?.conditions) && `Conditions : ${clean(info?.conditions)}`,
+  ].filter(Boolean);
 }

@@ -513,12 +513,6 @@ class _TripResultCard extends ConsumerWidget {
                         : formatMoney(fare.amount, fare.currency),
                     style: AxisTypography.price.copyWith(color: axis.ink),
                   ),
-                  Text(
-                    'TTC',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: axis.textMuted,
-                    ),
-                  ),
                 ],
               ),
             ],

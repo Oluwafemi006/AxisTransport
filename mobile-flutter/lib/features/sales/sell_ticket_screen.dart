@@ -649,7 +649,7 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Total TTC',
+                  'Total',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: axis.textSecondary,
                   ),

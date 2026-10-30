@@ -446,7 +446,7 @@ class TicketControlSerializer(serializers.ModelSerializer):
 
 
 def public_agency_info():
-    """Informations de l'agence imprimées sur le billet (vides = « À renseigner »). Jamais les comptes bancaires."""
+    """Informations de l'agence imprimées sur le billet (vides = ligne masquée). Jamais les comptes bancaires."""
     profile = AgencyProfile.objects.filter(pk=1).first()
     return {field: (getattr(profile, field, "") or "").strip() for field in AgencyProfile.PUBLIC_FIELDS}
 
@@ -468,7 +468,7 @@ def online_payment_label(mode):
 def ticket_print_info(ticket):
     """
     Données imprimées sur le billet, toutes lues sur le serveur ; les apps et le site ne calculent rien.
-    Chaîne vide = information absente (l'affichage écrit « À renseigner » ou masque la ligne, selon le cas).
+    Chaîne vide = information absente (les mentions de l'agence sont masquées par l'affichage).
     """
     paid = ticket.status in {Ticket.Status.PAID, Ticket.Status.ISSUED, Ticket.Status.CHECKED, Ticket.Status.COMPLETED}
     booking = ticket.booking

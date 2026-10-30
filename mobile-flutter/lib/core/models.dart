@@ -466,7 +466,7 @@ class PaymentCheckout {
   }
 }
 
-/// Informations de l'agence imprimées sur le billet. Vide = « À renseigner ». Jamais de comptes bancaires.
+/// Informations de l'agence imprimées sur le billet. Vide = ligne masquée. Jamais de comptes bancaires.
 class AgencyInfo {
   const AgencyInfo({
     this.legalName = '',
