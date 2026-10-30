@@ -319,6 +319,8 @@ void main() {
 
       final draft = container.read(bookingDraftProvider);
       expect(draft.trip?.currentFare?.amount, 4500);
+      expect(find.text('Parakou → Savè'), findsOneWidget);
+      expect(find.text('Parakou → Cotonou'), findsNothing);
       expect(draft.originId, 1);
       expect(draft.destinationId, 3);
     });
@@ -407,6 +409,43 @@ void main() {
       expect(find.textContaining('TVA'), findsNothing);
       expect(find.textContaining('TTC'), findsNothing);
       expect(find.text('Siège 1A'), findsOneWidget);
+    });
+
+    testWidgets('4b. Récapitulatif depuis un arrêt intermédiaire : départ du bus, sans heure de passage', (
+      tester,
+    ) async {
+      final container = ProviderContainer(
+        overrides: [apiClientProvider.overrideWithValue(_Phase4Api())],
+      );
+      addTearDown(container.dispose);
+
+      container.read(bookingDraftProvider.notifier).start(_sampleTrip, originId: 3, destinationId: 2);
+      container.read(bookingDraftProvider.notifier).setPassengers(const [
+        Passenger(
+          id: 'p1',
+          fullName: 'Koffi Mensah',
+          phone: '97000000',
+          type: PassengerType.adult,
+        ),
+      ]);
+      container.read(bookingDraftProvider.notifier).assignSeat(
+        'p1',
+        const Seat(id: 1, number: '1A', status: 'AVAILABLE'),
+      );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: AxisTheme.light(),
+            home: const BookingReviewScreen(tripId: 10),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('DÉPART DE PARAKOU'), findsOneWidget);
+      expect(find.text('EMBARQUEMENT'), findsNothing);
     });
 
     testWidgets('5. Billet QR (Billet.html) : carte d’embarquement, QR, embarquement et mentions légales', (

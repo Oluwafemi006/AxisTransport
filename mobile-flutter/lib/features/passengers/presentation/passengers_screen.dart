@@ -297,7 +297,12 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
                   const _BookingProgress(currentStep: 1),
                   if (trip != null) ...[
                     const SizedBox(height: 18),
-                    _TripSummary(trip: trip),
+                    _TripSummary(
+                      trip: trip,
+                      segmentLabel: ref.watch(
+                        bookingDraftProvider.select((d) => d.segmentLabel),
+                      ),
+                    ),
                     ..._buildBoardingPointSelectors(trip),
                   ],
                   if (_error != null) Notice(_error!, error: true),
@@ -453,9 +458,12 @@ class _BookingProgress extends StatelessWidget {
 }
 
 class _TripSummary extends StatelessWidget {
-  const _TripSummary({required this.trip});
+  const _TripSummary({required this.trip, this.segmentLabel});
 
   final Trip trip;
+
+  /// Tronçon choisi par le client ; à défaut, le parcours entier.
+  final String? segmentLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -471,7 +479,7 @@ class _TripSummary extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            trip.route.label,
+            segmentLabel ?? trip.route.label,
             style: theme.textTheme.titleLarge?.copyWith(
               color: tokens.onDark,
               fontWeight: FontWeight.w900,

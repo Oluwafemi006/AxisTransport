@@ -149,15 +149,19 @@ class SegmentedToggle<T> extends StatelessWidget {
                           const SizedBox(width: AxisSpacing.xs),
                         ],
                         Flexible(
-                          child: Text(
-                            option.label,
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: isSelected ? tokens.onDark : tokens.ink,
-                              fontWeight:
-                                  isSelected ? FontWeight.w800 : FontWeight.w600,
+                          // Le libellé en gras ne doit pas être tronqué : il réduit plutôt que de perdre sa fin.
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              option.label,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: isSelected ? tokens.onDark : tokens.ink,
+                                fontWeight: isSelected
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                              ),
+                              maxLines: 1,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],

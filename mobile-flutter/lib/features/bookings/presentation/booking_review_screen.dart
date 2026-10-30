@@ -280,6 +280,10 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
         validTrip.boardingAt ??
         validTrip.departureAt.subtract(const Duration(minutes: 30));
     final boardingTime = DateFormat.Hm('fr_FR').format(boardingAt);
+    // Pas d'heure de passage aux arrêts intermédiaires : seule l'heure de départ du bus existe.
+    final busOrigin = validTrip.route.origin;
+    final boardsAtBusOrigin =
+        draft.originId == null || draft.originId == busOrigin?.id;
 
     return Scaffold(
       body: Column(
@@ -472,18 +476,21 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                           ),
                           Expanded(
                             child: _TripMetaItem(
-                              label: 'Départ',
+                              label: boardsAtBusOrigin || busOrigin == null
+                                  ? 'Départ'
+                                  : 'Départ de ${busOrigin.name}',
                               value: departureTime,
                               valueColor: theme.colorScheme.onPrimary,
                             ),
                           ),
-                          Expanded(
-                            child: _TripMetaItem(
-                              label: 'Embarquement',
-                              value: boardingTime,
-                              valueColor: axis.accent,
+                          if (boardsAtBusOrigin)
+                            Expanded(
+                              child: _TripMetaItem(
+                                label: 'Embarquement',
+                                value: boardingTime,
+                                valueColor: axis.accent,
+                              ),
                             ),
-                          ),
                         ],
                       ),
                     ],
@@ -925,11 +932,16 @@ class _TripMetaItem extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label.toUpperCase(),
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: axis.borderStrong,
-            letterSpacing: 0.5,
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            label.toUpperCase(),
+            maxLines: 1,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: axis.borderStrong,
+              letterSpacing: 0.5,
+            ),
           ),
         ),
         const SizedBox(height: 2),

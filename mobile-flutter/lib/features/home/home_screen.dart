@@ -437,15 +437,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
           if (_segmentsLoading && _segments.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: AxisSpacing.screen),
+            // Hauteur d'une carte : la liste ne saute pas quand le sens change.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AxisSpacing.screen),
               child: Column(
                 children: [
-                  SkeletonBox(height: 84, borderRadius: AxisRadius.card),
-                  SizedBox(height: AxisSpacing.s10),
-                  SkeletonBox(height: 84, borderRadius: AxisRadius.card),
-                  SizedBox(height: AxisSpacing.s10),
-                  SkeletonBox(height: 84, borderRadius: AxisRadius.card),
+                  for (var index = 0; index < 10; index++) ...[
+                    const SkeletonBox(height: 184, borderRadius: AxisRadius.card),
+                    const SizedBox(height: AxisSpacing.s10),
+                  ],
                 ],
               ),
             )
