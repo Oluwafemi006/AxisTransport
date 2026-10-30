@@ -157,9 +157,8 @@ void main() {
       // Sans IFU de l'agence, aucune décomposition HT / TVA.
       expect(fields.keys, isNot(contains('Prix HT')));
       final footer = ticketFooter(ticket);
-      expect(footer.first, 'Raison sociale : TEST Raison sociale');
-      expect(footer, contains('Conditions : À renseigner'));
-      expect(footer[1], 'IFU : À renseigner · RCCM : À renseigner');
+      expect(footer, ['Raison sociale : TEST Raison sociale']);
+      expect(footer, isNot(contains(contains('À renseigner'))));
       final everything = [...fields.values, ...footer].join(' ');
       expect(everything, isNot(contains('XOF')));
       expect(everything, isNot(contains('Ticket émis')));

@@ -106,8 +106,14 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
 
   Future<void> _load() async {
     final api = ref.read(apiClientProvider);
+    final startDraft = ref.read(bookingDraftProvider);
     try {
-      final trip = await api.trip(widget.tripId);
+      // Avec le tronçon choisi, le serveur renvoie son tarif (sinon celui du parcours entier).
+      final trip = await api.trip(
+        widget.tripId,
+        originId: widget.originId ?? startDraft.originId,
+        destinationId: widget.destinationId ?? startDraft.destinationId,
+      );
       final draft = ref.read(bookingDraftProvider);
       if (draft.trip?.id == trip.id && draft.passengers.length == _count) {
         for (var index = 0; index < _count; index++) {

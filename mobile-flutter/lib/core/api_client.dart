@@ -182,9 +182,17 @@ class ApiClient {
     return TripBanner.fromJson(payload);
   }
 
-  Future<Trip> trip(int tripId) async {
+  Future<Trip> trip(
+    int tripId, {
+    int? originId,
+    int? destinationId,
+  }) async {
+    final query = <String, dynamic>{};
+    if (originId != null) query['origin'] = '$originId';
+    if (destinationId != null) query['destination'] = '$destinationId';
     final payload = await _request<Map<String, dynamic>>(
       '/client/trips/$tripId/',
+      queryParameters: query.isEmpty ? null : query,
     );
     return Trip.fromJson(payload);
   }

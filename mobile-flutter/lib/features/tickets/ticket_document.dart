@@ -70,7 +70,7 @@ List<(String, String)> ticketFields(Ticket ticket) {
   ];
 }
 
-/// Bas du billet : agence (jamais les comptes bancaires) et conditions ; vide = « À renseigner ».
+/// Bas du billet : agence (jamais les comptes bancaires) et conditions ; une ligne vide est masquée.
 List<String> ticketFooter(Ticket ticket) => ticketFooterLines(ticket.printInfo);
 
 /// Les polices PDF standard ne couvrent que le Latin-1 : on remplace les rares autres signes.

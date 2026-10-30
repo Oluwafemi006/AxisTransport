@@ -423,7 +423,7 @@ void main() {
     expect(text, contains('Passager : Awa Test'));
     expect(text, contains('Statut : Payé'));
     expect(text.replaceAll(RegExp(r'\s'), ''), contains('Prixdubillet:1000FCFA'));
-    expect(text, contains('Raison sociale : À renseigner'));
+    expect(text, isNot(contains('À renseigner')));
     expect(text, isNot(contains('XOF')));
     expect(text, contains('FCFA'));
   });

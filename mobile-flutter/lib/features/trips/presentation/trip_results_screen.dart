@@ -8,6 +8,7 @@ import '../../../core/models.dart';
 import '../../../core/session.dart';
 import '../../../core/theme/axis_theme.dart';
 import '../../../core/widgets/widgets.dart';
+import '../../bookings/application/booking_draft.dart';
 import '../domain/trip_search.dart';
 
 class TripResultsScreen extends ConsumerStatefulWidget {
@@ -416,7 +417,7 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
   }
 }
 
-class _TripResultCard extends StatelessWidget {
+class _TripResultCard extends ConsumerWidget {
   const _TripResultCard({
     required this.trip,
     required this.passengers,
@@ -447,7 +448,7 @@ class _TripResultCard extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final axis = context.axis;
     final fare = trip.currentFare;
@@ -568,9 +569,16 @@ class _TripResultCard extends StatelessWidget {
             variant: AxisButtonVariant.secondary,
             height: AxisSizes.secondaryButton,
             onPressed: bookable
-                ? () => context.push(
-                    '/billets/booking/${trip.id}/passagers?passagers=$passengers${search != null ? '&origin=${search!.originId}&destination=${search!.destinationId}' : ''}',
-                  )
+                ? () {
+                    ref.read(bookingDraftProvider.notifier).start(
+                          trip,
+                          originId: search?.originId,
+                          destinationId: search?.destinationId,
+                        );
+                    context.push(
+                      '/billets/booking/${trip.id}/passagers?passagers=$passengers${search != null ? '&origin=${search!.originId}&destination=${search!.destinationId}' : ''}',
+                    );
+                  }
                 : null,
             label: trip.availableSeats < passengers
                 ? 'Complet'

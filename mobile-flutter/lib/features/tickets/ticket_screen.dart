@@ -601,7 +601,7 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                     const Divider(height: 1),
                     const SizedBox(height: AxisSpacing.s10),
                     Text(
-                      'Payé par $paymentMode · ${formatMoney(item.amount, item.currency)} TTC (TVA 18 % incluse)',
+                      'Payé par $paymentMode · ${formatMoney(item.amount, item.currency)}',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: axis.textSecondary,

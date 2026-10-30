@@ -99,34 +99,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: axis.accent,
-                            borderRadius: BorderRadius.circular(AxisRadius.small),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            'A',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: theme.colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AxisSpacing.s10),
-                        Text(
-                          'AXIS',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: theme.colorScheme.onPrimary,
-                            letterSpacing: 0.4,
-                          ),
-                        ),
-                      ],
-                    ),
+                    const AxisLogo(),
                     Tooltip(
                       message: 'Notifications',
                       child: Semantics(
@@ -136,9 +109,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           color: theme.colorScheme.onPrimary.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(AxisRadius.small),
                           child: InkWell(
-                            onTap: () => session.user == null
-                                ? context.push('/connexion')
-                                : context.go('/profil'),
+                            onTap: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Aucune notification'),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                            },
                             borderRadius: BorderRadius.circular(AxisRadius.small),
                             child: SizedBox(
                               width: AxisSizes.minTarget,
