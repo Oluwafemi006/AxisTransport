@@ -63,6 +63,10 @@ class _Phase4Api extends ApiClient {
     return [_sampleTrip];
   }
 
+  @override
+  Future<List<Trip>> tripsForSegment(int originId, int destinationId) async =>
+      [await trip(10, originId: originId, destinationId: destinationId)];
+
   /// Comme le serveur : tarif du tronçon demandé, sinon celui du parcours entier.
   @override
   Future<Trip> trip(int tripId, {int? originId, int? destinationId}) async {
@@ -188,6 +192,12 @@ void main() {
       await tester.tap(find.byTooltip('Notifications'));
       await tester.pump();
       expect(find.text('Aucune notification'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Parakou → Savè'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Parakou → Savè'), findsOneWidget);
     });
 
     testWidgets('2. Résultats (Resultats.html) : embarquement (départ - 30 min), RouteStopsBar et StatusChip', (

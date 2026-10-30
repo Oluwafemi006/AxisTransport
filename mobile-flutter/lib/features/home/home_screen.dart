@@ -7,6 +7,7 @@ import '../../core/models.dart';
 import '../../core/session.dart';
 import '../../core/theme/axis_theme.dart';
 import '../../core/widgets/widgets.dart';
+import '../trips/domain/segment_departure.dart';
 import '../trips/presentation/trip_search_card.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -17,7 +18,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  List<Trip> _trips = [];
+  List<SegmentDeparture> _departures = [];
   List<Ticket> _tickets = [];
   TripBanner? _banner;
   bool _loading = true;
@@ -38,10 +39,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     var tickets = await api.store.readCachedTickets();
     if (mounted) setState(() => _tickets = tickets);
     try {
-      final trips = await api.trips();
+      final departures = await loadSegmentDepartures(api);
       if (!mounted) return;
       setState(() {
-        _trips = trips;
+        _departures = departures;
       });
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
@@ -412,7 +413,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onAction: _load,
               ),
             )
-          else if (_trips.isNotEmpty) ...[
+          else if (_departures.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 AxisSpacing.screen,
@@ -425,8 +426,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 style: theme.textTheme.titleSmall?.copyWith(color: axis.ink),
               ),
             ),
-            ..._trips.map(
-              (trip) => Padding(
+            ..._departures.map(
+              (departure) => Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AxisSpacing.screen,
                   0,
@@ -434,8 +435,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   AxisSpacing.s10,
                 ),
                 child: AxisCard(
-                  onTap: () =>
-                      context.push('/billets/booking/${trip.id}/passagers'),
+                  onTap: () => context.push(departure.bookingLocation),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -443,19 +443,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              trip.route.label,
+                              departure.label,
                               style: theme.textTheme.titleMedium?.copyWith(
                                 color: axis.ink,
                               ),
                             ),
                           ),
                           Text(
-                            trip.currentFare == null
-                                ? 'À renseigner'
-                                : formatMoney(
-                                    trip.currentFare!.amount,
-                                    trip.currentFare!.currency,
-                                  ),
+                            formatMoney(
+                              departure.trip.currentFare!.amount,
+                              departure.trip.currentFare!.currency,
+                            ),
                             style: theme.textTheme.titleMedium?.copyWith(
                               color: theme.colorScheme.primary,
                             ),
@@ -464,7 +462,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                       const SizedBox(height: AxisSpacing.s4),
                       Text(
-                        formatDateTime(trip.departureAt),
+                        formatDateTime(departure.trip.departureAt),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: axis.textSecondary,
                         ),
@@ -473,8 +471,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       Row(
                         children: [
                           StatusChip(
-                            label: '${trip.availableSeats} place(s) libre(s)',
-                            variant: trip.availableSeats > 0
+                            label: '${departure.trip.availableSeats} place(s) libre(s)',
+                            variant: departure.trip.availableSeats > 0
                                 ? StatusChipVariant.success
                                 : StatusChipVariant.danger,
                             dense: true,

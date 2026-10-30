@@ -21,6 +21,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 | Planning quotidien à sens alterné et départs vendables au guichet | `cc/planning-guichet` | Claude Code | fusionnée dans main |
 | Pages réservées : affichage strict 403 sans mention de rôle | `cc/page-403` | Claude Code | à faire |
 | Corrections QA mobile : prix du tronçon, mentions légales, TVA, logo et notifications | `cc/corrections-qa-mobile` | Claude Code | à valider par Eddy |
+| Accueil : une carte par tronçon réel, au tarif du serveur | `cc/accueil-tous-troncons` | Claude Code | à valider par Eddy |
 
 ---
 

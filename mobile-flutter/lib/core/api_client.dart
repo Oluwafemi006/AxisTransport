@@ -197,6 +197,13 @@ class ApiClient {
     return Trip.fromJson(payload);
   }
 
+  /// Départs à venir d'un tronçon, chacun au tarif du tronçon.
+  Future<List<Trip>> tripsForSegment(int originId, int destinationId) => _list(
+    '/client/trips/',
+    (json) => Trip.fromJson(json),
+    queryParameters: {'origin': '$originId', 'destination': '$destinationId'},
+  );
+
   Future<List<Trip>> searchTrips(TripSearch search) => _list(
     '/client/trips/',
     (json) => Trip.fromJson(json),
