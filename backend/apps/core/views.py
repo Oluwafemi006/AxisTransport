@@ -1281,6 +1281,22 @@ class ParcelViewSet(viewsets.ModelViewSet):
         )
 
     @action(detail=True, methods=["post"], permission_classes=[IsCounterOrAdmin])
+    def price(self, request, pk=None):
+        """Gros colis : l'agence fixe le prix ; l'ancien et le nouveau montant restent à l'historique."""
+        parcel = self.get_object()
+        amount = str(request.data.get("amount") or "")
+        if not amount.isdigit() or int(amount) <= 0:
+            raise ValidationError({"amount": "Saisissez un prix entier en FCFA, supérieur à zéro."})
+        old = parcel.amount
+        parcel.amount = int(amount)
+        parcel.save(update_fields=["amount", "updated_at"])
+        ParcelStatusHistory.objects.create(
+            parcel=parcel, from_status=parcel.status, to_status=parcel.status, changed_by=request.user,
+            note=f"Prix : {old} → {amount} FCFA",
+        )
+        return Response(ParcelSerializer(parcel).data)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsCounterOrAdmin])
     def transition(self, request, pk=None):
         parcel = self.get_object()
         if "trip" in request.data:
@@ -1748,7 +1764,9 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
         except DjangoValidationError as exc:
             raise service_validation_error(exc, staff=True)
         with transaction.atomic():
-            parcel = serializer.save(channel=Ticket.Channel.COUNTER)
+            # Prix de base réglé par l'admin ; sans réglage, l'agence le fixe ensuite.
+            base = SystemSetting.objects.filter(key="parcel_base_price_fcfa").first()
+            parcel = serializer.save(channel=Ticket.Channel.COUNTER, amount=base.value if base else None)
             ParcelPhoto.objects.bulk_create(
                 ParcelPhoto(parcel=parcel, url=url, public_id=public_id) for url, public_id in stored
             )
@@ -1756,7 +1774,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                 parcel=parcel, to_status=Parcel.Status.REGISTERED, changed_by=request.user
             )
         return Response(
-            {"tracking_number": parcel.tracking_number, "photos": [url for url, _ in stored]},
+            {"tracking_number": parcel.tracking_number, "amount": parcel.amount, "photos": [url for url, _ in stored]},
             status=status.HTTP_201_CREATED,
         )
 

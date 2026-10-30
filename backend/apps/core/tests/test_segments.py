@@ -344,3 +344,16 @@ class StaffSaleSegmentTests(SegmentsTestCase):
         with mock.patch("apps.core.views.upload_parcel_photo", side_effect=DjangoValidationError("TEST échec")):
             self.assertEqual(self.post_parcel().status_code, 400)
         self.assertFalse(Parcel.objects.exists())
+
+    def test_parcel_takes_the_base_price_then_the_agency_can_change_it(self):
+        SystemSetting.objects.create(key="parcel_base_price_fcfa", value=2000)
+        with mock.patch("apps.core.views.upload_parcel_photo", return_value=("https://test.invalid/a.jpg", "TEST")):
+            self.post_parcel()
+        parcel = Parcel.objects.get()
+        self.assertEqual(parcel.amount, 2000)
+        self.assertEqual(self.client.post(f"/api/v1/parcels/{parcel.pk}/price/", {"amount": 5000}).status_code, 403)
+        counter = User.objects.create_user(username="test-guichet", password="secret", role=User.Role.COUNTER)
+        self.client.force_authenticate(counter)
+        self.assertEqual(self.client.post(f"/api/v1/parcels/{parcel.pk}/price/", {"amount": 5000}).status_code, 200)
+        parcel.refresh_from_db()
+        self.assertEqual(parcel.amount, 5000)
