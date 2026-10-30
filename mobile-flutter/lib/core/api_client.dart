@@ -9,6 +9,10 @@ import 'models.dart';
 import 'session_store.dart';
 import '../features/trips/domain/trip_search.dart';
 
+const segmentFareMissingCode = 'segment_fare_missing';
+const segmentFareMissingMessage =
+    "Tarif non disponible pour ce trajet. Choisissez un autre trajet ou contactez l'agence.";
+
 class ApiException implements Exception {
   ApiException(this.message, {this.statusCode, this.data});
   final String message;
@@ -30,6 +34,9 @@ class ApiException implements Exception {
 
   /// Statut renvoyé par le prestataire quand le paiement n'est pas approuvé (pending, declined…).
   String? get paymentStatus => _field('payment_status')?.toString();
+
+  /// Tronçon sans tarif : le serveur refuse, aucun prix de repli.
+  bool get isSegmentFareMissing => _field('code') == segmentFareMissingCode;
 
   @override
   String toString() => message;
@@ -667,6 +674,10 @@ class ApiClient {
   }
 
   String _messageFrom(DioException error) {
+    final payload = error.response?.data;
+    if (payload is Map && payload['code'] == segmentFareMissingCode) {
+      return segmentFareMissingMessage;
+    }
     final message = _userMessageFrom(error);
     if (!kDebugMode) return message;
     // En debug uniquement : la cause technique, pour diagnostiquer sans deviner.

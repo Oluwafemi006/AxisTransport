@@ -32,7 +32,16 @@ export function counterTripLabel(routeLabel: string, departure: string, price: s
 
 // Texte d'erreur d'une action du portail, toujours en français et sans texte technique.
 // `reason` : erreur levée par apiFetch (avec `status`) ou par le navigateur (sans `status`).
+export const SEGMENT_FARE_MISSING_MESSAGE = "Tarif non disponible pour ce trajet. Choisissez un autre trajet ou contactez l'agence.";
+
+// Refus du serveur pour un tronçon sans tarif : même message partout, jamais de texte technique.
+export function isSegmentFareMissing(reason: unknown): boolean {
+  const details = (reason as { details?: { code?: unknown } } | null | undefined)?.details;
+  return details?.code === "segment_fare_missing";
+}
+
 export function actionErrorText(reason: unknown, failed: string): string {
+  if (isSegmentFareMissing(reason)) return SEGMENT_FARE_MISSING_MESSAGE;
   const error = (reason ?? {}) as { status?: unknown; message?: unknown; name?: unknown };
   const status = typeof error.status === "number" ? error.status : null;
   if (status === null) {

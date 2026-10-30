@@ -189,6 +189,20 @@ void main() {
     expect(api.sells, 0);
   });
 
+  test('vente contrôleur refusée pour tarif manquant : message clair, saisie gardée', () async {
+    final (controller, api) = await _ready();
+    api.sellError = ApiException(
+      segmentFareMissingMessage,
+      statusCode: 400,
+      data: const {'code': segmentFareMissingCode},
+    );
+    await _sell(controller);
+    expect(controller.error, segmentFareMissingMessage);
+    expect(controller.sale, isNull);
+    expect(controller.trip, isNotNull);
+    expect(controller.seat, isNotNull);
+  });
+
   test('vente en espèces : le billet est émis par le serveur', () async {
     final (controller, api) = await _ready();
     await _sell(controller);

@@ -147,8 +147,14 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
           ),
         );
       }
-    } catch (_) {
+    } on ApiException catch (error) {
       // Sans réponse du serveur, aucun total n'est affiché : rien n'est calculé ici.
+      final current = state.value;
+      if (error.isSegmentFareMissing && current != null) {
+        state = AsyncData(current.copyWith(error: error.message));
+      }
+    } catch (_) {
+      // Même cas : aucun total n'est calculé dans l'application.
     }
   }
 

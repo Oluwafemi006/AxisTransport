@@ -13,7 +13,7 @@ const source = readFileSync(path.join(here, "../src/lib/portal-rules.ts"), "utf8
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
 const compiled = path.join(mkdtempSync(path.join(tmpdir(), "axis-portal-rules-")), "portal-rules.mjs");
 writeFileSync(compiled, outputText);
-const { placeChoices, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath } = await import(pathToFileURL(compiled).href);
+const { placeChoices, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE } = await import(pathToFileURL(compiled).href);
 
 const places = [{ id: 1, name: "Cotonou" }, { id: 2, name: "Parakou" }];
 
@@ -186,4 +186,12 @@ test("une liste paginée suit `next` jusqu'à la fin, plus de 50 résultats comp
   assert.equal(nextPagePath("/trips/?all=true", "https://api.test/api/v1/trips/?all=true&page=2"), "/trips/?all=true&page=2");
   assert.equal(nextPagePath("/trips/?all=true&page=2", "https://api.test/api/v1/trips/?all=true&page=3"), "/trips/?all=true&page=3");
   assert.equal(nextPagePath("/trips/?all=true&page=3", null), null);
+});
+
+test("tarif manquant : message clair pour le client et le guichet, sans texte technique", () => {
+  const refused = { status: 400, message: "détail serveur", details: { code: "segment_fare_missing", detail: "détail serveur" } };
+  assert.equal(isSegmentFareMissing(refused), true);
+  assert.equal(actionErrorText(refused, "Vente impossible."), SEGMENT_FARE_MISSING_MESSAGE);
+  assert.equal(isSegmentFareMissing({ status: 400, details: { detail: "Autre refus." } }), false);
+  assert.equal(isSegmentFareMissing(null), false);
 });

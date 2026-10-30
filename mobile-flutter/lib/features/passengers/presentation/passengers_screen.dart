@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/formatters.dart';
+import '../../../core/api_client.dart';
 import '../../../core/models.dart';
 import '../../../core/session.dart';
 import '../../../core/theme.dart';
@@ -177,11 +178,13 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
         _alightingPointId = initialAlightingId;
         _loading = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Connexion nécessaire pour préparer cette réservation.';
+        _error = error is ApiException && error.isSegmentFareMissing
+            ? error.message
+            : 'Connexion nécessaire pour préparer cette réservation.';
       });
     }
   }

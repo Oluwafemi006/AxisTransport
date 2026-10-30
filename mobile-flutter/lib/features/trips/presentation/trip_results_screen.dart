@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/formatters.dart';
+import '../../../core/api_client.dart';
 import '../../../core/models.dart';
 import '../../../core/session.dart';
 import '../../../core/theme/axis_theme.dart';
@@ -61,14 +62,15 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
         _places = places;
         _loading = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _trips = [];
         _nextAvailable = null;
         _loading = false;
-        _error =
-            'Connexion nécessaire pour connaître les places et tarifs actuels.';
+        _error = error is ApiException && error.isSegmentFareMissing
+            ? error.message
+            : 'Connexion nécessaire pour connaître les places et tarifs actuels.';
       });
     }
   }
