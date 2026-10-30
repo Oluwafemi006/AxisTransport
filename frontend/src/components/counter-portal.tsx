@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { CounterPanel } from "./admin-portal";
 import { LoginCard } from "./login-card";
-import { AccessDenied, Loading, Notice, StaffLogin, StaffShell, StaffTitle } from "./ui";
-import { apiFetch, apiList, clearTokens, getAccessToken } from "@/lib/api";
-import type { PaymentMethod, Trip, User } from "@/lib/types";
+import { AccessDenied, Loading, Notice, SectionHeading, StaffLogin, StaffShell, StaffTitle } from "./ui";
+import type { NoticeState } from "./ui";
+import { apiFetch, apiList, clearTokens, getAccessToken, money } from "@/lib/api";
+import { actionErrorText } from "@/lib/portal-rules";
+import type { Parcel, PaymentMethod, Trip, User } from "@/lib/types";
 
 export function CounterPortal() {
   const [user, setUser] = useState<User | null>(null);
@@ -53,6 +55,55 @@ export function CounterPortal() {
       <StaffTitle eyebrow="Guichet" title="Vente de billets" />
       {message && <Notice notice={{ text: message, tone: "error" }} className="mb-5" />}
       {user ? <CounterPanel trips={trips} payments={payments} onChanged={load} /> : <Loading />}
+      {user && <ParcelPrices />}
     </StaffShell>
+  );
+}
+
+// Colis enregistrés : le prix de base vient du serveur, l'agence le change pour un gros colis.
+function ParcelPrices() {
+  const [parcels, setParcels] = useState<Parcel[]>([]);
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  const read = useCallback(async () => {
+    try { setParcels((await apiList<Parcel>("/parcels/")).slice(0, 30)); }
+    catch (reason) { setNotice({ text: actionErrorText(reason, "Les colis n’ont pas pu être chargés."), tone: "error" }); }
+  }, []);
+  useEffect(() => { void read(); }, [read]);
+
+  async function save(parcel: Parcel) {
+    try {
+      await apiFetch(`/parcels/${parcel.id}/price/`, { method: "POST", body: JSON.stringify({ amount: (drafts[parcel.id] ?? "").trim() }) });
+      setNotice({ text: `Prix du colis ${parcel.tracking_number} enregistré.`, tone: "ok" });
+      await read();
+    } catch (reason) { setNotice({ text: actionErrorText(reason, "Le prix n’a pas été enregistré."), tone: "error" }); }
+  }
+
+  return (
+    <section className="card mt-5">
+      <SectionHeading eyebrow="Gros colis : prix fixé par l’agence" title="Colis" />
+      <Notice notice={notice} className="mb-3" />
+      {parcels.length === 0 ? <p className="text-sm text-slate-500">Aucun colis enregistré.</p> : (
+        <ul className="space-y-4">
+          {parcels.map((parcel) => (
+            <li key={parcel.id} className="border-b pb-4">
+              <p className="font-semibold">{parcel.tracking_number} : {parcel.origin_detail.name} → {parcel.destination_detail.name}</p>
+              <p className="text-sm text-slate-500">{parcel.description} · De {parcel.sender_name} à {parcel.recipient_name}</p>
+              {parcel.photo_urls.length > 0 && (
+                <div className="mt-2 flex gap-2">
+                  {parcel.photo_urls.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer"><img src={url} alt={`Colis ${parcel.tracking_number}`} className="h-20 w-20 rounded object-cover" /></a>)}
+                </div>
+              )}
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-sm">{parcel.amount ? money(parcel.amount, "XOF") : "Prix à fixer"}</span>
+                <input className="field max-w-32" inputMode="numeric" aria-label={`Nouveau prix ${parcel.tracking_number}`} value={drafts[parcel.id] ?? ""} onChange={(event) => setDrafts({ ...drafts, [parcel.id]: event.target.value })} />
+                <button className="secondary-button" onClick={() => void save(parcel)}>Enregistrer</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

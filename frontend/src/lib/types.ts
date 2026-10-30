@@ -217,6 +217,8 @@ export interface Parcel {
   destination_detail: Location;
   trip: number | null;
   description: string;
+  photo_urls: string[];
+  amount: string | null;
   weight_kg: string | null;
   status: string;
   status_display: string;
