@@ -286,3 +286,29 @@ class StaffSaleSegmentTests(SegmentsTestCase):
         other = User.objects.create_user(username="test-autre", password="secret", role=User.Role.CONTROLLER)
         self.client.force_authenticate(other)
         self.assertEqual(self.client.get("/api/v1/staff/sales/summary/").json()["sold_tickets"], 0)
+
+    def arrive(self, name):
+        return self.client.post(
+            "/api/v1/staff/sales/arrival/", {"trip": self.trip.pk, "stop": self.places[name].pk}, format="json"
+        )
+
+    def test_intermediate_stop_can_be_skipped_and_final_ends_the_trip(self):
+        self.assertEqual(self.arrive("Kétou").status_code, 200)
+        self.trip.refresh_from_db()
+        self.assertEqual(self.trip.status, Trip.Status.SCHEDULED)
+        self.assertEqual(self.arrive("Cotonou").status_code, 200)
+        self.trip.refresh_from_db()
+        self.assertEqual(self.trip.status, Trip.Status.COMPLETED)
+
+    def test_first_stop_is_not_an_arrival(self):
+        self.assertEqual(self.arrive("Parakou").status_code, 400)
+
+    def test_agency_sees_the_position_and_a_client_cannot(self):
+        self.arrive("Savè")
+        admin = User.objects.create_user(username="test-admin", password="secret", role=User.Role.ADMIN)
+        self.client.force_authenticate(admin)
+        rows = self.client.get("/api/v1/bus-positions/").json()
+        self.assertEqual((rows[0]["stop"], rows[0]["final"]), ("Savè", False))
+        client = User.objects.create_user(username="test-client", password="secret", role=User.Role.CLIENT)
+        self.client.force_authenticate(client)
+        self.assertEqual(self.client.get("/api/v1/bus-positions/").status_code, 403)

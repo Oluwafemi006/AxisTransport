@@ -7,7 +7,7 @@ import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import { actionErrorText, counterTripLabel, holdMinutesConfigured, upcomingSellableTrips } from "@/lib/portal-rules";
 
-import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, Location, ManualTicketChange, MissingSegmentFare, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
+import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
 type AdminTab = "dashboard" | "planning" | "guichet" | "points" | "colis" | "flotte" | "tarifs" | "troncons" | "agence" | "paiements" | "equipe";
 type Dashboard = {
@@ -94,7 +94,7 @@ export function AdminPortal() {
       {dashboard && !holdMinutesConfigured(settings) && <Notice notice={{ text: "Aucune réservation possible : la durée de blocage d’un siège n’est pas saisie. Renseignez-la dans l’onglet « Tarifs & règles », bloc « Blocage d’un siège ».", tone: "error" }} className="mb-5" />}
       {!dashboard ? <Loading /> : (
         <>
-          {tab === "dashboard" && <DashboardPanel data={dashboard} trips={trips} />}
+          {tab === "dashboard" && <><BusPositions /><DashboardPanel data={dashboard} trips={trips} /></>}
           {tab === "planning" && <PlanningPanel routes={routes} vehicles={vehicles.filter((v) => v.category === "BUS")} trips={trips} weeklySchedules={weeklySchedules} onChanged={load} />}
           {tab === "guichet" && <CounterPanel trips={trips} payments={payments} onChanged={load} />}
           {tab === "points" && <BoardingPointsPanel locations={locations} onChanged={load} />}
@@ -108,6 +108,27 @@ export function AdminPortal() {
         </>
       )}
     </StaffShell>
+  );
+}
+
+function BusPositions() {
+  const [rows, setRows] = useState<BusPosition[]>([]);
+  useEffect(() => {
+    const read = () => void apiFetch<BusPosition[]>("/bus-positions/").then(setRows).catch(() => undefined);
+    read();
+    const timer = window.setInterval(read, 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+  if (rows.length === 0) return null;
+  return (
+    <section className="card mb-5">
+      <SectionHeading eyebrow="Confirmé par les contrôleurs" title="Position des bus" />
+      <ul className="space-y-1 text-sm">
+        {rows.slice(0, 10).map((row) => (
+          <li key={row.id}>{new Date(row.confirmed_at).toLocaleString("fr-FR", { timeZone: "Africa/Porto-Novo", dateStyle: "short", timeStyle: "short" })} : <strong>{row.route}</strong> {row.final ? "arrivé à destination," : "arrivé à"} {row.stop}{row.confirmed_by ? ` (${row.confirmed_by})` : ""}</li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

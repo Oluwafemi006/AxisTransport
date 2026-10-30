@@ -329,6 +329,19 @@ class Trip(TimeStampedModel):
         return f"{self.route} — {timezone.localtime(self.departure_at):%d/%m/%Y %H:%M}"
 
 
+class TripStopArrival(models.Model):
+    """Arrivée confirmée par le contrôleur. Facultative aux arrêts : seule compte la dernière position connue."""
+
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="stop_arrivals")
+    location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="+")
+    confirmed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
+    confirmed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-confirmed_at", "-id"]
+        constraints = [models.UniqueConstraint(fields=["trip", "location"], name="unique_trip_stop_arrival")]
+
+
 class WeeklySchedule(TimeStampedModel):
     class DayOfWeek(models.IntegerChoices):
         MONDAY = 0, "Lundi"

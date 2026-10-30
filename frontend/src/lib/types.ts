@@ -289,6 +289,15 @@ export interface SegmentFare {
   updated_by_name: string;
 }
 
+export interface BusPosition {
+  id: number;
+  route: string;
+  stop: string;
+  final: boolean;
+  confirmed_at: string;
+  confirmed_by: string;
+}
+
 export interface MissingSegmentFare {
   origin_id: number;
   origin: string;

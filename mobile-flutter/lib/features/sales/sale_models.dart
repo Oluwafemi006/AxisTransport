@@ -60,7 +60,13 @@ class SaleTrip {
     this.destinationBoardingPoints = const [],
     this.originId,
     this.destinationId,
+    this.stops = const [],
+    this.arrivedStopIds = const {},
   });
+
+  /// Arrêts du départ dans le sens du bus, et ceux dont l'arrivée est confirmée.
+  final List<RouteStopInfo> stops;
+  final Set<int> arrivedStopIds;
 
   final int id;
 
@@ -133,6 +139,12 @@ class SaleTrip {
     final destDetail = _map(routeDetail['destination_detail']);
     return SaleTrip(
       id: json['id'] as int,
+      stops: (routeDetail['stops'] as List? ?? const [])
+          .map((item) => RouteStopInfo.fromJson(_map(item)))
+          .toList(),
+      arrivedStopIds: (json['arrivals'] as List? ?? const [])
+          .whereType<int>()
+          .toSet(),
       label: routeDetail['label'] as String? ?? '',
       departureAt: _date(json['departure_at']),
       boardingAt: _date(json['boarding_at']),

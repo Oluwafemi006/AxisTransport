@@ -524,6 +524,14 @@ class ApiClient {
   }
 
   /// Départs vendables par cet agent, avec places restantes et montants calculés par le serveur.
+  Future<Map<String, dynamic>> confirmArrival(int trip, int stop) {
+    return _request<Map<String, dynamic>>(
+      '/staff/sales/arrival/',
+      data: {'trip': trip, 'stop': stop},
+      auth: true,
+    );
+  }
+
   Future<Map<String, dynamic>> saleSummary() {
     return _request<Map<String, dynamic>>('/staff/sales/summary/', auth: true);
   }

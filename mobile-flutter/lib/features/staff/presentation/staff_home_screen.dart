@@ -129,9 +129,42 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
     }
   }
 
+  /// Le prochain arrêt est facultatif : le contrôleur peut confirmer directement le terminus.
+  Future<void> _confirmArrival(SaleTrip trip, String stopName) async {
+    final stop = trip.stops.where((item) => item.name == stopName).firstOrNull;
+    if (stop == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(apiClientProvider).confirmArrival(trip.id, stop.id);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Arrivée à $stopName confirmée. L’agence est informée.')),
+      );
+      await _fetchActiveTrip();
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   List<RouteStopItem> _buildStopsForTrip(SaleTrip trip) {
     if (widget.stops != null && widget.stops!.isNotEmpty) {
       return widget.stops!;
+    }
+    if (trip.stops.length >= 2) {
+      final lastArrived = trip.stops.lastIndexWhere(
+        (stop) => trip.arrivedStopIds.contains(stop.id),
+      );
+      final current = lastArrived < 0 ? 0 : lastArrived;
+      return [
+        for (var index = 0; index < trip.stops.length; index++)
+          RouteStopItem(
+            name: trip.stops[index].name,
+            state: index == current
+                ? RouteStopState.current
+                : index < current
+                ? RouteStopState.passed
+                : RouteStopState.upcoming,
+          ),
+      ];
     }
     final parts = trip.label
         .split('→')
@@ -178,6 +211,8 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
     final trip = widget.activeTrip ?? _loadedTrip;
     final stops = trip != null ? _buildStopsForTrip(trip) : const <RouteStopItem>[];
     final nextStop = _resolveNextStop(stops);
+    final lastStop = stops.isNotEmpty ? stops.last.name : null;
+    final finalStop = lastStop != nextStop ? lastStop : null;
     final summary = widget.daySummary ?? _summary;
     ref.listen(staffActivityProvider, (_, _) => _fetchSummary());
 
@@ -285,7 +320,15 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
                         trip: trip,
                         stops: stops,
                         nextStop: nextStop,
-                        onConfirmArrival: widget.onConfirmArrival,
+                        onConfirmArrival:
+                            widget.onConfirmArrival ??
+                            (trip != null && nextStop != null
+                                ? () => _confirmArrival(trip, nextStop)
+                                : null),
+                        finalStop: finalStop,
+                        onConfirmFinal: trip != null && finalStop != null
+                            ? () => _confirmArrival(trip, finalStop)
+                            : null,
                       ),
                     ],
                   ),
@@ -539,6 +582,8 @@ class _ActiveTripCard extends StatelessWidget {
     required this.stops,
     required this.nextStop,
     required this.onConfirmArrival,
+    this.finalStop,
+    this.onConfirmFinal,
   });
 
   final bool loading;
@@ -546,6 +591,8 @@ class _ActiveTripCard extends StatelessWidget {
   final List<RouteStopItem> stops;
   final String? nextStop;
   final VoidCallback? onConfirmArrival;
+  final String? finalStop;
+  final VoidCallback? onConfirmFinal;
 
   @override
   Widget build(BuildContext context) {
@@ -680,6 +727,16 @@ class _ActiveTripCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (finalStop != null)
+                    TextButton(
+                      onPressed: onConfirmFinal,
+                      child: Text(
+                        'Arrivée finale à $finalStop',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: onDark,
+                        ),
+                      ),
+                    ),
                 ],
               ],
             ),

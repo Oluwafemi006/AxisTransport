@@ -32,6 +32,7 @@ from .models import (
     FeatureFlag,
     Location,
     Parcel,
+    TripStopArrival,
     TicketControl,
     ParcelStatusHistory,
     PaymentMethod,
@@ -114,6 +115,7 @@ from .services import (
     ReservationsClosed,
     SEGMENT_DIRECTION_FORWARD,
     SegmentFareMissing,
+    confirm_trip_arrival,
     resolve_segment_fare,
     segment_catalog,
     cancel_held_booking,
@@ -852,6 +854,29 @@ class SegmentFareChangeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     queryset = SegmentFareChange.objects.select_related("fare__start__location", "fare__end__location", "changed_by")
     serializer_class = SegmentFareChangeSerializer
     permission_classes = [IsAxisAdmin]
+
+
+class BusPositionView(APIView):
+    """Dernières arrivées confirmées par les contrôleurs : c'est la notification de l'agence."""
+
+    permission_classes = [IsAxisAdmin]
+
+    def get(self, request):
+        arrivals = TripStopArrival.objects.select_related("trip__route__origin", "trip__route__destination", "location", "confirmed_by")[:30]
+        return Response(
+            [
+                {
+                    "id": arrival.id,
+                    "route": str(arrival.trip.route),
+                    "departure_at": arrival.trip.departure_at,
+                    "stop": arrival.location.name,
+                    "final": arrival.location_id == arrival.trip.route.destination_id,
+                    "confirmed_at": arrival.confirmed_at,
+                    "confirmed_by": (arrival.confirmed_by.get_full_name() or arrival.confirmed_by.username) if arrival.confirmed_by else "",
+                }
+                for arrival in arrivals
+            ]
+        )
 
 
 class AgencyProfileView(APIView):
@@ -1678,6 +1703,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                     for method in methods
                 ]
             # Vente en route : tous les tronçons du départ dans le sens du bus ; sans tarif, pas de tronçon.
+            item["arrivals"] = list(trip.stop_arrivals.values_list("location_id", flat=True))
             item["segments"] = []
             stops = trip.route.get_stops_sequence()
             for index, start in enumerate(stops):
@@ -1701,6 +1727,21 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                     )
             trips.append(item)
         return Response({"trips": trips})
+
+    @action(detail=False, methods=["post"])
+    def arrival(self, request):
+        """Le contrôleur confirme l'arrivée du bus à un arrêt : l'agence voit la position dans /admin."""
+        trip = self._sellable_trips().filter(pk=request.data.get("trip")).first()
+        if not trip:
+            raise ValidationError({"trip": "Ce départ n'est pas en cours pour cet agent."})
+        stop = request.data.get("stop")
+        if not str(stop).isdigit():
+            raise ValidationError({"stop": "Arrêt requis."})
+        try:
+            arrival = confirm_trip_arrival(trip, int(stop), actor=request.user)
+        except DjangoValidationError as exc:
+            raise service_validation_error(exc, staff=True)
+        return Response({"stop": arrival.location.name, "confirmed_at": arrival.confirmed_at})
 
     @action(detail=False, methods=["get"])
     def summary(self, request):

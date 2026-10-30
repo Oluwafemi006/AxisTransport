@@ -15,6 +15,7 @@ from .views import (
     SegmentFareChangeViewSet,
     ManualTicketChangeViewSet,
     AgencyProfileView,
+    BusPositionView,
     AgencySettingChangeViewSet,
     TaxViewSet,
     SegmentFareViewSet,
@@ -64,5 +65,6 @@ urlpatterns = [
     path("auth/register/", RegisterView.as_view()),
     path("dashboard/", DashboardView.as_view()),
     path("agency-profile/", AgencyProfileView.as_view()),
+    path("bus-positions/", BusPositionView.as_view()),
     path("", include(router.urls)),
 ]

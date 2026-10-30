@@ -13,6 +13,7 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError as ApiValidationError
 
 from .models import (
+    TripStopArrival,
     BoardingPoint,
     Booking,
     FareRule,
@@ -467,6 +468,20 @@ def segment_catalog(direction):
                 }
             )
     return {"direction": direction, "segments": segments, "missing_fares": missing}
+
+
+def confirm_trip_arrival(trip, location_id, *, actor):
+    """Arrêts intermédiaires facultatifs ; l'arrivée au terminus termine le départ."""
+    stops = [location.pk for location in trip.route.get_stops_sequence()]
+    if location_id not in stops[1:]:
+        raise ValidationError("Cet arrêt n'est pas une arrivée de ce départ.")
+    arrival, _ = TripStopArrival.objects.get_or_create(
+        trip=trip, location_id=location_id, defaults={"confirmed_by": actor}
+    )
+    if location_id == stops[-1] and trip.status != Trip.Status.COMPLETED:
+        trip.status = Trip.Status.COMPLETED
+        trip.save(update_fields=["status", "updated_at"])
+    return arrival
 
 
 def segment_cache_key(direction):
