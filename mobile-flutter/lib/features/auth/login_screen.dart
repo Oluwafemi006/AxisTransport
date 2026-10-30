@@ -232,42 +232,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
             ),
             // Encadré explicatif pour les contrôleurs
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AxisSpacing.screenAuth,
-                AxisSpacing.md,
-                AxisSpacing.screenAuth,
-                AxisSpacing.xl,
-              ),
-              child: Container(
-                padding: const EdgeInsets.all(AxisSpacing.sm),
-                decoration: BoxDecoration(
-                  color: tokens.surfaceSoft,
-                  borderRadius: BorderRadius.circular(AxisRadius.sm),
-                  border: Border.all(color: tokens.border),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.mail_outline_rounded,
-                      size: 20,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: AxisSpacing.xs),
-                    Expanded(
-                      child: Text(
-                        'Contrôleur ? Créez votre compte avec le lien reçu par e-mail, puis connectez-vous ici. L’app s’ouvre sur votre espace.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: tokens.textSecondary,
-                          height: 1.5,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ],
         ),
       ),
