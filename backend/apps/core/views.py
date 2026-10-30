@@ -32,6 +32,7 @@ from .models import (
     FeatureFlag,
     Location,
     Parcel,
+    ParcelPhoto,
     TripStopArrival,
     TicketControl,
     ParcelStatusHistory,
@@ -111,6 +112,7 @@ from .payments import (
     settle_ticket_payment,
     verify_fedapay_signature,
 )
+from .photo_storage import upload_parcel_photo
 from .services import (
     ReservationsClosed,
     SEGMENT_DIRECTION_FORWARD,
@@ -1727,6 +1729,36 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                     )
             trips.append(item)
         return Response({"trips": trips})
+
+    @action(detail=False, methods=["post"], url_path="parcel")
+    def parcel(self, request):
+        """Colis enregistré par un agent, avec 1 à 3 photos obligatoires."""
+        photos = request.FILES.getlist("photos")
+        if not 1 <= len(photos) <= 3:
+            raise ValidationError({"photos": "Ajoutez 1 à 3 photos du colis."})
+        serializer = ParcelSerializer(
+            data={key: request.data.get(key) for key in (
+                "sender_name", "sender_phone", "recipient_name", "recipient_phone", "origin", "destination", "description"
+            )}
+        )
+        serializer.is_valid(raise_exception=True)
+        # Envoi avant la transaction : une base ne doit pas rester verrouillée pendant un appel réseau.
+        try:
+            stored = [upload_parcel_photo(photo) for photo in photos]
+        except DjangoValidationError as exc:
+            raise service_validation_error(exc, staff=True)
+        with transaction.atomic():
+            parcel = serializer.save(channel=Ticket.Channel.COUNTER)
+            ParcelPhoto.objects.bulk_create(
+                ParcelPhoto(parcel=parcel, url=url, public_id=public_id) for url, public_id in stored
+            )
+            ParcelStatusHistory.objects.create(
+                parcel=parcel, to_status=Parcel.Status.REGISTERED, changed_by=request.user
+            )
+        return Response(
+            {"tracking_number": parcel.tracking_number, "photos": [url for url, _ in stored]},
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=False, methods=["post"])
     def arrival(self, request):

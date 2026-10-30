@@ -1,7 +1,10 @@
 from datetime import datetime, time, timedelta
 from io import StringIO
+from unittest import mock
 
 from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -10,6 +13,8 @@ from apps.core.models import (
     Booking,
     LineStop,
     Location,
+    Parcel,
+    ParcelPhoto,
     PaymentMethod,
     Route,
     SegmentFare,
@@ -312,3 +317,30 @@ class StaffSaleSegmentTests(SegmentsTestCase):
         client = User.objects.create_user(username="test-client", password="secret", role=User.Role.CLIENT)
         self.client.force_authenticate(client)
         self.assertEqual(self.client.get("/api/v1/bus-positions/").status_code, 403)
+
+    def post_parcel(self, photos=1):
+        files = [SimpleUploadedFile(f"test{index}.jpg", b"TEST", content_type="image/jpeg") for index in range(photos)]
+        return self.client.post(
+            "/api/v1/staff/sales/parcel/",
+            {
+                "sender_name": "TEST exp", "sender_phone": "90000000", "recipient_name": "TEST dest",
+                "recipient_phone": "90000001", "origin": self.places["Parakou"].pk,
+                "destination": self.places["Savè"].pk, "description": "TEST colis", "photos": files,
+            },
+            format="multipart",
+        )
+
+    def test_parcel_needs_a_photo(self):
+        self.assertEqual(self.post_parcel(photos=0).status_code, 400)
+
+    def test_parcel_is_saved_with_its_photos_and_counted(self):
+        with mock.patch("apps.core.views.upload_parcel_photo", return_value=("https://test.invalid/a.jpg", "TEST")):
+            response = self.post_parcel(photos=2)
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(ParcelPhoto.objects.count(), 2)
+        self.assertEqual(self.client.get("/api/v1/staff/sales/summary/").json()["parcels"], 1)
+
+    def test_failed_upload_saves_nothing(self):
+        with mock.patch("apps.core.views.upload_parcel_photo", side_effect=DjangoValidationError("TEST échec")):
+            self.assertEqual(self.post_parcel().status_code, 400)
+        self.assertFalse(Parcel.objects.exists())

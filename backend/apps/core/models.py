@@ -951,6 +951,18 @@ class Parcel(TimeStampedModel):
         return self.tracking_number
 
 
+class ParcelPhoto(models.Model):
+    """Photo d'un colis, conservée chez le prestataire de stockage (voir photo_storage.py)."""
+
+    parcel = models.ForeignKey(Parcel, on_delete=models.CASCADE, related_name="photos")
+    url = models.URLField(max_length=500)
+    public_id = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+
+
 class ParcelStatusHistory(models.Model):
     parcel = models.ForeignKey(Parcel, on_delete=models.CASCADE, related_name="status_history")
     from_status = models.CharField(max_length=24, blank=True)

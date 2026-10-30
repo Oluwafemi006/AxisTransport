@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../../sales/sale_models.dart';
+import 'staff_home_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/api_client.dart';
 import '../../../core/formatters.dart';
 import '../../../core/models.dart';
 import '../../../core/session.dart';
@@ -71,6 +76,7 @@ class _ControllerParcelScreenState
   int? _selectedDestinationId;
   int _paymentIndex = 0; // 0 = Espèces, 1 = Mobile Money
   String? _formError;
+  bool _sending = false;
 
   @override
   void initState() {
@@ -123,83 +129,18 @@ class _ControllerParcelScreenState
     });
   }
 
-  Future<PhotoSlotItem?> _showCameraCaptureSheet(int index) {
-    final axis = context.axis;
-    final theme = Theme.of(context);
-    return showModalBottomSheet<PhotoSlotItem>(
-      context: context,
-      backgroundColor: theme.colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(AxisRadius.xl),
-        ),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AxisSpacing.lg),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Caméra — Photo $index / 3',
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  Text(
-                    'Max ${_compressionSettings.maxWidthPx} px · JPEG ${_compressionSettings.jpegQuality}%',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: axis.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AxisSpacing.md),
-              Container(
-                height: 140,
-                decoration: BoxDecoration(
-                  color: axis.ink,
-                  borderRadius: BorderRadius.circular(AxisRadius.lg),
-                ),
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.camera_alt_outlined,
-                      size: 36,
-                      color: axis.accent,
-                    ),
-                    const SizedBox(height: AxisSpacing.xs),
-                    Text(
-                      'Cadrez le colis avant expédition',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: axis.borderStrong,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AxisSpacing.md),
-              AxisButton(
-                label: 'Prendre la photo',
-                icon: const Icon(Icons.camera_alt_rounded),
-                textColor: AxisButtonTextColor.ink,
-                onPressed: () {
-                  Navigator.of(sheetContext).pop(
-                    PhotoSlotItem(
-                      id: 'photo-$index',
-                      label: 'Photo $index',
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
+  /// Ouvre l'appareil photo ; la compression suit les réglages de l'écran.
+  Future<PhotoSlotItem?> _showCameraCaptureSheet(int index) async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      maxWidth: _compressionSettings.maxWidthPx.toDouble(),
+      imageQuality: _compressionSettings.jpegQuality,
+    );
+    if (picked == null) return null;
+    return PhotoSlotItem(
+      id: 'photo-$index',
+      label: 'Photo $index',
+      imageBytes: await picked.readAsBytes(),
     );
   }
 
@@ -211,7 +152,7 @@ class _ControllerParcelScreenState
   }
 
   void _handleSubmit() {
-    if (_photos.isEmpty) return;
+    if (_photos.isEmpty || _sending) return;
     if (_senderName.text.trim().isEmpty ||
         _senderPhone.text.trim().isEmpty ||
         _recipientName.text.trim().isEmpty ||
@@ -245,13 +186,42 @@ class _ControllerParcelScreenState
       return;
     }
 
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Enregistrement de colis avec photos bientôt disponible côté serveur.',
-        ),
-      ),
-    );
+    _send();
+  }
+
+  Future<void> _send() async {
+    final api = ref.read(apiClientProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _sending = true);
+    try {
+      final options = await api.saleOptions();
+      final trips = options['trips'] as List? ?? const [];
+      final stops = trips.isEmpty
+          ? const <RouteStopInfo>[]
+          : SaleTrip.fromJson(Map<String, dynamic>.from(trips.first as Map)).stops;
+      if (stops.isEmpty) {
+        setState(() => _formError = 'Aucun départ en cours pour ce colis.');
+        return;
+      }
+      final result = await api.createParcel({
+        'sender_name': _senderName.text.trim(),
+        'sender_phone': _senderPhone.text.trim(),
+        'recipient_name': _recipientName.text.trim(),
+        'recipient_phone': _recipientPhone.text.trim(),
+        'origin': stops.first.id,
+        'destination': _selectedDestinationId,
+        'description': _description.text.trim(),
+      }, [for (final photo in _photos) ?photo.imageBytes]);
+      ref.read(staffActivityProvider.notifier).changed();
+      messenger.showSnackBar(
+        SnackBar(content: Text('Colis ${result['tracking_number']} enregistré.')),
+      );
+      if (mounted) context.pop();
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _formError = e.message);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   @override

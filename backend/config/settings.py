@@ -192,6 +192,11 @@ LOGGING = {
     "loggers": {"axis.payments": {"handlers": ["console"], "level": "INFO", "propagate": False}},
 }
 
+# --- Photos des colis (Cloudinary) ---
+CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
+CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
+
 # --- Messagerie SMTP (Gmail) ---
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
