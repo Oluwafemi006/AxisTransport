@@ -32,6 +32,7 @@ from .models import (
     FeatureFlag,
     Location,
     Parcel,
+    TicketControl,
     ParcelStatusHistory,
     PaymentMethod,
     RentalBooking,
@@ -1700,6 +1701,33 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                     )
             trips.append(item)
         return Response({"trips": trips})
+
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        """Activité du jour de l'agent connecté : calculée ici, jamais dans l'application."""
+        today = timezone.localdate()
+        payments = Transaction.objects.filter(
+            ticket__booking__sold_by=request.user, status=Transaction.Status.SUCCEEDED, created_at__date=today
+        ).select_related("payment_method")
+        cash = mobile_money = Decimal("0")
+        for payment in payments:
+            if payment.payment_method.code.upper() in ONLINE_PROVIDERS:
+                mobile_money += payment.amount
+            else:
+                cash += payment.amount
+        return Response(
+            {
+                "scanned_tickets": TicketControl.objects.filter(
+                    controller=request.user, controlled_at__date=today, result=TicketControl.Result.ACCEPTED
+                ).count(),
+                "sold_tickets": payments.values("ticket").distinct().count(),
+                "parcels": ParcelStatusHistory.objects.filter(
+                    changed_by=request.user, changed_at__date=today, to_status=Parcel.Status.REGISTERED
+                ).count(),
+                "cash_fcfa": int(cash),
+                "mobile_money_fcfa": int(mobile_money),
+            }
+        )
 
     @action(detail=False, methods=["post"])
     def sell(self, request):

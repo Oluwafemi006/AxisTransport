@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'staff_home_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -126,6 +128,7 @@ class _ControllerScannerScreenState
         code,
         expectedTripId: widget.expectedTripId,
       );
+      ref.read(staffActivityProvider.notifier).changed();
       if (!mounted) return;
       final ticket = response['ticket'] is Map
           ? Map<String, dynamic>.from(response['ticket'] as Map)

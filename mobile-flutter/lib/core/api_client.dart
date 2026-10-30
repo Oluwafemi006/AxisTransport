@@ -524,6 +524,10 @@ class ApiClient {
   }
 
   /// Départs vendables par cet agent, avec places restantes et montants calculés par le serveur.
+  Future<Map<String, dynamic>> saleSummary() {
+    return _request<Map<String, dynamic>>('/staff/sales/summary/', auth: true);
+  }
+
   Future<Map<String, dynamic>> saleOptions() {
     return _request<Map<String, dynamic>>('/staff/sales/options/', auth: true);
   }

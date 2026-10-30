@@ -276,3 +276,13 @@ class StaffSaleSegmentTests(SegmentsTestCase):
         )
         self.assertIn(response.status_code, (200, 201), response.data)
         self.assertEqual(Booking.objects.get().amount, 2500)
+
+    def test_day_summary_counts_the_sale_of_this_agent(self):
+        self.test_segment_sale_is_charged_at_the_segment_price()
+        body = self.client.get("/api/v1/staff/sales/summary/").json()
+        self.assertEqual(
+            body, {"scanned_tickets": 0, "sold_tickets": 1, "parcels": 0, "cash_fcfa": 2500, "mobile_money_fcfa": 0}
+        )
+        other = User.objects.create_user(username="test-autre", password="secret", role=User.Role.CONTROLLER)
+        self.client.force_authenticate(other)
+        self.assertEqual(self.client.get("/api/v1/staff/sales/summary/").json()["sold_tickets"], 0)

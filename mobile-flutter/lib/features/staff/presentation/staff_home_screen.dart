@@ -11,6 +11,18 @@ import '../../../core/widgets/route_stops_bar.dart';
 import '../../../core/widgets/skeleton_box.dart';
 import '../../sales/sale_models.dart';
 
+/// Incrémenté après une vente ou un scan : l'accueil recharge alors ses compteurs.
+class StaffActivity extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void changed() => state++;
+}
+
+final staffActivityProvider = NotifierProvider<StaffActivity, int>(
+  StaffActivity.new,
+);
+
 /// Résumé d'activité journalier du contrôleur (maquette `CtrlAccueil.html`).
 class ControllerDaySummary {
   const ControllerDaySummary({
@@ -26,6 +38,15 @@ class ControllerDaySummary {
   final int parcelsCount;
   final num cashAmountFcfa;
   final num mobileMoneyAmountFcfa;
+
+  factory ControllerDaySummary.fromJson(Map<String, dynamic> json) =>
+      ControllerDaySummary(
+        scannedTickets: json['scanned_tickets'] as int? ?? 0,
+        soldTickets: json['sold_tickets'] as int? ?? 0,
+        parcelsCount: json['parcels'] as int? ?? 0,
+        cashAmountFcfa: json['cash_fcfa'] as num? ?? 0,
+        mobileMoneyAmountFcfa: json['mobile_money_fcfa'] as num? ?? 0,
+      );
 }
 
 /// Accueil de l'espace contrôleur (`CtrlAccueil.html`).
@@ -51,6 +72,7 @@ class StaffHomeScreen extends ConsumerStatefulWidget {
 
 class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
   SaleTrip? _loadedTrip;
+  ControllerDaySummary? _summary;
   bool _loadingTrip = false;
   bool _offline = false;
 
@@ -59,6 +81,18 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
     super.initState();
     if (widget.activeTrip == null) {
       _fetchActiveTrip();
+    }
+    if (widget.daySummary == null) _fetchSummary();
+  }
+
+  Future<void> _fetchSummary() async {
+    try {
+      final payload = await ref.read(apiClientProvider).saleSummary();
+      if (mounted) {
+        setState(() => _summary = ControllerDaySummary.fromJson(payload));
+      }
+    } catch (_) {
+      // Sans réponse du serveur, les compteurs restent à « — » : rien n'est estimé ici.
     }
   }
 
@@ -144,7 +178,8 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
     final trip = widget.activeTrip ?? _loadedTrip;
     final stops = trip != null ? _buildStopsForTrip(trip) : const <RouteStopItem>[];
     final nextStop = _resolveNextStop(stops);
-    final summary = widget.daySummary;
+    final summary = widget.daySummary ?? _summary;
+    ref.listen(staffActivityProvider, (_, _) => _fetchSummary());
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
