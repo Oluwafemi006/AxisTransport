@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/formatters.dart';
 import '../../core/session.dart';
@@ -202,24 +201,6 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
     );
   }
 
-  Future<void> _sendSms(SaleTicket ticket) async {
-    final body = saleShareText(ticket, formatFullDateTime);
-    final phone = _phone.text.trim();
-    final uri = Uri(
-      scheme: 'sms',
-      path: phone,
-      queryParameters: <String, String>{'body': body},
-    );
-    try {
-      final launched = await launchUrl(uri);
-      if (!launched) {
-        await _share(ticket);
-      }
-    } catch (_) {
-      await _share(ticket);
-    }
-  }
-
   void _showQrModal(SaleTicket ticket) {
     final axis = context.axis;
     final theme = Theme.of(context);
@@ -401,7 +382,7 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
 
     return [
       Text(
-        'DESTINATION (DEPUIS L’ARRÊT ACTUEL)',
+        'TRAJET DU PASSAGER',
         style: theme.textTheme.labelSmall?.copyWith(
           color: axis.textSecondary,
           letterSpacing: 0.7,
@@ -410,9 +391,9 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
       const SizedBox(height: AxisSpacing.xs),
       for (final item in _sale.trips) ...[
         ChoiceCard(
-          key: item.id == trip?.id ? const Key('sale-trip') : null,
+          key: item.key == trip?.key ? const Key('sale-trip') : null,
           tone: ChoiceCardTone.ink,
-          selected: item.id == trip?.id,
+          selected: item.key == trip?.key,
           onTap: () => _selectTripWithDefaultQuote(item),
           title: item.label,
           subtitle:
@@ -808,7 +789,6 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
     final subtitleText = isMobileMoney
         ? '$formattedAmount payés par Mobile Money'
         : '$formattedAmount encaissés en espèces';
-    final phoneDisplay = _phone.text.trim();
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -887,17 +867,6 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
                   subtitle: 'WhatsApp, Bluetooth, impression',
                   isPrimary: true,
                   onTap: () => _share(ticket),
-                ),
-                const SizedBox(height: AxisSpacing.xs),
-
-                // 2. Envoyer le lien par SMS
-                _DeliveryOptionTile(
-                  icon: Icons.sms_outlined,
-                  title: 'Envoyer le lien par SMS',
-                  subtitle: phoneDisplay.isNotEmpty
-                      ? 'Au $phoneDisplay'
-                      : 'Au téléphone du passager',
-                  onTap: () => _sendSms(ticket),
                 ),
                 const SizedBox(height: AxisSpacing.xs),
 

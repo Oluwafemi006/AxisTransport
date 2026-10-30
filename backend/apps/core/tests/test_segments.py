@@ -230,3 +230,49 @@ class SearchVolumeTests(SegmentsTestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.json()["results"]), 55)
+
+
+class StaffSaleSegmentTests(SegmentsTestCase):
+    def setUp(self):
+        super().setUp()
+        self.trip = self.departure(self.forward)
+        Trip.objects.filter(pk=self.trip.pk).update(
+            departure_at=timezone.make_aware(datetime.combine(timezone.localdate(), time(hour=23, minute=59)))
+        )
+        self.cash = PaymentMethod.objects.create(code="especes", label="Espèces", active=True)
+        self.controller = User.objects.create_user(username="test-controleur", password="secret", role=User.Role.CONTROLLER)
+        self.client.force_authenticate(self.controller)
+
+    def segments_of_trip(self):
+        return self.client.get("/api/v1/staff/sales/options/").json()["trips"][0]["segments"]
+
+    def test_controller_sees_all_pairs_in_bus_order_with_server_prices(self):
+        rows = self.segments_of_trip()
+        self.assertEqual(
+            [(row["origin"], row["destination"], int(float(row["quotes"][0]["total"]))) for row in rows],
+            [(first, second, GRID[(first, second)]) for first_i, first in enumerate(ORDER) for second in ORDER[first_i + 1:]],
+        )
+
+    def test_pair_without_fare_is_not_offered(self):
+        self.drop_fare("Savè", "Kétou")
+        names = [(row["origin"], row["destination"]) for row in self.segments_of_trip()]
+        self.assertEqual(len(names), 9)
+        self.assertNotIn(("Savè", "Kétou"), names)
+
+    def test_segment_sale_is_charged_at_the_segment_price(self):
+        seat = self.trip.seats.order_by("number").first()
+        response = self.client.post(
+            "/api/v1/staff/sales/sell/",
+            {
+                "idempotency_key": "controle-troncon-01",
+                "trip": self.trip.pk,
+                "seat": seat.pk,
+                "passenger_name": "TEST",
+                "payment_method": self.cash.pk,
+                "origin": str(self.places["Savè"].pk),
+                "destination": str(self.places["Kétou"].pk),
+            },
+            format="json",
+        )
+        self.assertIn(response.status_code, (200, 201), response.data)
+        self.assertEqual(Booking.objects.get().amount, 2500)

@@ -68,12 +68,13 @@ class SaleController extends ChangeNotifier {
     try {
       final payload = await _api.saleOptions();
       trips = (payload['trips'] as List? ?? const [])
-          .map(
-            (item) => SaleTrip.fromJson((item as Map).cast<String, dynamic>()),
+          .expand(
+            (item) =>
+                SaleTrip.choicesFromJson((item as Map).cast<String, dynamic>()),
           )
           .toList();
       if (trip != null) {
-        final current = trips.where((item) => item.id == trip!.id);
+        final current = trips.where((item) => item.key == trip!.key);
         trip = current.isEmpty ? null : current.first;
       }
     } on ApiException catch (e) {
@@ -152,6 +153,8 @@ class SaleController extends ChangeNotifier {
         passengerName: passengerName.trim(),
         passengerPhone: passengerPhone.trim(),
         paymentMethod: currentQuote.paymentMethod,
+        origin: currentTrip.originId?.toString(),
+        destination: currentTrip.destinationId?.toString(),
         boardingPointId: boardingPointId,
         alightingPointId: alightingPointId,
       );

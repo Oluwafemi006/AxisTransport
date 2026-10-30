@@ -574,4 +574,29 @@ void main() {
     expect(String.fromCharCodes(bytes.take(4)), '%PDF');
     expect(saleTicketFileName(ticket), endsWith('.pdf'));
   });
+
+  test('le contrôleur voit un choix par tronçon, au prix du serveur', () {
+    final choices = SaleTrip.choicesFromJson({
+      'id': 31,
+      'route_detail': {
+        'label': 'Cotonou → Parakou',
+        'stops': [
+          {'id': 3, 'name': 'Savè', 'boarding_points': const []},
+        ],
+      },
+      'quotes': [_quote(1, 'Espèces', 7500)],
+      'segments': [
+        {
+          'origin_id': 3,
+          'origin': 'Savè',
+          'destination_id': 4,
+          'destination': 'Kétou',
+          'quotes': [_quote(1, 'Espèces', 2500)],
+        },
+      ],
+    });
+    expect(choices.single.label, 'Savè → Kétou');
+    expect(choices.single.quotes.single.total, 2500);
+    expect(choices.single.originId, 3);
+  });
 }
