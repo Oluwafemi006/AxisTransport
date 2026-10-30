@@ -49,8 +49,7 @@ dependencies:
   # Lecture des QR codes des billets (personnel uniquement ; la caméra n'est ouverte qu'à l'écran Scanner).
   mobile_scanner: ^7.4.2
   pdf: ^3.13.1
-  image_picker: ^1.2.4
-
+  camera: ^0.12.2
 dev_dependencies:
   flutter_test:
     sdk: flutter

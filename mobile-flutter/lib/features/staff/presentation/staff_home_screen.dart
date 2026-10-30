@@ -73,6 +73,7 @@ class StaffHomeScreen extends ConsumerStatefulWidget {
 class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
   SaleTrip? _loadedTrip;
   ControllerDaySummary? _summary;
+  List<Map> _parcels = const [];
   bool _loadingTrip = false;
   bool _offline = false;
 
@@ -83,6 +84,18 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
       _fetchActiveTrip();
     }
     if (widget.daySummary == null) _fetchSummary();
+    _fetchParcels();
+  }
+
+  Future<void> _fetchParcels() async {
+    try {
+      final rows = await ref.read(apiClientProvider).myParcels();
+      if (mounted) {
+        setState(() => _parcels = rows.whereType<Map>().toList());
+      }
+    } catch (_) {
+      // Liste indisponible : l'accueil reste utilisable.
+    }
   }
 
   Future<void> _fetchSummary() async {
@@ -214,7 +227,10 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
     final lastStop = stops.isNotEmpty ? stops.last.name : null;
     final finalStop = lastStop != nextStop ? lastStop : null;
     final summary = widget.daySummary ?? _summary;
-    ref.listen(staffActivityProvider, (_, _) => _fetchSummary());
+    ref.listen(staffActivityProvider, (_, _) {
+      _fetchSummary();
+      _fetchParcels();
+    });
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -568,6 +584,44 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
                 ],
               ),
             ),
+            if (_parcels.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AxisSpacing.lg,
+                  AxisSpacing.md,
+                  AxisSpacing.lg,
+                  AxisSpacing.lg,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MES COLIS',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: axis.textSecondary,
+                      ),
+                    ),
+                    for (final parcel in _parcels)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: (parcel['photos'] as List? ?? const []).isEmpty
+                            ? const Icon(Icons.inventory_2_outlined)
+                            : Image.network(
+                                '${(parcel['photos'] as List).first}',
+                                width: 48,
+                                height: 48,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) =>
+                                    const Icon(Icons.inventory_2_outlined),
+                              ),
+                        title: Text('${parcel['tracking_number']}'),
+                        subtitle: Text(
+                          '${parcel['route']} · ${parcel['status']}',
+                        ),
+                      ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),

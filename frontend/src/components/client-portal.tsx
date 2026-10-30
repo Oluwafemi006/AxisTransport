@@ -1487,6 +1487,7 @@ function Parcels() {
         <div style={{ marginTop: '24px' }}>
           <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--mute)' }}>{result.tracking_number}</div>
           <div style={{ fontWeight: 'bold', color: 'var(--navy)', margin: '4px 0 16px' }}>{result.origin} → {result.destination}</div>
+          {(result.photos ?? []).map((url) => <img key={url} src={url} alt="Photo du colis" style={{ width: '100%', maxWidth: '240px', borderRadius: '8px', marginBottom: '12px' }} />)}
           <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {result.steps.map((step) => (
               <li key={step.key} style={{ display: 'flex', alignItems: 'center', gap: '12px', opacity: step.done ? 1 : 0.45 }}>

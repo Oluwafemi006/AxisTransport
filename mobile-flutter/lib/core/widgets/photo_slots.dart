@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../theme/axis_spacing.dart';
@@ -124,14 +126,21 @@ class PhotoSlots extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           // Contenu de la photo ou placeholder colis
-          Container(
-            color: tokens.accentSoft,
-            child: Icon(
-              Icons.inventory_2_outlined,
-              size: 34,
-              color: tokens.onAccentSoft,
+          if (item.imageBytes != null)
+            Image.memory(
+              Uint8List.fromList(item.imageBytes!),
+              fit: BoxFit.cover,
+              semanticLabel: item.label,
+            )
+          else
+            Container(
+              color: tokens.accentSoft,
+              child: Icon(
+                Icons.inventory_2_outlined,
+                size: 34,
+                color: tokens.onAccentSoft,
+              ),
             ),
-          ),
           // Bouton supprimer (cible tactile ≥ 44 × 44, pastille visuelle 28 × 28)
           Positioned(
             top: 0,

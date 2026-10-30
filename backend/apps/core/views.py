@@ -220,7 +220,7 @@ class PublicTicketThrottle(SimpleRateThrottle):
 
 class ParcelTrackingView(APIView):
     """
-    Suivi d'un colis par son code. Ne renvoie que le parcours et les étapes :
+    Suivi d'un colis par son code. Ne renvoie que le parcours, les étapes et les photos :
     aucun nom, téléphone ni description.
     """
 
@@ -262,6 +262,7 @@ class ParcelTrackingView(APIView):
                 "destination": parcel.destination.name,
                 "current_step": PARCEL_TRACKING_STEPS[current][1],
                 "steps": steps,
+                "photos": [photo.url for photo in parcel.photos.all()],
             }
         )
 
@@ -1745,6 +1746,27 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                     )
             trips.append(item)
         return Response({"trips": trips})
+
+    @action(detail=False, methods=["get"], url_path="parcels")
+    def parcels(self, request):
+        """Colis enregistrés par cet agent, les plus récents d'abord."""
+        ids = ParcelStatusHistory.objects.filter(
+            changed_by=request.user, to_status=Parcel.Status.REGISTERED
+        ).values("parcel_id")
+        rows = Parcel.objects.filter(pk__in=ids).select_related("origin", "destination").prefetch_related("photos")[:50]
+        return Response(
+            [
+                {
+                    "tracking_number": parcel.tracking_number,
+                    "route": f"{parcel.origin.name} → {parcel.destination.name}",
+                    "description": parcel.description,
+                    "status": parcel.get_status_display(),
+                    "amount": parcel.amount,
+                    "photos": [photo.url for photo in parcel.photos.all()],
+                }
+                for parcel in rows
+            ]
+        )
 
     @action(detail=False, methods=["post"], url_path="parcel")
     def parcel(self, request):

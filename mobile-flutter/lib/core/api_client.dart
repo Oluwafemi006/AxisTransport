@@ -550,6 +550,10 @@ class ApiClient {
     );
   }
 
+  Future<List<dynamic>> myParcels() {
+    return _request<List<dynamic>>('/staff/sales/parcels/', auth: true);
+  }
+
   Future<Map<String, dynamic>> saleSummary() {
     return _request<Map<String, dynamic>>('/staff/sales/summary/', auth: true);
   }

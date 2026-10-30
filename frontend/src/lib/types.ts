@@ -252,6 +252,7 @@ export interface ParcelTracking {
   origin: string;
   destination: string;
   current_step: string;
+  photos?: string[];
   steps: { key: string; label: string; done: boolean; current: boolean; reached_at: string | null }[];
 }
 

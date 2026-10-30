@@ -357,3 +357,13 @@ class StaffSaleSegmentTests(SegmentsTestCase):
         self.assertEqual(self.client.post(f"/api/v1/parcels/{parcel.pk}/price/", {"amount": 5000}).status_code, 200)
         parcel.refresh_from_db()
         self.assertEqual(parcel.amount, 5000)
+
+    def test_controller_lists_his_parcels_and_client_sees_the_photo(self):
+        with mock.patch("apps.core.views.upload_parcel_photo", return_value=("https://test.invalid/a.jpg", "TEST")):
+            code = self.post_parcel().data["tracking_number"]
+        rows = self.client.get("/api/v1/staff/sales/parcels/").json()
+        self.assertEqual([row["tracking_number"] for row in rows], [code])
+        self.client.force_authenticate(None)
+        body = self.client.get("/api/v1/client/parcels/track/", {"code": code}).json()
+        self.assertEqual(body["photos"], ["https://test.invalid/a.jpg"])
+        self.assertNotIn("sender_name", body)

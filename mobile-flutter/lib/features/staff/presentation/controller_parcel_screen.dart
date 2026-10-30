@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../sales/sale_models.dart';
+import 'parcel_camera_screen.dart';
 import 'staff_home_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -129,18 +129,16 @@ class _ControllerParcelScreenState
     });
   }
 
-  /// Ouvre l'appareil photo ; la compression suit les réglages de l'écran.
+  /// Caméra intégrée à l'application : la photo revient directement dans sa case.
   Future<PhotoSlotItem?> _showCameraCaptureSheet(int index) async {
-    final picked = await ImagePicker().pickImage(
-      source: ImageSource.camera,
-      maxWidth: _compressionSettings.maxWidthPx.toDouble(),
-      imageQuality: _compressionSettings.jpegQuality,
+    final bytes = await Navigator.of(context).push<List<int>>(
+      MaterialPageRoute(builder: (_) => const ParcelCameraScreen()),
     );
-    if (picked == null) return null;
+    if (bytes == null) return null;
     return PhotoSlotItem(
       id: 'photo-$index',
       label: 'Photo $index',
-      imageBytes: await picked.readAsBytes(),
+      imageBytes: bytes,
     );
   }
 
