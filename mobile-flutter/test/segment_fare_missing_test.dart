@@ -82,7 +82,9 @@ void main() {
     );
 
     await expectLater(
-      api.tripsForSegment(2, 3),
+      api.searchTrips(
+        TripSearch(originId: 2, destinationId: 3, date: DateTime(2026, 11, 2)),
+      ),
       throwsA(
         isA<ApiException>()
             .having((e) => e.isSegmentFareMissing, 'code reconnu', isTrue)

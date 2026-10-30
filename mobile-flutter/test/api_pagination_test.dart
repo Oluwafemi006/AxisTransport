@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:axis_transport_flutter/core/api_client.dart';
 import 'package:axis_transport_flutter/core/session_store.dart';
+import 'package:axis_transport_flutter/features/trips/domain/trip_search.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -59,7 +60,9 @@ void main() {
         ..httpClientAdapter = adapter,
     );
 
-    final trips = await api.tripsForSegment(2, 3);
+    final trips = await api.searchTrips(
+      TripSearch(originId: 2, destinationId: 3, date: DateTime(2026, 11, 2)),
+    );
 
     expect(trips.length, 55);
     expect(adapter.pages, [null, '2']);

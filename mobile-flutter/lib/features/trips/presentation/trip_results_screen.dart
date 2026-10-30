@@ -462,13 +462,17 @@ class _TripResultCard extends ConsumerWidget {
         trip.departureAt.subtract(const Duration(minutes: 30));
     final boarding = DateFormat.Hm('fr_FR').format(boardingAt);
     final stops = _buildStopItems();
+    final lineOrigin = trip.route.origin?.name ?? '';
+    // Pas d'heure de passage aux arrêts intermédiaires : l'heure d'embarquement ne vaut qu'au départ du bus.
+    final boardsAtLineOrigin =
+        search == null || search!.originId == trip.route.origin?.id;
 
     return AxisCard(
       padding: const EdgeInsets.all(AxisSpacing.s16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Ligne supérieure : heure de départ + embarquement à gauche, prix TTC à droite
+          // Ligne supérieure : heure de départ + embarquement à gauche, prix à droite
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -483,8 +487,17 @@ class _TripResultCard extends ConsumerWidget {
                         color: theme.colorScheme.primary,
                       ),
                     ),
-                    const SizedBox(height: AxisSpacing.s4),
-                    Row(
+                    if (lineOrigin.isNotEmpty) ...[
+                      const SizedBox(height: AxisSpacing.s4),
+                      Text(
+                        'Départ de $lineOrigin à $departure',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: axis.textSecondary,
+                        ),
+                      ),
+                    ],
+                    if (boardsAtLineOrigin) const SizedBox(height: AxisSpacing.s4),
+                    if (boardsAtLineOrigin) Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(

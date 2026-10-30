@@ -11,6 +11,7 @@ import 'package:axis_transport_flutter/features/passengers/domain/passenger.dart
 import 'package:axis_transport_flutter/features/passengers/presentation/passengers_screen.dart';
 import 'package:axis_transport_flutter/features/seats/presentation/seat_selection_screen.dart';
 import 'package:axis_transport_flutter/features/tickets/ticket_screen.dart';
+import 'package:axis_transport_flutter/features/trips/domain/segment_offer.dart';
 import 'package:axis_transport_flutter/features/trips/domain/trip_search.dart';
 import 'package:axis_transport_flutter/features/trips/presentation/trip_results_screen.dart';
 import 'package:flutter/material.dart';
@@ -64,8 +65,19 @@ class _Phase4Api extends ApiClient {
   }
 
   @override
-  Future<List<Trip>> tripsForSegment(int originId, int destinationId) async =>
-      [await trip(10, originId: originId, destinationId: destinationId)];
+  Future<List<SegmentOffer>> segments(SegmentDirection direction) async {
+    if (failNetwork) throw ApiException('Hors connexion');
+    return const [
+      SegmentOffer(
+        originId: 1,
+        origin: 'Parakou',
+        destinationId: 3,
+        destination: 'Savè',
+        priceFcfa: 4500,
+        lineOrigin: 'Parakou',
+      ),
+    ];
+  }
 
   /// Comme le serveur : tarif du tronçon demandé, sinon celui du parcours entier.
   @override
@@ -225,7 +237,32 @@ void main() {
       expect(find.byType(RouteStopsBar), findsOneWidget);
       expect(find.text('23 places libres'), findsOneWidget);
       expect(find.text('Choisir ce trajet'), findsOneWidget);
+      expect(find.text('Départ de Parakou à 08:00'), findsOneWidget);
       expect(find.textContaining('TTC'), findsNothing);
+    });
+
+    testWidgets('2a. Résultats depuis un arrêt intermédiaire : aucune heure de passage inventée', (
+      tester,
+    ) async {
+      final search = TripSearch(
+        originId: 3,
+        destinationId: 2,
+        date: DateTime(2026, 10, 30),
+        passengers: 1,
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [apiClientProvider.overrideWithValue(_Phase4Api())],
+          child: MaterialApp(
+            theme: AxisTheme.light(),
+            home: TripResultsScreen(search: search),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Départ de Parakou à 08:00'), findsOneWidget);
+      expect(find.textContaining('Embarquement 07:30'), findsNothing);
     });
 
     testWidgets('2b. Résultats (Resultats.html) : erreur réseau affiche EmptyState et bouton Réessayer', (

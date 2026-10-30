@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'config.dart';
 import 'models.dart';
 import 'session_store.dart';
+import '../features/trips/domain/segment_offer.dart';
 import '../features/trips/domain/trip_search.dart';
 
 const segmentFareMissingCode = 'segment_fare_missing';
@@ -204,12 +205,17 @@ class ApiClient {
     return Trip.fromJson(payload);
   }
 
-  /// Départs à venir d'un tronçon, chacun au tarif du tronçon.
-  Future<List<Trip>> tripsForSegment(int originId, int destinationId) => _list(
-    '/client/trips/',
-    (json) => Trip.fromJson(json),
-    queryParameters: {'origin': '$originId', 'destination': '$destinationId'},
-  );
+  /// Tronçons d'un sens, calculés par le serveur. `missing_fares` ne concerne que l'admin : ignoré ici.
+  Future<List<SegmentOffer>> segments(SegmentDirection direction) async {
+    final payload = await _request<Map<String, dynamic>>(
+      '/client/segments/',
+      queryParameters: {'direction': direction.apiValue},
+    );
+    return (payload['segments'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => SegmentOffer.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
 
   Future<List<Trip>> searchTrips(TripSearch search) => _list(
     '/client/trips/',
