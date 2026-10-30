@@ -1,3 +1,5 @@
+import { nextPagePath } from "./portal-rules";
+
 // Adresse de l'API (se termine par /api/v1). Aucune valeur par défaut : voir DEPLOY.md.
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
 
@@ -54,8 +56,15 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}, authenti
 }
 
 export async function apiList<T>(path: string, authenticated = true): Promise<T[]> {
-  const payload = await apiFetch<T[] | { results: T[] }>(path, {}, authenticated);
-  return Array.isArray(payload) ? payload : payload.results;
+  const rows: T[] = [];
+  let current: string | null = path;
+  while (current) {
+    const payload: T[] | { results: T[]; next?: string | null } = await apiFetch(current, {}, authenticated);
+    if (Array.isArray(payload)) return payload;
+    rows.push(...payload.results);
+    current = nextPagePath(current, payload.next);
+  }
+  return rows;
 }
 
 export async function login(username: string, password: string) {

@@ -13,7 +13,7 @@ const source = readFileSync(path.join(here, "../src/lib/portal-rules.ts"), "utf8
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
 const compiled = path.join(mkdtempSync(path.join(tmpdir(), "axis-portal-rules-")), "portal-rules.mjs");
 writeFileSync(compiled, outputText);
-const { placeChoices, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText } = await import(pathToFileURL(compiled).href);
+const { placeChoices, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath } = await import(pathToFileURL(compiled).href);
 
 const places = [{ id: 1, name: "Cotonou" }, { id: 2, name: "Parakou" }];
 
@@ -181,3 +181,9 @@ test("alignement car Yutong : tri naturel des numéros sans décalage 10 après 
 });
 
 
+
+test("une liste paginée suit `next` jusqu'à la fin, plus de 50 résultats compris", () => {
+  assert.equal(nextPagePath("/trips/?all=true", "https://api.test/api/v1/trips/?all=true&page=2"), "/trips/?all=true&page=2");
+  assert.equal(nextPagePath("/trips/?all=true&page=2", "https://api.test/api/v1/trips/?all=true&page=3"), "/trips/?all=true&page=3");
+  assert.equal(nextPagePath("/trips/?all=true&page=3", null), null);
+});

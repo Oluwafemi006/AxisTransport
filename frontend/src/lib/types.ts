@@ -289,6 +289,13 @@ export interface SegmentFare {
   updated_by_name: string;
 }
 
+export interface MissingSegmentFare {
+  origin_id: number;
+  origin: string;
+  destination_id: number;
+  destination: string;
+}
+
 export interface SegmentFareChange {
   id: number;
   created_at: string;

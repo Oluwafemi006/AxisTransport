@@ -182,3 +182,13 @@ export function groupSeatsYutong<T extends SeatLayoutItem>(seats: T[]): BusRow<T
 }
 
 
+
+// Page suivante d'une liste paginée par le serveur : seul le numéro de `next` est repris, l'adresse reste la nôtre.
+export function nextPagePath(path: string, next: string | null | undefined): string | null {
+  const page = next ? new URL(next, "http://axis.invalid").searchParams.get("page") : null;
+  if (!page) return null;
+  const [base, query = ""] = path.split("?");
+  const params = new URLSearchParams(query);
+  params.set("page", page);
+  return `${base}?${params.toString()}`;
+}

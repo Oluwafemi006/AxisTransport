@@ -611,19 +611,31 @@ class ApiClient {
     bool auth = false,
     Map<String, dynamic>? queryParameters,
   }) async {
-    final payload = await _request<dynamic>(
-      path,
-      auth: auth,
-      queryParameters: queryParameters,
-    );
-    final items = payload is Map<String, dynamic>
-        ? payload['results']
-        : payload;
-    if (items is! List) return [];
-    return items
-        .whereType<Map>()
-        .map((item) => parse(Map<String, dynamic>.from(item)))
-        .toList();
+    final rows = <T>[];
+    var query = queryParameters;
+    while (true) {
+      final payload = await _request<dynamic>(
+        path,
+        auth: auth,
+        queryParameters: query,
+      );
+      final items = payload is Map<String, dynamic>
+          ? payload['results']
+          : payload;
+      if (items is! List) return rows;
+      rows.addAll(
+        items.whereType<Map>().map(
+          (item) => parse(Map<String, dynamic>.from(item)),
+        ),
+      );
+      // Liste paginée par le serveur : on reprend seulement le numéro de page.
+      final next = payload is Map<String, dynamic> ? payload['next'] : null;
+      final page = next is String
+          ? Uri.tryParse(next)?.queryParameters['page']
+          : null;
+      if (page == null) return rows;
+      query = {...?queryParameters, 'page': page};
+    }
   }
 
   Future<T> _request<T>(

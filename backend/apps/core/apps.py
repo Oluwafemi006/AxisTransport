@@ -6,3 +6,6 @@ class CoreConfig(AppConfig):
     name = "apps.core"
     verbose_name = "Exploitation Axis Transport"
 
+    def ready(self):
+        from . import signals  # noqa: F401
+

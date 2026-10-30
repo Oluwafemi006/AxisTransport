@@ -7,7 +7,7 @@ import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import { actionErrorText, counterTripLabel, holdMinutesConfigured, upcomingSellableTrips } from "@/lib/portal-rules";
 
-import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, Location, ManualTicketChange, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
+import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, Location, ManualTicketChange, MissingSegmentFare, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
 type AdminTab = "dashboard" | "planning" | "guichet" | "points" | "colis" | "flotte" | "tarifs" | "troncons" | "agence" | "paiements" | "equipe";
 type Dashboard = {
@@ -1638,6 +1638,7 @@ function BoardingPointsPanel({ locations, onChanged }: { locations: Location[]; 
 function SegmentFarePanel() {
   const feedback = useActionFeedback();
   const [fares, setFares] = useState<SegmentFare[] | null>(null);
+  const [missing, setMissing] = useState<MissingSegmentFare[]>([]);
   const [changes, setChanges] = useState<SegmentFareChange[]>([]);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<number | null>(null);
@@ -1645,8 +1646,13 @@ function SegmentFarePanel() {
 
   const load = useCallback(async () => {
     try {
-      const [rows, log] = await Promise.all([apiList<SegmentFare>("/segment-fares/"), apiList<SegmentFareChange>("/segment-fare-changes/")]);
+      const [rows, log, withoutFare] = await Promise.all([
+        apiList<SegmentFare>("/segment-fares/"),
+        apiList<SegmentFareChange>("/segment-fare-changes/"),
+        apiFetch<MissingSegmentFare[]>("/segment-fares/missing/"),
+      ]);
       setFares(rows);
+      setMissing(withoutFare);
       setChanges(log);
       setDrafts(Object.fromEntries(rows.map((row) => [row.id, String(row.amount)])));
     } catch (reason) { setNotice(failure(reason, "Les tarifs n’ont pas pu être chargés. Réessayez.")); }
@@ -1677,6 +1683,14 @@ function SegmentFarePanel() {
     <div className="space-y-5">
       <section className="card">
         <SectionHeading eyebrow="Mêmes prix dans les deux sens" title="Tarifs par tronçon" />
+        {missing.length > 0 && (
+          <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+            <p className="font-semibold">Tronçons sans tarif : non vendables tant qu’aucun prix n’est enregistré.</p>
+            <ul className="mt-1 list-disc pl-5">
+              {missing.map((row) => <li key={`${row.origin_id}-${row.destination_id}`}>{row.origin} ↔ {row.destination}</li>)}
+            </ul>
+          </div>
+        )}
         <p className="mb-4 text-sm text-slate-500">Prix en francs CFA. Un billet déjà vendu ou une réservation en cours garde le prix du moment de la vente.</p>
         {fares === null ? <Loading /> : fares.length === 0 ? <EmptyState title="Aucun tronçon" text="La grille des prix n’est pas encore chargée." /> : (
           <div className="table-scroll">
