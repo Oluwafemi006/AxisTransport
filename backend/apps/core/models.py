@@ -26,10 +26,37 @@ class User(AbstractUser):
 
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.CLIENT, db_index=True)
     phone = models.CharField(max_length=32, blank=True)
+    # Tout jeton émis avant cet instant est refusé (fermeture de toutes les sessions).
+    password_changed_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     @property
     def is_axis_staff(self):
         return self.role in {self.Role.COUNTER, self.Role.CONTROLLER, self.Role.ADMIN}
+
+
+class PasswordResetCode(models.Model):
+    """Code de réinitialisation envoyé par e-mail à un client : seul son HMAC est conservé."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="password_reset_codes")
+    code_hash = models.CharField(max_length=64)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class PasswordAdminReset(models.Model):
+    """Journal des mots de passe changés par un administrateur : jamais le mot de passe lui-même."""
+
+    target = models.ForeignKey(User, on_delete=models.CASCADE, related_name="password_admin_resets")
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
 
 
 class Location(TimeStampedModel):

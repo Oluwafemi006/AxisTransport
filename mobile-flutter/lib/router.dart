@@ -5,6 +5,7 @@ import 'core/models.dart';
 import 'core/session.dart';
 import 'features/auth/invitation_screen.dart';
 import 'features/auth/login_screen.dart';
+import 'features/auth/forgot_password_screen.dart';
 import 'features/auth/register_screen.dart';
 import 'features/bookings/presentation/booking_review_screen.dart';
 import 'features/home/home_screen.dart';
@@ -36,7 +37,7 @@ String? globalRoleRedirect(BuildContext context, GoRouterState state) {
   if (!session.ready) return null;
 
   final loc = state.matchedLocation;
-  final isAuthRoute = loc == '/connexion' || loc == '/login' || loc == '/inscription';
+  final isAuthRoute = loc == '/connexion' || loc == '/login' || loc == '/inscription' || loc == '/mot-de-passe-oublie';
   final isInvitation = loc.startsWith('/invitation');
 
   // 1. Utilisateur non connecté
@@ -102,6 +103,11 @@ GoRouter buildAxisRouter() => GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       path: '/login',
       redirect: (context, state) => '/connexion',
+    ),
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/mot-de-passe-oublie',
+      builder: (context, state) => const ForgotPasswordScreen(),
     ),
     GoRoute(
       parentNavigatorKey: _rootNavigatorKey,

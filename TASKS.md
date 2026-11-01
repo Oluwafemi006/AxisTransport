@@ -5,6 +5,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Mot de passe oublié : code e-mail clients, réinitialisation admin, fermeture des sessions | `cc/mot-de-passe-oublie` | Claude Code | à valider par Eddy |
 | Bandeau dynamique d'accueil (sens du bus), prochains départs tous sens et next_available | `ag/accueil-bandeau-sens-du-bus` | Antigravity | à valider par Eddy |
 | Réservation multi-passagers, choix/attribution de places et paiements tardifs | `ag/reservation-places-attribution` | Antigravity | fusionnée dans main |
 | Points d'embarquement et de débarquement par ville | `ag/points-embarquement` | Antigravity | fusionnée dans main |

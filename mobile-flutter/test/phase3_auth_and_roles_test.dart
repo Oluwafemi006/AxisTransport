@@ -4,6 +4,7 @@ import 'package:axis_transport_flutter/core/session.dart';
 import 'package:axis_transport_flutter/core/session_store.dart';
 import 'package:axis_transport_flutter/core/theme/axis_theme.dart';
 import 'package:axis_transport_flutter/core/widgets/axis_text_field.dart';
+import 'package:axis_transport_flutter/features/auth/forgot_password_screen.dart';
 import 'package:axis_transport_flutter/features/auth/invitation_screen.dart';
 import 'package:axis_transport_flutter/features/auth/login_screen.dart';
 import 'package:axis_transport_flutter/features/auth/register_screen.dart';
@@ -60,6 +61,20 @@ class _MockApi extends ApiClient {
     String? lastName,
     String? email,
   }) async {}
+
+  @override
+  Future<String> requestPasswordReset(String email) async =>
+      'TEST code envoyé';
+
+  @override
+  Future<String> confirmPasswordReset({
+    required String email,
+    required String code,
+    required String password,
+  }) async {
+    if (code == '000000') throw ApiException('Code incorrect ou expiré.');
+    return 'TEST mot de passe modifié';
+  }
 
   @override
   Future<Map<String, dynamic>> checkStaffInvitation(String token) async {
@@ -170,6 +185,53 @@ void main() {
   });
 
   group('Phase 3 — Formulaires et validations', () {
+    testWidgets('Mot de passe oublié : code, erreur serveur, puis succès', (tester) async {
+      tester.view.physicalSize = const Size(1080, 3600);
+      tester.view.devicePixelRatio = 1.5;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [apiClientProvider.overrideWithValue(_MockApi())],
+          child: MaterialApp(
+            theme: AxisTheme.light(),
+            home: const ForgotPasswordScreen(),
+          ),
+        ),
+      );
+
+      Finder fieldOf(String label) => find.descendant(
+            of: find.widgetWithText(AxisTextField, label),
+            matching: find.byType(TextField),
+          );
+
+      await tester.tap(find.text('Recevoir un code'));
+      await tester.pumpAndSettle();
+      expect(find.text('Veuillez saisir une adresse e-mail valide.'), findsOneWidget);
+
+      await tester.enterText(fieldOf('E-mail'), 'client.test@exemple.test');
+      await tester.tap(find.text('Recevoir un code'));
+      await tester.pumpAndSettle();
+      expect(find.text('TEST code envoyé'), findsOneWidget);
+
+      await tester.enterText(fieldOf('Code à 6 chiffres'), '000000');
+      await tester.enterText(fieldOf('Nouveau mot de passe'), 'TEST-Mdp-42');
+      await tester.enterText(fieldOf('Confirmer le mot de passe'), 'TEST-autre');
+      await tester.tap(find.text('Changer le mot de passe'));
+      await tester.pumpAndSettle();
+      expect(find.text('Les deux mots de passe ne correspondent pas.'), findsOneWidget);
+
+      await tester.enterText(fieldOf('Confirmer le mot de passe'), 'TEST-Mdp-42');
+      await tester.tap(find.text('Changer le mot de passe'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Code incorrect ou expiré.'), findsOneWidget);
+
+      await tester.enterText(fieldOf('Code à 6 chiffres'), '123456');
+      await tester.tap(find.text('Changer le mot de passe'));
+      await tester.pumpAndSettle();
+      expect(find.text('TEST mot de passe modifié'), findsOneWidget);
+      expect(find.text('Se connecter'), findsOneWidget);
+    });
+
     testWidgets('Connexion : validation champs obligatoires et gestion erreur API', (tester) async {
       await tester.pumpWidget(
         MaterialApp(

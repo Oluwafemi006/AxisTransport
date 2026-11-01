@@ -120,7 +120,7 @@ CORS_ALLOW_HEADERS = (*default_headers, "x-booking-token")
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.core.authentication.AxisJWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
@@ -134,6 +134,10 @@ REST_FRAMEWORK = {
         "login_account": os.environ.get("AXIS_LOGIN_RATE_ACCOUNT", "50/hour"),
         "login_address": os.environ.get("AXIS_LOGIN_RATE_ADDRESS", "30/min"),
         "register_address": os.environ.get("AXIS_REGISTER_RATE_ADDRESS", "10/hour"),
+        # Mot de passe oublié : demandes par adresse e-mail et par IP, saisies du code par IP.
+        "password_reset_email": os.environ.get("AXIS_PASSWORD_RESET_RATE_EMAIL", "3/hour"),
+        "password_reset_address": os.environ.get("AXIS_PASSWORD_RESET_RATE_ADDRESS", "20/hour"),
+        "password_reset_confirm": os.environ.get("AXIS_PASSWORD_RESET_CONFIRM_RATE", "30/hour"),
     },
     # Nombre de proxys de confiance devant l'API (pour lire la vraie adresse IP du client).
     "NUM_PROXIES": int(os.environ["AXIS_NUM_PROXIES"]) if os.environ.get("AXIS_NUM_PROXIES") else None,
@@ -150,6 +154,7 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": __import__("datetime").timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
+    "TOKEN_REFRESH_SERIALIZER": "apps.core.authentication.AxisTokenRefreshSerializer",
 }
 
 # --- Payment Provider Configuration ---

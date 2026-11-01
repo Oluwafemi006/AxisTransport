@@ -59,6 +59,9 @@ Points d'attention :
 | `AXIS_LOGIN_RATE_ACCOUNT` | Plafond de connexions **échouées** par identifiant, toutes adresses confondues (attaque répartie). Au-delà : blocage temporaire de l'identifiant depuis toutes les adresses. | `50/hour` (proposition technique) |
 | `AXIS_LOGIN_RATE_ADDRESS` | Tentatives de connexion par adresse IP, tous identifiants confondus. Élevé à dessein : de nombreux abonnés mobiles peuvent partager une même adresse. | `30/min` (proposition) |
 | `AXIS_REGISTER_RATE_ADDRESS` | Créations de compte client par adresse IP. | `10/hour` (proposition) |
+| `AXIS_PASSWORD_RESET_RATE_EMAIL` | Mot de passe oublié : demandes de code par adresse e-mail. | `3/hour` (proposition) |
+| `AXIS_PASSWORD_RESET_RATE_ADDRESS` | Mot de passe oublié : demandes de code par adresse IP. | `20/hour` (proposition) |
+| `AXIS_PASSWORD_RESET_CONFIRM_RATE` | Mot de passe oublié : saisies du code par adresse IP. | `30/hour` (proposition) |
 
 **Limite de connexion : fonctionnement et seuils proposés** (propositions techniques, pas des règles de la direction ; modifiables par les variables ci-dessus) :
 
@@ -75,7 +78,7 @@ Points d'attention :
 | `AXIS_CACHE_DIR` | Dossier du cache (compteurs de limite de requêtes). | Dossier accessible en écriture ; par défaut le dossier temporaire du système |
 | `AXIS_NUM_PROXIES` | Nombre de proxys devant l'API, pour lire la vraie adresse IP du client. | `1` derrière un seul proxy |
 | `AXIS_PAYMENT_SIMULATION` | Paiement simulé. Sans effet quand `DJANGO_DEBUG` est faux. | absente |
-| `EMAIL_HOST` | Hôte SMTP pour l'envoi d'e-mails (invitations du personnel). | `smtp.gmail.com` |
+| `EMAIL_HOST` | Hôte SMTP pour l'envoi d'e-mails (invitations du personnel, codes « mot de passe oublié »). | `smtp.gmail.com` |
 | `EMAIL_PORT` | Port SMTP. | `587` |
 | `EMAIL_USE_TLS` | Activation du chiffrement TLS. | `true` |
 | `EMAIL_HOST_USER` | Compte d'expédition Gmail pour les invitations. | `contact@exemple.test` |

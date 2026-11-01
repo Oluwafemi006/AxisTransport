@@ -4,7 +4,14 @@ from django.contrib import admin
 from django.urls import include, path
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from apps.core.views import AcceptStaffInvitationView, AxisTokenObtainPairView, MeView, RegisterView
+from apps.core.views import (
+    AcceptStaffInvitationView,
+    AxisTokenObtainPairView,
+    MeView,
+    PasswordResetConfirmView,
+    PasswordResetRequestView,
+    RegisterView,
+)
 from apps.core.urls_client import client_urlpatterns
 from apps.core.urls_staff import staff_urlpatterns
 
@@ -16,6 +23,8 @@ urlpatterns = [
     path("api/v1/auth/token/refresh/", TokenRefreshView.as_view(), name="v1_token_refresh"),
     path("api/v1/auth/register/", RegisterView.as_view(), name="v1_register"),
     path("api/v1/auth/me/", MeView.as_view(), name="v1_me"),
+    path("api/v1/auth/password-reset/request/", PasswordResetRequestView.as_view(), name="v1_password_reset_request"),
+    path("api/v1/auth/password-reset/confirm/", PasswordResetConfirmView.as_view(), name="v1_password_reset_confirm"),
     path("api/v1/auth/invite/accept/", AcceptStaffInvitationView.as_view(), name="v1_auth_invite_accept"),
     path("api/auth/invite/accept/", AcceptStaffInvitationView.as_view(), name="auth_invite_accept"),
 

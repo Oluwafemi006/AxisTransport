@@ -25,6 +25,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from . import password_reset
 from .models import (
     BoardingPoint,
     Booking,
@@ -54,6 +55,7 @@ from .models import (
     PaymentReceipt,
     SegmentFare,
     SegmentFareChange,
+    PasswordAdminReset,
     StaffInvitation,
     WeeklySchedule,
 )
@@ -316,6 +318,25 @@ class PaymentRefreshThrottle(_AddressThrottle):
     scope = "payment_refresh"
 
 
+class PasswordResetAddressThrottle(_AddressThrottle):
+    scope = "password_reset_address"
+
+
+class PasswordResetConfirmThrottle(_AddressThrottle):
+    scope = "password_reset_confirm"
+
+
+class PasswordResetEmailThrottle(_LiveRateThrottle):
+    """Par adresse saisie, que le compte existe ou non : le blocage ne révèle donc rien."""
+
+    scope = "password_reset_email"
+
+    def get_cache_key(self, request, view):
+        email = password_reset.normalize_email(request.data.get("email"))
+        ident = hashlib.sha256(email.encode()).hexdigest()
+        return self.cache_format % {"scope": self.scope, "ident": ident} if email else None
+
+
 class LoginAccountThrottle(_LiveRateThrottle):
     """
     Échecs de connexion par identifiant saisi, comptés de deux façons :
@@ -447,6 +468,38 @@ class RegisterView(FrenchThrottleMixin, APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save(role=User.Role.CLIENT)
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+class PasswordResetRequestView(FrenchThrottleMixin, APIView):
+    """Demande de code : réponse identique que le compte existe ou non."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [PasswordResetAddressThrottle, PasswordResetEmailThrottle]
+
+    def post(self, request):
+        password_reset.request_code(request.data.get("email"))
+        return Response({"detail": password_reset.REQUEST_MESSAGE})
+
+
+class PasswordResetConfirmView(FrenchThrottleMixin, APIView):
+    """Saisie du code et du nouveau mot de passe, puis fermeture de toutes les sessions."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [PasswordResetConfirmThrottle]
+
+    def post(self, request):
+        password = str(request.data.get("password") or "")
+        # Contrôlé avant le code : cette erreur ne dit rien sur l'adresse ou le code.
+        try:
+            validate_password(password)
+        except DjangoValidationError as error:
+            return Response({"password": error.messages}, status=status.HTTP_400_BAD_REQUEST)
+        done = password_reset.confirm_code(request.data.get("email"), request.data.get("code"), password)
+        if not done:
+            return Response({"detail": password_reset.INVALID_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Mot de passe modifié. Connectez-vous avec le nouveau."})
 
 
 class AcceptStaffInvitationView(FrenchThrottleMixin, APIView):
@@ -976,6 +1029,26 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by("role", "first_name", "last_name", "username")
     serializer_class = UserSerializer
     permission_classes = [IsAxisAdmin]
+
+    def perform_update(self, serializer):
+        password_changed = "password" in serializer.validated_data
+        user = serializer.save()
+        if password_changed:
+            PasswordAdminReset.objects.create(target=user, actor=self.request.user)
+
+    @action(detail=True, methods=["post"], url_path="reset-password")
+    def reset_password(self, request, pk=None):
+        """Seule voie pour le personnel et les clients sans e-mail ; journalisée, sessions fermées."""
+        user = self.get_object()
+        password = str(request.data.get("password") or "")
+        try:
+            validate_password(password, user)
+        except DjangoValidationError as error:
+            return Response({"password": error.messages}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            password_reset.change_password(user, password)
+            PasswordAdminReset.objects.create(target=user, actor=request.user)
+        return Response({"detail": f"Mot de passe de {user.username} modifié."})
 
 
 class TicketViewSet(viewsets.ModelViewSet):
