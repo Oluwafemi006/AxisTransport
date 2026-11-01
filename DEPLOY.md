@@ -706,6 +706,28 @@ Pour un essai sur la variante A seulement : `--dart-define=AXIS_API_URL=http://<
 8. `deploy/backup.sh` puis `deploy/restore-test.sh` réussissent ; la ligne cron est en place (`crontab -l`).
 9. `sudo reboot`, puis `$C ps` : tout redémarre seul.
 
+### 5.12 bis Mise à jour vers les migrations 0020 à 0022
+
+La production s'arrête à `0019`. Ces trois migrations n'ajoutent que des tables et des colonnes vides ou facultatives :
+
+| Migration | Contenu |
+|---|---|
+| `0020_boarding_points` | Table des points d'embarquement ; colonnes facultatives sur les réservations et les billets |
+| `0021_trip_stop_arrival` | Table des arrivées confirmées par le contrôleur |
+| `0022_parcel_photo` | Table des photos de colis |
+
+1. Sauvegarder avant tout : `deploy/backup.sh`, et vérifier que le fichier existe.
+2. Renseigner `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` et `CLOUDINARY_API_SECRET` dans `.env.vps` (à la main, jamais dans le dépôt). Sans elles, l'enregistrement d'un colis est refusé.
+3. Construire, démarrer, puis appliquer : `$C exec backend python manage.py migrate`.
+4. Vérifier : `$C exec backend python manage.py showmigrations core | tail -4` affiche `[X]` jusqu'à `0022`.
+5. Créer le prix de base des colis (2 000 FCFA, annoncé par Eddy ; à confirmer en réunion). Sans ce réglage, un colis est enregistré sans prix et le guichet doit le fixer :
+
+```bash
+$C exec backend python manage.py shell -c "from apps.core.models import SystemSetting; SystemSetting.objects.get_or_create(key='parcel_base_price_fcfa', defaults={'value': 2000})"
+```
+
+Un tronçon sans tarif renvoie désormais une erreur 400 `segment_fare_missing`, sans prix de repli : contrôler l'avertissement de l'onglet « Tarifs par tronçon » après le déploiement.
+
 ### 5.13 Non vérifiable sans le serveur réel
 
 - Les caractéristiques du VPS (mémoire, processeurs, disque) et donc sa capacité à construire et faire tourner le projet.
