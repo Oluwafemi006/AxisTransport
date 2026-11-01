@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import { beninDateKey, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
+import { SEGMENT_FARE_MISSING_MESSAGE, beninDateKey, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { BusSeatMap } from "./bus-seat-map";
@@ -132,8 +132,10 @@ export function ClientPortal() {
           });
           setPreselectedTripId(String(serverTrips[0].id));
         }
-      } catch {
-        // En cas d'erreur de requête, le filtre local s'applique
+      } catch (reason) {
+        // Tronçon sans tarif : on reste sur le formulaire, sa saisie est gardée.
+        if (isSegmentFareMissing(reason)) { setSearchMessage(SEGMENT_FARE_MISSING_MESSAGE); return; }
+        // En cas d'autre erreur de requête, le filtre local s'applique
       }
       setTab("billets");
     }
@@ -476,8 +478,8 @@ export function ClientPortal() {
             </div>
             <div>
               <h4>Contact</h4>
-              <p style={{ opacity: '.8', marginBottom: '6px' }}>Téléphone : {contact.contact_phone ? <PhoneText value={contact.contact_phone} /> : "À renseigner"}</p>
-              <p style={{ opacity: '.8', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>WhatsApp : {contact.contact_whatsapp || "À renseigner"} <WhatsAppIcon value={contact.contact_whatsapp} /></p>
+              {contact.contact_phone && <p style={{ opacity: '.8', marginBottom: '6px' }}>Téléphone : <PhoneText value={contact.contact_phone} /></p>}
+              {contact.contact_whatsapp && <p style={{ opacity: '.8', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>WhatsApp : {contact.contact_whatsapp} <WhatsAppIcon value={contact.contact_whatsapp} /></p>}
               {phoneHref(contact.contact_phone) && <a className="btn s" href={phoneHref(contact.contact_phone)!}>Appeler</a>}
             </div>
           </div>
@@ -676,7 +678,7 @@ function Tickets({
     const dest = destinationId || searchDestination;
     if (orig) params.set("origin", orig);
     if (dest) params.set("destination", dest);
-    apiFetch<Quote[]>(`/client/trips/${tripId}/payment-quotes/?${params.toString()}`, {}, false).then((quotes) => { if (!cancelled) setTripQuotes(quotes); }).catch(() => undefined);
+    apiFetch<Quote[]>(`/client/trips/${tripId}/payment-quotes/?${params.toString()}`, {}, false).then((quotes) => { if (!cancelled) setTripQuotes(quotes); }).catch((reason) => { if (!cancelled && isSegmentFareMissing(reason)) setMessage(SEGMENT_FARE_MISSING_MESSAGE); });
     return () => { cancelled = true; };
   }, [tripId, passengers.length, originId, destinationId, searchOrigin, searchDestination]);
 

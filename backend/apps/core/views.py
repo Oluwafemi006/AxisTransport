@@ -111,6 +111,10 @@ from .payments import (
 )
 from .services import (
     ReservationsClosed,
+    SEGMENT_DIRECTION_FORWARD,
+    SegmentFareMissing,
+    resolve_segment_fare,
+    segment_catalog,
     cancel_held_booking,
     generate_alternating_trips,
     generate_trips_from_schedule,
@@ -128,6 +132,8 @@ from .services import (
 
 
 def service_validation_error(exc, *, staff=False):
+    if isinstance(exc, SegmentFareMissing):
+        return exc.api_error()
     # Réservations fermées (durée de blocage non saisie) : message sans texte technique, adapté au public.
     if isinstance(exc, ReservationsClosed):
         return ValidationError({"detail": ReservationsClosed.STAFF_MESSAGE if staff else ReservationsClosed.CLIENT_MESSAGE})
@@ -815,6 +821,11 @@ class SegmentFareViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewset
     permission_classes = [IsAxisAdmin]
     http_method_names = ["get", "patch", "head", "options"]
     pagination_class = None
+
+    @action(detail=False, methods=["get"], url_path="missing")
+    def missing(self, request):
+        """Tronçons sans tarif : un tarif vaut pour les deux sens, un seul sens suffit."""
+        return Response(segment_catalog(SEGMENT_DIRECTION_FORWARD)["missing_fares"])
 
     def partial_update(self, request, *args, **kwargs):
         if set(request.data.keys()) - {"amount"}:
@@ -1665,6 +1676,28 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                     {**payment_quote(target, method), "online": method.code.upper() in ONLINE_PROVIDERS}
                     for method in methods
                 ]
+            # Vente en route : tous les tronçons du départ dans le sens du bus ; sans tarif, pas de tronçon.
+            item["segments"] = []
+            stops = trip.route.get_stops_sequence()
+            for index, start in enumerate(stops):
+                for end in stops[index + 1:]:
+                    try:
+                        fare = resolve_segment_fare(start, end)
+                    except SegmentFareMissing:
+                        continue
+                    target = SimpleNamespace(amount=fare.amount, currency=fare.currency)
+                    item["segments"].append(
+                        {
+                            "origin_id": start.pk,
+                            "origin": start.name,
+                            "destination_id": end.pk,
+                            "destination": end.name,
+                            "quotes": [
+                                {**payment_quote(target, method), "online": method.code.upper() in ONLINE_PROVIDERS}
+                                for method in methods
+                            ],
+                        }
+                    )
             trips.append(item)
         return Response({"trips": trips})
 

@@ -2,6 +2,7 @@ export 'axis_bottom_nav.dart';
 export 'axis_button.dart';
 export 'axis_card.dart';
 export 'axis_header.dart';
+export 'axis_logo.dart';
 export 'axis_text_field.dart';
 export 'choice_card.dart';
 export 'empty_state.dart';

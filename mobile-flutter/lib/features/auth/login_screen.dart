@@ -6,6 +6,7 @@ import '../../core/session.dart';
 import '../../core/theme/axis_spacing.dart';
 import '../../core/theme/axis_tokens.dart';
 import '../../core/widgets/axis_button.dart';
+import '../../core/widgets/axis_logo.dart';
 import '../../core/widgets/axis_text_field.dart';
 
 /// Écran de connexion de l'application Axis Transport selon la maquette Connexion.html.
@@ -97,36 +98,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Logo Axis : carré ambré 44x44 avec "A" + texte "AXIS"
-                  Row(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: tokens.accent,
-                          borderRadius: BorderRadius.circular(AxisRadius.sm),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          'A',
-                          style: theme.textTheme.headlineSmall?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AxisSpacing.xs),
-                      Text(
-                        'AXIS',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          color: tokens.onDark,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.6,
-                        ),
-                      ),
-                    ],
-                  ),
+                  // Logo officiel Axis Transport
+                  const AxisLogo(),
                   const SizedBox(height: AxisSpacing.md),
                   Text(
                     'Connexion',
@@ -259,42 +232,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
             ),
             // Encadré explicatif pour les contrôleurs
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AxisSpacing.screenAuth,
-                AxisSpacing.md,
-                AxisSpacing.screenAuth,
-                AxisSpacing.xl,
-              ),
-              child: Container(
-                padding: const EdgeInsets.all(AxisSpacing.sm),
-                decoration: BoxDecoration(
-                  color: tokens.surfaceSoft,
-                  borderRadius: BorderRadius.circular(AxisRadius.sm),
-                  border: Border.all(color: tokens.border),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.mail_outline_rounded,
-                      size: 20,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: AxisSpacing.xs),
-                    Expanded(
-                      child: Text(
-                        'Contrôleur ? Créez votre compte avec le lien reçu par e-mail, puis connectez-vous ici. L’app s’ouvre sur votre espace.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: tokens.textSecondary,
-                          height: 1.5,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ],
         ),
       ),

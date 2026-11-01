@@ -7,7 +7,12 @@ import 'package:dio/dio.dart';
 import 'config.dart';
 import 'models.dart';
 import 'session_store.dart';
+import '../features/trips/domain/segment_offer.dart';
 import '../features/trips/domain/trip_search.dart';
+
+const segmentFareMissingCode = 'segment_fare_missing';
+const segmentFareMissingMessage =
+    "Tarif non disponible pour ce trajet. Choisissez un autre trajet ou contactez l'agence.";
 
 class ApiException implements Exception {
   ApiException(this.message, {this.statusCode, this.data});
@@ -30,6 +35,9 @@ class ApiException implements Exception {
 
   /// Statut renvoyé par le prestataire quand le paiement n'est pas approuvé (pending, declined…).
   String? get paymentStatus => _field('payment_status')?.toString();
+
+  /// Tronçon sans tarif : le serveur refuse, aucun prix de repli.
+  bool get isSegmentFareMissing => _field('code') == segmentFareMissingCode;
 
   @override
   String toString() => message;
@@ -182,11 +190,31 @@ class ApiClient {
     return TripBanner.fromJson(payload);
   }
 
-  Future<Trip> trip(int tripId) async {
+  Future<Trip> trip(
+    int tripId, {
+    int? originId,
+    int? destinationId,
+  }) async {
+    final query = <String, dynamic>{};
+    if (originId != null) query['origin'] = '$originId';
+    if (destinationId != null) query['destination'] = '$destinationId';
     final payload = await _request<Map<String, dynamic>>(
       '/client/trips/$tripId/',
+      queryParameters: query.isEmpty ? null : query,
     );
     return Trip.fromJson(payload);
+  }
+
+  /// Tronçons d'un sens, calculés par le serveur. `missing_fares` ne concerne que l'admin : ignoré ici.
+  Future<List<SegmentOffer>> segments(SegmentDirection direction) async {
+    final payload = await _request<Map<String, dynamic>>(
+      '/client/segments/',
+      queryParameters: {'direction': direction.apiValue},
+    );
+    return (payload['segments'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => SegmentOffer.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
   }
 
   Future<List<Trip>> searchTrips(TripSearch search) => _list(
@@ -596,19 +624,31 @@ class ApiClient {
     bool auth = false,
     Map<String, dynamic>? queryParameters,
   }) async {
-    final payload = await _request<dynamic>(
-      path,
-      auth: auth,
-      queryParameters: queryParameters,
-    );
-    final items = payload is Map<String, dynamic>
-        ? payload['results']
-        : payload;
-    if (items is! List) return [];
-    return items
-        .whereType<Map>()
-        .map((item) => parse(Map<String, dynamic>.from(item)))
-        .toList();
+    final rows = <T>[];
+    var query = queryParameters;
+    while (true) {
+      final payload = await _request<dynamic>(
+        path,
+        auth: auth,
+        queryParameters: query,
+      );
+      final items = payload is Map<String, dynamic>
+          ? payload['results']
+          : payload;
+      if (items is! List) return rows;
+      rows.addAll(
+        items.whereType<Map>().map(
+          (item) => parse(Map<String, dynamic>.from(item)),
+        ),
+      );
+      // Liste paginée par le serveur : on reprend seulement le numéro de page.
+      final next = payload is Map<String, dynamic> ? payload['next'] : null;
+      final page = next is String
+          ? Uri.tryParse(next)?.queryParameters['page']
+          : null;
+      if (page == null) return rows;
+      query = {...?queryParameters, 'page': page};
+    }
   }
 
   Future<T> _request<T>(
@@ -640,6 +680,10 @@ class ApiClient {
   }
 
   String _messageFrom(DioException error) {
+    final payload = error.response?.data;
+    if (payload is Map && payload['code'] == segmentFareMissingCode) {
+      return segmentFareMissingMessage;
+    }
     final message = _userMessageFrom(error);
     if (!kDebugMode) return message;
     // En debug uniquement : la cause technique, pour diagnostiquer sans deviner.

@@ -5,10 +5,12 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from decimal import ROUND_HALF_UP, Decimal
 
+from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError as ApiValidationError
 
 from .models import (
     BoardingPoint,
@@ -69,6 +71,22 @@ PARCEL_TRANSITIONS = {
 
 def feature_enabled(key):
     return FeatureFlag.objects.filter(key=key, enabled=True).exists()
+
+
+SEGMENT_DIRECTION_FORWARD = "aller"
+SEGMENT_DIRECTION_BACKWARD = "retour"
+SEGMENT_DIRECTIONS = (SEGMENT_DIRECTION_FORWARD, SEGMENT_DIRECTION_BACKWARD)
+SEGMENT_CACHE_SECONDS = 60
+
+
+class SegmentFareMissing(ImproperlyConfigured):
+    """Tronçon sans tarif : non vendable, jamais de prix de repli. Les clients reconnaissent ce code."""
+
+    CODE = "segment_fare_missing"
+    MESSAGE = "Tarif non disponible pour ce trajet. Choisissez un autre trajet ou contactez l'agence."
+
+    def api_error(self):
+        return ApiValidationError({"code": self.CODE, "detail": self.MESSAGE})
 
 
 class ReservationsClosed(ImproperlyConfigured):
@@ -375,8 +393,17 @@ def resolve_segment_fare(origin, destination):
     bounds = _segment_bounds(origin, destination)
     fare = SegmentFare.objects.filter(start=bounds[0], end=bounds[1]).first() if bounds else None
     if fare is None:
-        raise ImproperlyConfigured(f"Aucun prix n'est défini entre {origin} et {destination} : tronçon non vendable.")
+        raise SegmentFareMissing(f"Aucun prix n'est défini entre {origin} et {destination} : tronçon non vendable.")
     return fare
+
+
+def require_segment_fare(origin, destination):
+    """Tarif du tronçon demandé par paramètres d'URL ; rien à vérifier si ces lieux n'existent pas ou sont identiques."""
+    origin_loc = resolve_location(origin)
+    dest_loc = resolve_location(destination)
+    if not origin_loc or not dest_loc or origin_loc.pk == dest_loc.pk:
+        return None
+    return resolve_segment_fare(origin_loc, dest_loc)
 
 
 def trip_fare(trip):
@@ -387,6 +414,67 @@ def trip_fare(trip):
     """
     fare = resolve_segment_fare(trip.route.origin, trip.route.destination)
     return SimpleNamespace(id=fare.id, name=fare.label, amount=Decimal(fare.amount), currency=fare.currency)
+
+
+def segment_catalog(direction):
+    """
+    Tronçons d'un sens, dans l'ordre des arrêts actifs de la ligne : ceux qui ont un tarif, et `missing_fares` pour les autres.
+    Les paires sont déduites des arrêts et de la grille ; `aller` suit l'ordre de la ligne, `retour` l'inverse.
+    """
+    stops = list(LineStop.objects.filter(location__active=True).select_related("location").order_by("position"))
+    fares = {(fare.start_id, fare.end_id): fare for fare in SegmentFare.objects.all()}
+    ordered = stops if direction == SEGMENT_DIRECTION_FORWARD else stops[::-1]
+    # Départs à venir et ordre des arrêts de chaque parcours, pour trouver le prochain bus de chaque tronçon.
+    trips = list(
+        Trip.objects.filter(status__in=[Trip.Status.SCHEDULED, Trip.Status.BOARDING], departure_at__gte=timezone.now())
+        .select_related("route__origin", "route__destination")
+        .order_by("departure_at", "pk")
+    )
+    sequences = {}
+    for trip in trips:
+        if trip.route_id not in sequences:
+            sequences[trip.route_id] = [location.pk for location in trip.route.get_stops_sequence()]
+
+    def next_trip(origin_id, destination_id):
+        for trip in trips:
+            sequence = sequences[trip.route_id]
+            if origin_id in sequence and destination_id in sequence and sequence.index(origin_id) < sequence.index(destination_id):
+                return trip
+        return None
+
+    segments, missing = [], []
+    for from_index, start in enumerate(ordered):
+        for end in ordered[from_index + 1:]:
+            names = {
+                "origin_id": start.location_id,
+                "origin": start.location.name,
+                "destination_id": end.location_id,
+                "destination": end.location.name,
+            }
+            first, second = (start, end) if start.position < end.position else (end, start)
+            fare = fares.get((first.pk, second.pk))
+            if fare is None:
+                missing.append(names)
+                continue
+            trip = next_trip(start.location_id, end.location_id)
+            segments.append(
+                {
+                    **names,
+                    "price_fcfa": fare.amount,
+                    "next_departure": timezone.localtime(trip.departure_at) if trip else None,
+                    # Ville d'où part le bus : son parcours réel, sinon le terminus du sens.
+                    "line_origin": trip.route.origin.name if trip else ordered[0].location.name,
+                }
+            )
+    return {"direction": direction, "segments": segments, "missing_fares": missing}
+
+
+def segment_cache_key(direction):
+    return f"client-segments-{direction}"
+
+
+def invalidate_segment_catalog():
+    cache.delete_many([segment_cache_key(direction) for direction in SEGMENT_DIRECTIONS])
 
 
 def tax_breakdown(price, taxes=None):
@@ -889,11 +977,8 @@ def reserve_booking(
             f"Le trajet {locked_trip.route.label} ne dessert pas le tronçon {origin_loc.name} vers {dest_loc.name} dans ce sens."
         )
 
-    try:
-        seg_fare = resolve_segment_fare(origin_loc, dest_loc)
-        fare = SimpleNamespace(id=seg_fare.id, name=seg_fare.label, amount=Decimal(seg_fare.amount), currency=seg_fare.currency)
-    except ImproperlyConfigured as exc:
-        raise ValidationError(f"Aucun tarif n'est configuré pour le tronçon {origin_loc.name} → {dest_loc.name} : tronçon non vendable.") from exc
+    seg_fare = resolve_segment_fare(origin_loc, dest_loc)
+    fare = SimpleNamespace(id=seg_fare.id, name=seg_fare.label, amount=Decimal(seg_fare.amount), currency=seg_fare.currency)
 
     b_point, b_name, a_point, a_name = resolve_boarding_points(
         origin_loc, dest_loc, boarding_point=boarding_point, alighting_point=alighting_point
@@ -1058,11 +1143,8 @@ def reserve_ticket(
             f"Le trajet {trip.route.label} ne dessert pas le tronçon {origin_loc.name} vers {dest_loc.name} dans ce sens."
         )
 
-    try:
-        seg_fare = resolve_segment_fare(origin_loc, dest_loc)
-        fare = SimpleNamespace(id=seg_fare.id, name=seg_fare.label, amount=Decimal(seg_fare.amount), currency=seg_fare.currency)
-    except ImproperlyConfigured as exc:
-        raise ValidationError(f"Aucun tarif n'est configuré pour le tronçon {origin_loc.name} → {dest_loc.name} : tronçon non vendable.") from exc
+    seg_fare = resolve_segment_fare(origin_loc, dest_loc)
+    fare = SimpleNamespace(id=seg_fare.id, name=seg_fare.label, amount=Decimal(seg_fare.amount), currency=seg_fare.currency)
 
     b_point, b_name, a_point, a_name = resolve_boarding_points(
         origin_loc, dest_loc, boarding_point=boarding_point, alighting_point=alighting_point

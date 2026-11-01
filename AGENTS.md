@@ -74,6 +74,8 @@ cd frontend && npm run typecheck
 - **Le serveur décide, les clients affichent.** Prix, frais, taxes, disponibilité, statut de paiement et lignes du billet (`print_info`) sont calculés côté serveur ; le site et l'app n'en recalculent aucun.
 - Prix en francs CFA entiers ; affichage « FCFA », jamais « XOF ». Prix affiché TTC = montant payé.
 - Une donnée absente : masquée si elle est facultative, « À renseigner » sinon ; jamais une valeur inventée.
+- Les mentions de l'agence (raison sociale, IFU, RCCM, adresse, contacts, conditions) sont toujours masquées si elles sont vides, et apparaissent dès leur saisie dans `/admin`.
+- Aucune mention « TVA », « TTC » ou « taxe » visible par les clients ni sur le billet ; seuls les champs fiscaux en base et la page admin des taxes les gardent.
 - Aucun billet n'est émis sans reçu de paiement vérifié (`PaymentReceipt`) ; webhook, rattrapage et vérification client passent par le même chemin (`payments._settle`).
 - Permissions par rôle : `CLIENT`, `COUNTER` (guichet), `CONTROLLER`, `ADMIN` (`permissions.py`) ; l'inscription ne crée que des clients.
 - Toute modification sensible par l'admin est journalisée (tarifs par tronçon, agence et taxes, statut manuel d'un billet).

@@ -37,7 +37,14 @@ from .models import (
     RouteStop,
 )
 from .payments import ONLINE_PROVIDERS, payment_quote
-from .services import boarding_lead_minutes, boarding_time, rental_is_available, trip_fare
+from .services import (
+    SegmentFareMissing,
+    boarding_lead_minutes,
+    boarding_time,
+    rental_is_available,
+    require_segment_fare,
+    trip_fare,
+)
 
 
 def public_ticket_url(ticket):
@@ -332,15 +339,12 @@ class TripSerializer(serializers.ModelSerializer):
             origin_param = request.query_params.get("origin")
             dest_param = request.query_params.get("destination")
             if origin_param and dest_param:
-                from .services import resolve_location, resolve_segment_fare
                 try:
-                    origin_loc = resolve_location(origin_param)
-                    dest_loc = resolve_location(dest_param)
-                    if origin_loc and dest_loc and origin_loc.pk != dest_loc.pk:
-                        fare = resolve_segment_fare(origin_loc, dest_loc)
-                        return {"id": fare.id, "name": fare.label, "amount": fare.amount, "currency": fare.currency}
-                except Exception:
-                    pass
+                    fare = require_segment_fare(origin_param, dest_param)
+                except SegmentFareMissing as exc:
+                    raise exc.api_error()
+                if fare is not None:
+                    return {"id": fare.id, "name": fare.label, "amount": fare.amount, "currency": fare.currency}
         try:
             fare = trip_fare(obj)
         except ImproperlyConfigured:
@@ -446,7 +450,7 @@ class TicketControlSerializer(serializers.ModelSerializer):
 
 
 def public_agency_info():
-    """Informations de l'agence imprimées sur le billet (vides = « À renseigner »). Jamais les comptes bancaires."""
+    """Informations de l'agence imprimées sur le billet (vides = ligne masquée). Jamais les comptes bancaires."""
     profile = AgencyProfile.objects.filter(pk=1).first()
     return {field: (getattr(profile, field, "") or "").strip() for field in AgencyProfile.PUBLIC_FIELDS}
 
@@ -468,7 +472,7 @@ def online_payment_label(mode):
 def ticket_print_info(ticket):
     """
     Données imprimées sur le billet, toutes lues sur le serveur ; les apps et le site ne calculent rien.
-    Chaîne vide = information absente (l'affichage écrit « À renseigner » ou masque la ligne, selon le cas).
+    Chaîne vide = information absente (les mentions de l'agence sont masquées par l'affichage).
     """
     paid = ticket.status in {Ticket.Status.PAID, Ticket.Status.ISSUED, Ticket.Status.CHECKED, Ticket.Status.COMPLETED}
     booking = ticket.booking

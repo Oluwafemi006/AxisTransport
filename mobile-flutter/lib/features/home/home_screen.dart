@@ -7,6 +7,7 @@ import '../../core/models.dart';
 import '../../core/session.dart';
 import '../../core/theme/axis_theme.dart';
 import '../../core/widgets/widgets.dart';
+import '../trips/domain/segment_offer.dart';
 import '../trips/presentation/trip_search_card.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -17,11 +18,13 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  List<Trip> _trips = [];
+  List<SegmentOffer> _segments = [];
   List<Ticket> _tickets = [];
   TripBanner? _banner;
-  bool _loading = true;
-  String? _error;
+  SegmentDirection _direction = SegmentDirection.forward;
+  bool _segmentsLoading = true;
+  String? _segmentsError;
+  int _segmentsRequest = 0;
 
   @override
   void initState() {
@@ -29,23 +32,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _load();
   }
 
-  Future<void> _load() async {
+  /// Un seul appel : le serveur renvoie les tronçons du sens choisi, avec prix et prochain départ.
+  Future<void> _loadSegments() async {
+    final request = ++_segmentsRequest;
     setState(() {
-      _loading = true;
-      _error = null;
+      _segmentsLoading = true;
+      _segmentsError = null;
     });
+    try {
+      final segments = await ref.read(apiClientProvider).segments(_direction);
+      if (!mounted || request != _segmentsRequest) return;
+      setState(() {
+        _segments = segments;
+        _segmentsLoading = false;
+      });
+    } catch (_) {
+      if (!mounted || request != _segmentsRequest) return;
+      setState(() {
+        _segments = [];
+        _segmentsLoading = false;
+        _segmentsError = 'Impossible de récupérer les trajets pour le moment.';
+      });
+    }
+  }
+
+  void _chooseDirection(SegmentDirection direction) {
+    if (direction == _direction) return;
+    setState(() {
+      _direction = direction;
+      _segments = [];
+    });
+    _loadSegments();
+  }
+
+  Future<void> _load() async {
     final api = ref.read(apiClientProvider);
     var tickets = await api.store.readCachedTickets();
     if (mounted) setState(() => _tickets = tickets);
-    try {
-      final trips = await api.trips();
-      if (!mounted) return;
-      setState(() {
-        _trips = trips;
-      });
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
-    }
+    final segments = _loadSegments();
     try {
       final banner = await api.tripBanner();
       if (mounted) setState(() => _banner = banner);
@@ -60,30 +84,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (_) {
       tickets = await api.store.readCachedTickets();
     }
-    if (mounted) {
-      setState(() {
-        _tickets = tickets;
-        _loading = false;
-      });
-    }
+    if (mounted) setState(() => _tickets = tickets);
+    await segments;
   }
 
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
-    final theme = Theme.of(context);
-    final axis = context.axis;
     final userName = session.user == null
         ? null
         : (session.user!.firstName.isEmpty
               ? session.user!.username
               : session.user!.firstName);
 
+    final sections = _sections(context, userName);
+
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView(
+      child: ListView.builder(
         padding: const EdgeInsets.only(bottom: AxisSpacing.s24),
-        children: [
+        itemCount: sections.length + _segments.length,
+        itemBuilder: (context, index) => index < sections.length
+            ? sections[index]
+            : _SegmentCard(segment: _segments[index - sections.length]),
+      ),
+    );
+  }
+
+  List<Widget> _sections(BuildContext context, String? userName) {
+    final theme = Theme.of(context);
+    final axis = context.axis;
+    return [
           // En-tête bleu marine (Main.html)
           Container(
             color: theme.colorScheme.primary,
@@ -99,34 +130,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: axis.accent,
-                            borderRadius: BorderRadius.circular(AxisRadius.small),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            'A',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: theme.colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AxisSpacing.s10),
-                        Text(
-                          'AXIS',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: theme.colorScheme.onPrimary,
-                            letterSpacing: 0.4,
-                          ),
-                        ),
-                      ],
-                    ),
+                    const AxisLogo(),
                     Tooltip(
                       message: 'Notifications',
                       child: Semantics(
@@ -136,9 +140,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           color: theme.colorScheme.onPrimary.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(AxisRadius.small),
                           child: InkWell(
-                            onTap: () => session.user == null
-                                ? context.push('/connexion')
-                                : context.go('/profil'),
+                            onTap: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Aucune notification'),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                            },
                             borderRadius: BorderRadius.circular(AxisRadius.small),
                             child: SizedBox(
                               width: AxisSizes.minTarget,
@@ -400,123 +409,116 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ],
 
-          // Départs disponibles ou état de chargement / erreur réseau
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(
-                AxisSpacing.screen,
-                AxisSpacing.s20,
-                AxisSpacing.screen,
-                0,
-              ),
+          // Tronçons du sens choisi : les départs d'une date se voient à la recherche.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AxisSpacing.screen,
+              AxisSpacing.s20,
+              AxisSpacing.screen,
+              AxisSpacing.s10,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Nos trajets',
+                  style: theme.textTheme.titleSmall?.copyWith(color: axis.ink),
+                ),
+                const SizedBox(height: AxisSpacing.s10),
+                SegmentedToggle<SegmentDirection>(
+                  options: [
+                    for (final direction in SegmentDirection.values)
+                      SegmentOption(value: direction, label: direction.label),
+                  ],
+                  selectedValue: _direction,
+                  onChanged: _chooseDirection,
+                ),
+              ],
+            ),
+          ),
+          if (_segmentsLoading && _segments.isEmpty)
+            // Hauteur d'une carte : la liste ne saute pas quand le sens change.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AxisSpacing.screen),
               child: Column(
                 children: [
-                  SkeletonBox(height: 84, borderRadius: AxisRadius.card),
-                  SizedBox(height: AxisSpacing.s10),
-                  SkeletonBox(height: 84, borderRadius: AxisRadius.card),
+                  for (var index = 0; index < 10; index++) ...[
+                    const SkeletonBox(height: 184, borderRadius: AxisRadius.card),
+                    const SizedBox(height: AxisSpacing.s10),
+                  ],
                 ],
               ),
             )
-          else if (_error != null && _tickets.isEmpty)
+          else if (_segmentsError != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AxisSpacing.screen,
-                AxisSpacing.s16,
-                AxisSpacing.screen,
-                0,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: AxisSpacing.screen),
               child: EmptyState(
                 icon: Icons.wifi_off_rounded,
                 title: 'Connexion indisponible',
-                description:
-                    'Impossible de récupérer les prochains départs pour le moment.',
+                description: _segmentsError!,
                 actionLabel: 'Réessayer',
-                onAction: _load,
+                onAction: _loadSegments,
               ),
             )
-          else if (_trips.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AxisSpacing.screen,
-                AxisSpacing.s20,
-                AxisSpacing.screen,
-                AxisSpacing.s10,
-              ),
-              child: Text(
-                'Départs disponibles',
-                style: theme.textTheme.titleSmall?.copyWith(color: axis.ink),
+          else if (_segments.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: AxisSpacing.screen),
+              child: EmptyState(
+                icon: Icons.directions_bus_outlined,
+                title: 'Aucun trajet disponible',
+                description: 'Aucun tronçon n’est proposé dans ce sens pour le moment.',
               ),
             ),
-            ..._trips.map(
-              (trip) => Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AxisSpacing.screen,
-                  0,
-                  AxisSpacing.screen,
-                  AxisSpacing.s10,
-                ),
-                child: AxisCard(
-                  onTap: () =>
-                      context.push('/billets/booking/${trip.id}/passagers'),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              trip.route.label,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                color: axis.ink,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            trip.currentFare == null
-                                ? 'À renseigner'
-                                : formatMoney(
-                                    trip.currentFare!.amount,
-                                    trip.currentFare!.currency,
-                                  ),
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: theme.colorScheme.primary,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AxisSpacing.s4),
-                      Text(
-                        formatDateTime(trip.departureAt),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: axis.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: AxisSpacing.s12),
-                      Row(
-                        children: [
-                          StatusChip(
-                            label: '${trip.availableSeats} place(s) libre(s)',
-                            variant: trip.availableSeats > 0
-                                ? StatusChipVariant.success
-                                : StatusChipVariant.danger,
-                            dense: true,
-                          ),
-                          const Spacer(),
-                          Text(
-                            'Réserver →',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: theme.colorScheme.primary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+    ];
+  }
+}
+
+class _SegmentCard extends StatelessWidget {
+  const _SegmentCard({required this.segment});
+
+  final SegmentOffer segment;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final axis = context.axis;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AxisSpacing.screen,
+        0,
+        AxisSpacing.screen,
+        AxisSpacing.s10,
+      ),
+      child: AxisCard(
+        onTap: () => context.push(segment.searchFrom().searchLocation),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    segment.label,
+                    style: theme.textTheme.titleMedium?.copyWith(color: axis.ink),
                   ),
                 ),
+                Text(
+                  formatMoney(segment.priceFcfa, 'FCFA'),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AxisSpacing.s4),
+            Text(
+              segment.nextDepartureLabel,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: axis.textSecondary,
               ),
             ),
           ],
-        ],
+        ),
       ),
     );
   }

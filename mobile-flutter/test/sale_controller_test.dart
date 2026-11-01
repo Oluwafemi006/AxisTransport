@@ -5,6 +5,7 @@ import 'package:axis_transport_flutter/core/session_store.dart';
 import 'package:axis_transport_flutter/features/sales/sale_controller.dart';
 import 'package:axis_transport_flutter/features/sales/sale_models.dart';
 import 'package:axis_transport_flutter/features/sales/sell_ticket_screen.dart';
+import 'package:axis_transport_flutter/features/tickets/ticket_document.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -187,6 +188,20 @@ void main() {
     expect(controller.canSell, isFalse);
     await _sell(controller);
     expect(api.sells, 0);
+  });
+
+  test('vente contrôleur refusée pour tarif manquant : message clair, saisie gardée', () async {
+    final (controller, api) = await _ready();
+    api.sellError = ApiException(
+      segmentFareMissingMessage,
+      statusCode: 400,
+      data: const {'code': segmentFareMissingCode},
+    );
+    await _sell(controller);
+    expect(controller.error, segmentFareMissingMessage);
+    expect(controller.sale, isNull);
+    expect(controller.trip, isNotNull);
+    expect(controller.seat, isNotNull);
   });
 
   test('vente en espèces : le billet est émis par le serveur', () async {
@@ -423,7 +438,7 @@ void main() {
     expect(text, contains('Passager : Awa Test'));
     expect(text, contains('Statut : Payé'));
     expect(text.replaceAll(RegExp(r'\s'), ''), contains('Prixdubillet:1000FCFA'));
-    expect(text, contains('Raison sociale : À renseigner'));
+    expect(text, isNot(contains('À renseigner')));
     expect(text, isNot(contains('XOF')));
     expect(text, contains('FCFA'));
   });
@@ -546,5 +561,42 @@ void main() {
     expect(find.textContaining('TVA'), findsNothing);
     expect(find.textContaining('Prix HT'), findsNothing);
     expect(find.textContaining('Prix TTC'), findsNothing);
+  });
+
+  test('le billet partagé par le contrôleur est un vrai PDF', () async {
+    final ticket = SaleTicket.fromJson({
+      ...(_booking('CONFIRMED', ticketStatus: 'ISSUED')['tickets'] as List).first
+          as Map<String, dynamic>,
+      'qr_token': 'TEST-QR',
+    });
+    expect(ticket.qrToken, 'TEST-QR');
+    final bytes = await buildSaleTicketPdf(ticket);
+    expect(String.fromCharCodes(bytes.take(4)), '%PDF');
+    expect(saleTicketFileName(ticket), endsWith('.pdf'));
+  });
+
+  test('le contrôleur voit un choix par tronçon, au prix du serveur', () {
+    final choices = SaleTrip.choicesFromJson({
+      'id': 31,
+      'route_detail': {
+        'label': 'Cotonou → Parakou',
+        'stops': [
+          {'id': 3, 'name': 'Savè', 'boarding_points': const []},
+        ],
+      },
+      'quotes': [_quote(1, 'Espèces', 7500)],
+      'segments': [
+        {
+          'origin_id': 3,
+          'origin': 'Savè',
+          'destination_id': 4,
+          'destination': 'Kétou',
+          'quotes': [_quote(1, 'Espèces', 2500)],
+        },
+      ],
+    });
+    expect(choices.single.label, 'Savè → Kétou');
+    expect(choices.single.quotes.single.total, 2500);
+    expect(choices.single.originId, 3);
   });
 }

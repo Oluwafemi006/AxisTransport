@@ -134,9 +134,17 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
   }
 
   Future<void> _shareTicket(Ticket ticket) async {
+    final bytes = await buildTicketPdf(ticket);
     await SharePlus.instance.share(
       ShareParams(
-        text: ticketShareText(ticket),
+        files: [
+          XFile.fromData(
+            bytes,
+            name: ticketFileName(ticket),
+            mimeType: 'application/pdf',
+          ),
+        ],
+        fileNameOverrides: [ticketFileName(ticket)],
         subject: 'Billet AXIS Transport ${ticket.reference}',
       ),
     );
@@ -601,7 +609,7 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                     const Divider(height: 1),
                     const SizedBox(height: AxisSpacing.s10),
                     Text(
-                      'Payé par $paymentMode · ${formatMoney(item.amount, item.currency)} TTC (TVA 18 % incluse)',
+                      'Payé par $paymentMode · ${formatMoney(item.amount, item.currency)}',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: axis.textSecondary,

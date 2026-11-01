@@ -8,8 +8,10 @@ import 'package:axis_transport_flutter/features/bookings/application/booking_dra
 import 'package:axis_transport_flutter/features/bookings/presentation/booking_review_screen.dart';
 import 'package:axis_transport_flutter/features/home/home_screen.dart';
 import 'package:axis_transport_flutter/features/passengers/domain/passenger.dart';
+import 'package:axis_transport_flutter/features/passengers/presentation/passengers_screen.dart';
 import 'package:axis_transport_flutter/features/seats/presentation/seat_selection_screen.dart';
 import 'package:axis_transport_flutter/features/tickets/ticket_screen.dart';
+import 'package:axis_transport_flutter/features/trips/domain/segment_offer.dart';
 import 'package:axis_transport_flutter/features/trips/domain/trip_search.dart';
 import 'package:axis_transport_flutter/features/trips/presentation/trip_results_screen.dart';
 import 'package:flutter/material.dart';
@@ -60,6 +62,42 @@ class _Phase4Api extends ApiClient {
   Future<List<Trip>> trips() async {
     if (failNetwork) throw ApiException('Hors connexion');
     return [_sampleTrip];
+  }
+
+  @override
+  Future<List<SegmentOffer>> segments(SegmentDirection direction) async {
+    if (failNetwork) throw ApiException('Hors connexion');
+    return const [
+      SegmentOffer(
+        originId: 1,
+        origin: 'Parakou',
+        destinationId: 3,
+        destination: 'Savè',
+        priceFcfa: 4500,
+        lineOrigin: 'Parakou',
+      ),
+    ];
+  }
+
+  /// Comme le serveur : tarif du tronçon demandé, sinon celui du parcours entier.
+  @override
+  Future<Trip> trip(int tripId, {int? originId, int? destinationId}) async {
+    if (originId != 1 || destinationId != 3) return _sampleTrip;
+    return Trip(
+      id: _sampleTrip.id,
+      route: _sampleTrip.route,
+      departureAt: _sampleTrip.departureAt,
+      status: _sampleTrip.status,
+      statusDisplay: _sampleTrip.statusDisplay,
+      note: _sampleTrip.note,
+      availableSeats: _sampleTrip.availableSeats,
+      currentFare: const Fare(
+        id: 2,
+        name: 'TEST tronçon',
+        amount: 4500,
+        currency: 'XOF',
+      ),
+    );
   }
 
   @override
@@ -161,6 +199,17 @@ void main() {
       expect(find.text('Suivre un colis'), findsOneWidget);
       expect(find.text('Mes billets'), findsOneWidget);
       expect(find.text('Rechercher les trajets'), findsOneWidget);
+      expect(find.byType(AxisLogo), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Notifications'));
+      await tester.pump();
+      expect(find.text('Aucune notification'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Parakou → Savè'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Parakou → Savè'), findsOneWidget);
     });
 
     testWidgets('2. Résultats (Resultats.html) : embarquement (départ - 30 min), RouteStopsBar et StatusChip', (
@@ -188,6 +237,32 @@ void main() {
       expect(find.byType(RouteStopsBar), findsOneWidget);
       expect(find.text('23 places libres'), findsOneWidget);
       expect(find.text('Choisir ce trajet'), findsOneWidget);
+      expect(find.text('Départ de Parakou à 08:00'), findsOneWidget);
+      expect(find.textContaining('TTC'), findsNothing);
+    });
+
+    testWidgets('2a. Résultats depuis un arrêt intermédiaire : aucune heure de passage inventée', (
+      tester,
+    ) async {
+      final search = TripSearch(
+        originId: 3,
+        destinationId: 2,
+        date: DateTime(2026, 10, 30),
+        passengers: 1,
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [apiClientProvider.overrideWithValue(_Phase4Api())],
+          child: MaterialApp(
+            theme: AxisTheme.light(),
+            home: TripResultsScreen(search: search),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Départ de Parakou à 08:00'), findsOneWidget);
+      expect(find.textContaining('Embarquement 07:30'), findsNothing);
     });
 
     testWidgets('2b. Résultats (Resultats.html) : erreur réseau affiche EmptyState et bouton Réessayer', (
@@ -214,6 +289,40 @@ void main() {
 
       expect(find.byType(EmptyState), findsOneWidget);
       expect(find.text('Réessayer'), findsOneWidget);
+    });
+
+    testWidgets('2c. Passagers : le brouillon garde le tarif du tronçon choisi, pas celui du parcours entier', (
+      tester,
+    ) async {
+      final container = ProviderContainer(
+        overrides: [apiClientProvider.overrideWithValue(_Phase4Api())],
+      );
+      addTearDown(container.dispose);
+
+      // Brouillon périmé au prix du parcours entier : la réponse du serveur prime.
+      container.read(bookingDraftProvider.notifier).start(_sampleTrip);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: AxisTheme.light(),
+            home: const PassengersScreen(
+              tripId: 10,
+              originId: 1,
+              destinationId: 3,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final draft = container.read(bookingDraftProvider);
+      expect(draft.trip?.currentFare?.amount, 4500);
+      expect(find.text('Parakou → Savè'), findsOneWidget);
+      expect(find.text('Parakou → Cotonou'), findsNothing);
+      expect(draft.originId, 1);
+      expect(draft.destinationId, 3);
     });
 
     testWidgets('3. Choix du siège (Siege.html) : SeatMap alimenté par les sièges API', (
@@ -256,7 +365,7 @@ void main() {
       expect(find.text('Continuer'), findsOneWidget);
     });
 
-    testWidgets('4. Récapitulatif + paiement (Recap.html) : Mobile Money et mention TVA 18 % incluse', (
+    testWidgets('4. Récapitulatif + paiement (Recap.html) : Mobile Money et aucune mention de taxe', (
       tester,
     ) async {
       final container = ProviderContainer(
@@ -294,10 +403,49 @@ void main() {
       expect(find.text('Validation sur votre téléphone'), findsOneWidget);
       expect(find.text('FedaPay'), findsNothing);
       expect(
-        find.textContaining('Prix TTC, TVA 18 % incluse.'),
+        find.textContaining('Le billet est émis'),
         findsOneWidget,
       );
+      expect(find.textContaining('TVA'), findsNothing);
+      expect(find.textContaining('TTC'), findsNothing);
       expect(find.text('Siège 1A'), findsOneWidget);
+    });
+
+    testWidgets('4b. Récapitulatif depuis un arrêt intermédiaire : départ du bus, sans heure de passage', (
+      tester,
+    ) async {
+      final container = ProviderContainer(
+        overrides: [apiClientProvider.overrideWithValue(_Phase4Api())],
+      );
+      addTearDown(container.dispose);
+
+      container.read(bookingDraftProvider.notifier).start(_sampleTrip, originId: 3, destinationId: 2);
+      container.read(bookingDraftProvider.notifier).setPassengers(const [
+        Passenger(
+          id: 'p1',
+          fullName: 'Koffi Mensah',
+          phone: '97000000',
+          type: PassengerType.adult,
+        ),
+      ]);
+      container.read(bookingDraftProvider.notifier).assignSeat(
+        'p1',
+        const Seat(id: 1, number: '1A', status: 'AVAILABLE'),
+      );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: AxisTheme.light(),
+            home: const BookingReviewScreen(tripId: 10),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('DÉPART DE PARAKOU'), findsOneWidget);
+      expect(find.text('EMBARQUEMENT'), findsNothing);
     });
 
     testWidgets('5. Billet QR (Billet.html) : carte d’embarquement, QR, embarquement et mentions légales', (
@@ -346,7 +494,8 @@ void main() {
       expect(find.text('07:30'), findsOneWidget);
       expect(find.byType(PrettyQrView), findsOneWidget);
       expect(find.text('N° AX-2026-00142'), findsOneWidget);
-      expect(find.textContaining('TVA 18 % incluse'), findsOneWidget);
+      expect(find.textContaining('TVA'), findsNothing);
+      expect(find.textContaining('TTC'), findsNothing);
       expect(
         find.text('Raison sociale : TEST Transport SARL'),
         findsOneWidget,

@@ -4,10 +4,12 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/formatters.dart';
+import '../../../core/api_client.dart';
 import '../../../core/models.dart';
 import '../../../core/session.dart';
 import '../../../core/theme/axis_theme.dart';
 import '../../../core/widgets/widgets.dart';
+import '../../bookings/application/booking_draft.dart';
 import '../domain/trip_search.dart';
 
 class TripResultsScreen extends ConsumerStatefulWidget {
@@ -60,14 +62,15 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
         _places = places;
         _loading = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _trips = [];
         _nextAvailable = null;
         _loading = false;
-        _error =
-            'Connexion nécessaire pour connaître les places et tarifs actuels.';
+        _error = error is ApiException && error.isSegmentFareMissing
+            ? error.message
+            : 'Connexion nécessaire pour connaître les places et tarifs actuels.';
       });
     }
   }
@@ -416,7 +419,7 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
   }
 }
 
-class _TripResultCard extends StatelessWidget {
+class _TripResultCard extends ConsumerWidget {
   const _TripResultCard({
     required this.trip,
     required this.passengers,
@@ -447,7 +450,7 @@ class _TripResultCard extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final axis = context.axis;
     final fare = trip.currentFare;
@@ -459,13 +462,17 @@ class _TripResultCard extends StatelessWidget {
         trip.departureAt.subtract(const Duration(minutes: 30));
     final boarding = DateFormat.Hm('fr_FR').format(boardingAt);
     final stops = _buildStopItems();
+    final lineOrigin = trip.route.origin?.name ?? '';
+    // Pas d'heure de passage aux arrêts intermédiaires : l'heure d'embarquement ne vaut qu'au départ du bus.
+    final boardsAtLineOrigin =
+        search == null || search!.originId == trip.route.origin?.id;
 
     return AxisCard(
       padding: const EdgeInsets.all(AxisSpacing.s16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Ligne supérieure : heure de départ + embarquement à gauche, prix TTC à droite
+          // Ligne supérieure : heure de départ + embarquement à gauche, prix à droite
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -480,8 +487,17 @@ class _TripResultCard extends StatelessWidget {
                         color: theme.colorScheme.primary,
                       ),
                     ),
-                    const SizedBox(height: AxisSpacing.s4),
-                    Row(
+                    if (lineOrigin.isNotEmpty) ...[
+                      const SizedBox(height: AxisSpacing.s4),
+                      Text(
+                        'Départ de $lineOrigin à $departure',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: axis.textSecondary,
+                        ),
+                      ),
+                    ],
+                    if (boardsAtLineOrigin) const SizedBox(height: AxisSpacing.s4),
+                    if (boardsAtLineOrigin) Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
@@ -511,12 +527,6 @@ class _TripResultCard extends StatelessWidget {
                         ? 'À renseigner'
                         : formatMoney(fare.amount, fare.currency),
                     style: AxisTypography.price.copyWith(color: axis.ink),
-                  ),
-                  Text(
-                    'TTC',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: axis.textMuted,
-                    ),
                   ),
                 ],
               ),
@@ -568,9 +578,16 @@ class _TripResultCard extends StatelessWidget {
             variant: AxisButtonVariant.secondary,
             height: AxisSizes.secondaryButton,
             onPressed: bookable
-                ? () => context.push(
-                    '/billets/booking/${trip.id}/passagers?passagers=$passengers${search != null ? '&origin=${search!.originId}&destination=${search!.destinationId}' : ''}',
-                  )
+                ? () {
+                    ref.read(bookingDraftProvider.notifier).start(
+                          trip,
+                          originId: search?.originId,
+                          destinationId: search?.destinationId,
+                        );
+                    context.push(
+                      '/billets/booking/${trip.id}/passagers?passagers=$passengers${search != null ? '&origin=${search!.originId}&destination=${search!.destinationId}' : ''}',
+                    );
+                  }
                 : null,
             label: trip.availableSeats < passengers
                 ? 'Complet'

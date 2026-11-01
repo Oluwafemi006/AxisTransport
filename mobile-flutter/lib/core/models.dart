@@ -466,7 +466,7 @@ class PaymentCheckout {
   }
 }
 
-/// Informations de l'agence imprimées sur le billet. Vide = « À renseigner ». Jamais de comptes bancaires.
+/// Informations de l'agence imprimées sur le billet. Vide = ligne masquée. Jamais de comptes bancaires.
 class AgencyInfo {
   const AgencyInfo({
     this.legalName = '',
@@ -628,28 +628,48 @@ class TicketPrintInfo {
   };
 }
 
-const ticketMissingValue = 'À renseigner';
-
-String _orMissingTicketValue(String? value) {
-  final text = value?.trim() ?? '';
-  return text.isEmpty ? ticketMissingValue : text;
-}
-
-/// Bas du billet (mentions légales et conditions de l'agence) : vide = « À renseigner ».
+/// Bas du billet (mentions légales et conditions de l'agence) :
+/// une information absente ou vide n'affiche pas sa ligne.
 /// Jamais de comptes bancaires.
 List<String> ticketFooterLines(TicketPrintInfo? info) {
-  final agency = info?.agency ?? const AgencyInfo();
+  if (info == null) return const [];
+  final agency = info.agency;
+  final lines = <String>[];
+
+  final legalName = agency.legalName.trim();
+  if (legalName.isNotEmpty) {
+    lines.add('Raison sociale : $legalName');
+  }
+
+  final ifu = agency.ifu.trim();
+  final rccm = agency.rccm.trim();
+  if (ifu.isNotEmpty && rccm.isNotEmpty) {
+    lines.add('IFU : $ifu · RCCM : $rccm');
+  } else if (ifu.isNotEmpty) {
+    lines.add('IFU : $ifu');
+  } else if (rccm.isNotEmpty) {
+    lines.add('RCCM : $rccm');
+  }
+
+  final address = agency.address.trim();
+  if (address.isNotEmpty) {
+    lines.add('Adresse : $address');
+  }
+
   final contacts = [
     agency.phones,
     agency.email,
   ].map((item) => item.trim()).where((item) => item.isNotEmpty).join(' · ');
-  return [
-    'Raison sociale : ${_orMissingTicketValue(agency.legalName)}',
-    'IFU : ${_orMissingTicketValue(agency.ifu)} · RCCM : ${_orMissingTicketValue(agency.rccm)}',
-    'Adresse : ${_orMissingTicketValue(agency.address)}',
-    'Contacts : ${_orMissingTicketValue(contacts)}',
-    'Conditions : ${_orMissingTicketValue(info?.conditions)}',
-  ];
+  if (contacts.isNotEmpty) {
+    lines.add('Contacts : $contacts');
+  }
+
+  final conditions = info.conditions.trim();
+  if (conditions.isNotEmpty) {
+    lines.add('Conditions : $conditions');
+  }
+
+  return lines;
 }
 
 class Ticket {

@@ -20,6 +20,8 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 | Dates passées refusées (site, app et serveur), heure du Bénin | `cc/dates-passees` | Claude Code | fusionnée dans main |
 | Planning quotidien à sens alterné et départs vendables au guichet | `cc/planning-guichet` | Claude Code | fusionnée dans main |
 | Pages réservées : affichage strict 403 sans mention de rôle | `cc/page-403` | Claude Code | à faire |
+| Corrections QA mobile : prix du tronçon, mentions légales, TVA, logo et notifications | `cc/corrections-qa-mobile` | Claude Code | à valider par Eddy |
+| Accueil : un tronçon par carte et par sens, endpoint des tronçons, plus de prix de repli | `cc/accueil-tous-troncons` | Claude Code | à valider par Eddy |
 
 ---
 

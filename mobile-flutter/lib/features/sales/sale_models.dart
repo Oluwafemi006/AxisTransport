@@ -58,9 +58,18 @@ class SaleTrip {
     this.destinationName = '',
     this.originBoardingPoints = const [],
     this.destinationBoardingPoints = const [],
+    this.originId,
+    this.destinationId,
   });
 
   final int id;
+
+  /// Tronçon vendu ; absents, c'est le parcours entier.
+  final int? originId;
+  final int? destinationId;
+
+  /// Un même départ apparaît une fois par tronçon.
+  String get key => '$id-$originId-$destinationId';
   final String label;
   final DateTime? departureAt;
   final DateTime? boardingAt;
@@ -74,6 +83,49 @@ class SaleTrip {
   final List<SaleQuote> quotes;
 
   bool get hasFare => quotes.isNotEmpty;
+
+  /// Un choix par tronçon vendable du départ, tels que renvoyés par le serveur.
+  static List<SaleTrip> choicesFromJson(Map<String, dynamic> json) {
+    final segments = json['segments'] as List? ?? const [];
+    final base = SaleTrip.fromJson(json);
+    if (segments.isEmpty) return [base];
+    final stops = _map(json['route_detail'])['stops'] as List? ?? const [];
+    List<BoardingPointInfo> pointsOf(Object? stopId) {
+      for (final stop in stops) {
+        final row = _map(stop);
+        if (row['id'] == stopId) {
+          return (row['boarding_points'] as List? ?? const [])
+              .map((item) => BoardingPointInfo.fromJson(_map(item)))
+              .where((p) => p.active)
+              .toList();
+        }
+      }
+      return const [];
+    }
+
+    return [
+      for (final item in segments)
+        () {
+          final row = _map(item);
+          return SaleTrip(
+            id: base.id,
+            label: '${row['origin']} → ${row['destination']}',
+            departureAt: base.departureAt,
+            boardingAt: base.boardingAt,
+            availableSeats: base.availableSeats,
+            originName: row['origin'] as String? ?? '',
+            destinationName: row['destination'] as String? ?? '',
+            originId: row['origin_id'] as int?,
+            destinationId: row['destination_id'] as int?,
+            originBoardingPoints: pointsOf(row['origin_id']),
+            destinationBoardingPoints: pointsOf(row['destination_id']),
+            quotes: (row['quotes'] as List? ?? const [])
+                .map((quote) => SaleQuote.fromJson(_map(quote)))
+                .toList(),
+          );
+        }(),
+    ];
+  }
 
   factory SaleTrip.fromJson(Map<String, dynamic> json) {
     final routeDetail = _map(json['route_detail']);
@@ -119,8 +171,11 @@ class SaleTicket {
     this.boardingDisplay = '',
     this.alightingDisplay = '',
     this.printInfo,
+    this.qrToken = '',
   });
 
+  /// Jeton lu par le scanner ; vide tant que le billet n'est pas émis.
+  final String qrToken;
   final String reference;
   final String status;
   final String statusDisplay;
@@ -168,6 +223,7 @@ class SaleTicket {
       boardingDisplay: bDisp.isNotEmpty ? bDisp : (info?.boardingDisplay.trim() ?? ''),
       alightingDisplay: aDisp.isNotEmpty ? aDisp : (info?.alightingDisplay.trim() ?? ''),
       printInfo: info,
+      qrToken: json['qr_token'] as String? ?? '',
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:axis_transport_flutter/core/models.dart';
 import 'package:axis_transport_flutter/core/session.dart';
 import 'package:axis_transport_flutter/core/session_store.dart';
 import 'package:axis_transport_flutter/features/bookings/application/booking_checkout.dart';
+import 'package:axis_transport_flutter/features/tickets/ticket_document.dart';
 import 'package:axis_transport_flutter/features/tickets/ticket_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -161,6 +162,34 @@ void main() {
       );
       expect(find.byType(PrettyQrView), findsNothing);
     });
+  });
+
+  testWidgets('billet : une raison sociale vide n\'a aucune ligne, écran et PDF', (tester) async {
+    final json = _ticket('ISSUED').toJson();
+    final ticket = Ticket.fromJson({
+      ...json,
+      'print_info': {
+        'paid': true,
+        'agency': {'legal_name': '  ', 'rccm': 'TEST-RCCM'},
+        'conditions': '',
+      },
+    });
+    expect(ticketFooter(ticket), ['RCCM : TEST-RCCM']);
+    await tester.runAsync(() => buildTicketPdf(ticket));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [apiClientProvider.overrideWithValue(_Api(approved: true))],
+        child: MaterialApp(home: TicketScreen(ticketId: 5, initialTicket: ticket)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Raison sociale'), findsNothing);
+    expect(find.textContaining('Conditions'), findsNothing);
+    expect(find.textContaining('À renseigner'), findsNothing);
+    expect(find.textContaining('TVA'), findsNothing);
+    expect(find.textContaining('TTC'), findsNothing);
   });
 
   group('vérification patiente au retour de la page de paiement', () {

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/formatters.dart';
+import '../../../core/api_client.dart';
 import '../../../core/models.dart';
 import '../../../core/session.dart';
 import '../../../core/theme.dart';
@@ -106,8 +107,14 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
 
   Future<void> _load() async {
     final api = ref.read(apiClientProvider);
+    final startDraft = ref.read(bookingDraftProvider);
     try {
-      final trip = await api.trip(widget.tripId);
+      // Avec le tronçon choisi, le serveur renvoie son tarif (sinon celui du parcours entier).
+      final trip = await api.trip(
+        widget.tripId,
+        originId: widget.originId ?? startDraft.originId,
+        destinationId: widget.destinationId ?? startDraft.destinationId,
+      );
       final draft = ref.read(bookingDraftProvider);
       if (draft.trip?.id == trip.id && draft.passengers.length == _count) {
         for (var index = 0; index < _count; index++) {
@@ -171,11 +178,13 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
         _alightingPointId = initialAlightingId;
         _loading = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Connexion nécessaire pour préparer cette réservation.';
+        _error = error is ApiException && error.isSegmentFareMissing
+            ? error.message
+            : 'Connexion nécessaire pour préparer cette réservation.';
       });
     }
   }
@@ -288,7 +297,12 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
                   const _BookingProgress(currentStep: 1),
                   if (trip != null) ...[
                     const SizedBox(height: 18),
-                    _TripSummary(trip: trip),
+                    _TripSummary(
+                      trip: trip,
+                      segmentLabel: ref.watch(
+                        bookingDraftProvider.select((d) => d.segmentLabel),
+                      ),
+                    ),
                     ..._buildBoardingPointSelectors(trip),
                   ],
                   if (_error != null) Notice(_error!, error: true),
@@ -444,9 +458,12 @@ class _BookingProgress extends StatelessWidget {
 }
 
 class _TripSummary extends StatelessWidget {
-  const _TripSummary({required this.trip});
+  const _TripSummary({required this.trip, this.segmentLabel});
 
   final Trip trip;
+
+  /// Tronçon choisi par le client ; à défaut, le parcours entier.
+  final String? segmentLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -462,7 +479,7 @@ class _TripSummary extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            trip.route.label,
+            segmentLabel ?? trip.route.label,
             style: theme.textTheme.titleLarge?.copyWith(
               color: tokens.onDark,
               fontWeight: FontWeight.w900,

@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import hmac
 
 from django.db import models
+from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
 from django.urls import include, path
@@ -27,6 +28,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.routers import DefaultRouter
+from rest_framework.views import APIView
 
 from .models import (
     Booking,
@@ -70,8 +72,14 @@ from .services import (
     cancel_held_booking,
     hash_guest_token,
     is_plausible_phone,
+    SEGMENT_CACHE_SECONDS,
+    SEGMENT_DIRECTION_FORWARD,
+    SEGMENT_DIRECTIONS,
+    SegmentFareMissing,
     release_expired_holds,
     reserve_booking,
+    segment_cache_key,
+    segment_catalog,
     trip_fare,
     reserve_ticket,
     transition_parcel,
@@ -147,7 +155,12 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
         return queryset
 
     def list(self, request, *args, **kwargs):
-        from .services import find_next_available_trip
+        from .services import find_next_available_trip, require_segment_fare
+        if request.query_params.get("origin") and request.query_params.get("destination"):
+            try:
+                require_segment_fare(request.query_params["origin"], request.query_params["destination"])
+            except SegmentFareMissing as exc:
+                raise exc.api_error()
         queryset = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -197,20 +210,16 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
         origin_val = request.query_params.get("origin")
         dest_val = request.query_params.get("destination")
         fare = None
-        if origin_val and dest_val:
-            from .services import resolve_location, resolve_segment_fare
-            origin_loc = resolve_location(origin_val)
-            dest_loc = resolve_location(dest_val)
-            if origin_loc and dest_loc and origin_loc.pk != dest_loc.pk:
-                try:
-                    fare = resolve_segment_fare(origin_loc, dest_loc)
-                except ImproperlyConfigured:
-                    fare = None
-        if fare is None:
-            try:
+        try:
+            if origin_val and dest_val:
+                from .services import require_segment_fare
+                fare = require_segment_fare(origin_val, dest_val)
+            if fare is None:
                 fare = trip_fare(trip)
-            except ImproperlyConfigured as exc:
-                raise ValidationError({"detail": str(exc)}) from exc
+        except SegmentFareMissing as exc:
+            raise exc.api_error()
+        except ImproperlyConfigured as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
         target = SimpleNamespace(amount=fare.amount * passengers, currency=fare.currency)
         methods = [
             method
@@ -219,6 +228,23 @@ class ClientTripViewSet(viewsets.ReadOnlyModelViewSet):
             and (method.code.upper() != SIMULATION or (settings.DEBUG and settings.AXIS_PAYMENT_SIMULATION))
         ]
         return Response([payment_quote(target, method) for method in methods])
+
+
+class ClientSegmentView(APIView):
+    """Tronçons d'un sens pour l'accueil, lecture publique : calculés côté serveur, gardés 60 s."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        direction = request.query_params.get("direction", SEGMENT_DIRECTION_FORWARD)
+        if direction not in SEGMENT_DIRECTIONS:
+            raise ValidationError({"direction": "Sens attendu : aller ou retour."})
+        key = segment_cache_key(direction)
+        payload = cache.get(key)
+        if payload is None:
+            payload = segment_catalog(direction)
+            cache.set(key, payload, SEGMENT_CACHE_SECONDS)
+        return Response(payload)
 
 
 class ClientSeatViewSet(viewsets.ReadOnlyModelViewSet):
@@ -633,6 +659,7 @@ client_router.register("rentals", ClientRentalViewSet, basename="client-rental")
 client_urlpatterns = [
     path("tickets/public/<str:reference>/", PublicTicketDetailView.as_view(), name="public-ticket-detail"),
     path("contact/", PublicContactView.as_view(), name="public-contact"),
+    path("segments/", ClientSegmentView.as_view(), name="client-segments"),
     path("parcels/track/", ParcelTrackingView.as_view(), name="parcel-tracking"),
     path("webhooks/kkiapay/", KKiaPayWebhookView.as_view(), name="kkiapay-webhook"),
     path("webhooks/fedapay/", FedaPayWebhookView.as_view(), name="fedapay-webhook"),

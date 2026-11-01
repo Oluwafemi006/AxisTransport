@@ -170,7 +170,11 @@ class _BookingApi extends ApiClient {
   ];
 
   @override
-  Future<Trip> trip(int tripId) async => (await trips()).single;
+  Future<Trip> trip(
+    int tripId, {
+    int? originId,
+    int? destinationId,
+  }) async => (await trips()).single;
 
   @override
   Future<List<Seat>> seats(int tripId) async => [
