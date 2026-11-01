@@ -8,7 +8,7 @@ Toutes les réponses, rapports, messages de commit et textes d'interface sont en
 - **Aucune supposition.** Une règle, un contact, un tarif, un domaine, un horaire ou un chemin inconnu s'écrit « À renseigner » ou « inconnu », et on le signale dans le rapport. Ne jamais inventer.
 - Les décisions validées sont dans `DECISIONS.md`. Ne rien y ajouter sans décision transmise par Eddy.
 - **Interdits :**
-  - pousser (`git push`) : Eddy pousse lui-même ;
+  - pousser sur `main` : jamais. Le push est autorisé sur les branches de travail (`cc/…`, `ag/…`) ;
   - lancer une commande autre que les tests (ci-dessous) sans accord d'Eddy : conteneurs, compilation d'APK, tunnels, scripts ;
   - lire, modifier ou commiter `.env`, `.env.*`, une clé, un keystore, `key.properties`, un dump de base ;
   - se connecter au VPS (SSH ou autre commande distante) ;

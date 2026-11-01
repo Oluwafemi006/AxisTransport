@@ -82,7 +82,17 @@ class _ParcelCameraScreenState extends State<ParcelCameraScreen> {
       appBar: AppBar(
         backgroundColor: axis.ink,
         foregroundColor: axis.onDark,
-        title: const Text('Photo du colis'),
+        leading: IconButton(
+          tooltip: 'Retour',
+          icon: Icon(Icons.arrow_back_rounded, color: axis.onDark),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          'Photo du colis',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: axis.onDark,
+          ),
+        ),
       ),
       body: Column(
         children: [

@@ -367,3 +367,7 @@ class StaffSaleSegmentTests(SegmentsTestCase):
         body = self.client.get("/api/v1/client/parcels/track/", {"code": code}).json()
         self.assertEqual(body["photos"], ["https://test.invalid/a.jpg"])
         self.assertNotIn("sender_name", body)
+
+    def test_options_give_the_real_parcel_price_before_validation(self):
+        SystemSetting.objects.create(key="parcel_base_price_fcfa", value=2000)
+        self.assertEqual(self.client.get("/api/v1/staff/sales/options/").json()["parcel_base_fcfa"], 2000)

@@ -1745,7 +1745,8 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                         }
                     )
             trips.append(item)
-        return Response({"trips": trips})
+        base = SystemSetting.objects.filter(key="parcel_base_price_fcfa").first()
+        return Response({"trips": trips, "parcel_base_fcfa": base.value if base else None})
 
     @action(detail=False, methods=["get"], url_path="parcels")
     def parcels(self, request):
