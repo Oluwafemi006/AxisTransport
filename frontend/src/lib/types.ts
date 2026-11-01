@@ -217,6 +217,8 @@ export interface Parcel {
   destination_detail: Location;
   trip: number | null;
   description: string;
+  photo_urls: string[];
+  amount: string | null;
   weight_kg: string | null;
   status: string;
   status_display: string;
@@ -250,6 +252,7 @@ export interface ParcelTracking {
   origin: string;
   destination: string;
   current_step: string;
+  photos?: string[];
   steps: { key: string; label: string; done: boolean; current: boolean; reached_at: string | null }[];
 }
 
@@ -287,6 +290,15 @@ export interface SegmentFare {
   currency: string;
   updated_at: string;
   updated_by_name: string;
+}
+
+export interface BusPosition {
+  id: number;
+  route: string;
+  stop: string;
+  final: boolean;
+  confirmed_at: string;
+  confirmed_by: string;
 }
 
 export interface MissingSegmentFare {

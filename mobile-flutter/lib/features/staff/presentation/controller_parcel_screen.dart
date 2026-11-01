@@ -1,7 +1,15 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
+import 'package:share_plus/share_plus.dart';
+
+import '../../sales/sale_models.dart';
+import 'parcel_camera_screen.dart';
+import 'staff_home_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/api_client.dart';
 import '../../../core/formatters.dart';
 import '../../../core/models.dart';
 import '../../../core/session.dart';
@@ -12,6 +20,26 @@ import '../../../core/widgets/axis_header.dart';
 import '../../../core/widgets/axis_text_field.dart';
 import '../../../core/widgets/photo_slots.dart';
 import '../../../core/widgets/segmented_toggle.dart';
+
+/// Exécutée hors de l'écran : réduit chaque photo pour rester léger en 3G.
+List<List<int>> compressParcelPhotos(List<List<int>> photos) {
+  const settings = ParcelPhotoCaptureSettings();
+  return [
+    for (final bytes in photos)
+      () {
+        final decoded = img.decodeImage(Uint8List.fromList(bytes));
+        if (decoded == null) return bytes;
+        final resized = decoded.width > decoded.height
+            ? (decoded.width > settings.maxWidthPx
+                  ? img.copyResize(decoded, width: settings.maxWidthPx)
+                  : decoded)
+            : (decoded.height > settings.maxWidthPx
+                  ? img.copyResize(decoded, height: settings.maxWidthPx)
+                  : decoded);
+        return img.encodeJpg(resized, quality: settings.jpegQuality).toList();
+      }(),
+  ];
+}
 
 /// Paramètres de compression d'image avant envoi (largeur max ~1280 px, qualité JPEG ~70).
 class ParcelPhotoCaptureSettings {
@@ -71,6 +99,9 @@ class _ControllerParcelScreenState
   int? _selectedDestinationId;
   int _paymentIndex = 0; // 0 = Espèces, 1 = Mobile Money
   String? _formError;
+  bool _sending = false;
+  num? _serverFare;
+  String? _savedTrackingNumber;
 
   @override
   void initState() {
@@ -82,6 +113,16 @@ class _ControllerParcelScreenState
       }
     } else {
       _loadLocations();
+    }
+    if (widget.fareFcfa == null) _loadFare();
+  }
+
+  Future<void> _loadFare() async {
+    try {
+      final options = await ref.read(apiClientProvider).saleOptions();
+      if (mounted) setState(() => _serverFare = options['parcel_base_fcfa'] as num?);
+    } catch (_) {
+      // Sans réponse, aucun prix n'est affiché : rien n'est estimé ici.
     }
   }
 
@@ -123,83 +164,16 @@ class _ControllerParcelScreenState
     });
   }
 
-  Future<PhotoSlotItem?> _showCameraCaptureSheet(int index) {
-    final axis = context.axis;
-    final theme = Theme.of(context);
-    return showModalBottomSheet<PhotoSlotItem>(
-      context: context,
-      backgroundColor: theme.colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(AxisRadius.xl),
-        ),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AxisSpacing.lg),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Caméra — Photo $index / 3',
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  Text(
-                    'Max ${_compressionSettings.maxWidthPx} px · JPEG ${_compressionSettings.jpegQuality}%',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: axis.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AxisSpacing.md),
-              Container(
-                height: 140,
-                decoration: BoxDecoration(
-                  color: axis.ink,
-                  borderRadius: BorderRadius.circular(AxisRadius.lg),
-                ),
-                alignment: Alignment.center,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.camera_alt_outlined,
-                      size: 36,
-                      color: axis.accent,
-                    ),
-                    const SizedBox(height: AxisSpacing.xs),
-                    Text(
-                      'Cadrez le colis avant expédition',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: axis.borderStrong,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AxisSpacing.md),
-              AxisButton(
-                label: 'Prendre la photo',
-                icon: const Icon(Icons.camera_alt_rounded),
-                textColor: AxisButtonTextColor.ink,
-                onPressed: () {
-                  Navigator.of(sheetContext).pop(
-                    PhotoSlotItem(
-                      id: 'photo-$index',
-                      label: 'Photo $index',
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
+  /// Caméra intégrée à l'application : la photo revient directement dans sa case.
+  Future<PhotoSlotItem?> _showCameraCaptureSheet(int index) async {
+    final bytes = await Navigator.of(context).push<List<int>>(
+      MaterialPageRoute(builder: (_) => const ParcelCameraScreen()),
+    );
+    if (bytes == null) return null;
+    return PhotoSlotItem(
+      id: 'photo-$index',
+      label: 'Photo $index',
+      imageBytes: bytes,
     );
   }
 
@@ -211,7 +185,7 @@ class _ControllerParcelScreenState
   }
 
   void _handleSubmit() {
-    if (_photos.isEmpty) return;
+    if (_photos.isEmpty || _sending) return;
     if (_senderName.text.trim().isEmpty ||
         _senderPhone.text.trim().isEmpty ||
         _recipientName.text.trim().isEmpty ||
@@ -245,11 +219,117 @@ class _ControllerParcelScreenState
       return;
     }
 
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Enregistrement de colis avec photos bientôt disponible côté serveur.',
-        ),
+    _send();
+  }
+
+  Future<void> _send() async {
+    final api = ref.read(apiClientProvider);
+    setState(() => _sending = true);
+    try {
+      final options = await api.saleOptions();
+      final trips = options['trips'] as List? ?? const [];
+      final stops = trips.isEmpty
+          ? const <RouteStopInfo>[]
+          : SaleTrip.fromJson(Map<String, dynamic>.from(trips.first as Map)).stops;
+      if (stops.isEmpty) {
+        setState(() => _formError = 'Aucun départ en cours pour ce colis.');
+        return;
+      }
+      final result = await api.createParcel({
+        'sender_name': _senderName.text.trim(),
+        'sender_phone': _senderPhone.text.trim(),
+        'recipient_name': _recipientName.text.trim(),
+        'recipient_phone': _recipientPhone.text.trim(),
+        'origin': stops.first.id,
+        'destination': _selectedDestinationId,
+        'description': _description.text.trim(),
+      }, await compute(compressParcelPhotos, [for (final photo in _photos) ?photo.imageBytes]));
+      ref.read(staffActivityProvider.notifier).changed();
+      if (mounted) {
+        setState(() => _savedTrackingNumber = '${result['tracking_number']}');
+      }
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _formError = e.message);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _newParcel() {
+    setState(() {
+      _savedTrackingNumber = null;
+      _photos.clear();
+      for (final field in [
+        _senderName,
+        _senderPhone,
+        _recipientName,
+        _recipientPhone,
+        _description,
+      ]) {
+        field.clear();
+      }
+    });
+  }
+
+  Widget _buildConfirmation(String code) {
+    final theme = Theme.of(context);
+    final axis = context.axis;
+    return Scaffold(
+      body: Column(
+        children: [
+          AxisHeader(
+            title: 'Colis enregistré',
+            variant: AxisHeaderVariant.controller,
+            onBack: () => context.pop(),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(AxisSpacing.lg),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Numéro de suivi',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: axis.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: AxisSpacing.xs),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: SelectableText(
+                      code,
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        color: axis.ink,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AxisSpacing.lg),
+                  AxisButton(
+                    key: const Key('parcel-share'),
+                    label: 'Partager le numéro',
+                    textColor: AxisButtonTextColor.ink,
+                    onPressed: () => SharePlus.instance.share(
+                      ShareParams(
+                        text: 'AXIS Transport : suivez votre colis avec le numéro $code',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AxisSpacing.sm),
+                  AxisButton(
+                    key: const Key('parcel-new'),
+                    label: 'Nouveau colis',
+                    variant: AxisButtonVariant.secondary,
+                    onPressed: _newParcel,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -259,20 +339,10 @@ class _ControllerParcelScreenState
     final axis = context.axis;
     final theme = Theme.of(context);
     final hasPhoto = _photos.isNotEmpty;
-    final fare = widget.fareFcfa;
-    final isMobileMoney = _paymentIndex == 1;
-
-    final String submitLabel;
-    if (fare != null) {
-      final formattedFare = formatMoney(fare, 'FCFA');
-      submitLabel = isMobileMoney
-          ? 'Demander le paiement de $formattedFare & enregistrer'
-          : 'Encaisser $formattedFare & enregistrer';
-    } else {
-      submitLabel = isMobileMoney
-          ? 'Demander le paiement & enregistrer'
-          : 'Encaisser & enregistrer';
-    }
+    final fare = widget.fareFcfa ?? _serverFare;
+    final submitLabel = _sending ? 'Envoi en cours…' : 'Enregistrer le colis';
+    final savedCode = _savedTrackingNumber;
+    if (savedCode != null) return _buildConfirmation(savedCode);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -515,7 +585,7 @@ class _ControllerParcelScreenState
                           Text(
                             fare != null
                                 ? formatMoney(fare, 'FCFA')
-                                : 'Tarif selon grille agence',
+                                : 'À fixer par l’agence',
                             style: theme.textTheme.titleSmall,
                           ),
                         ],
@@ -565,7 +635,7 @@ class _ControllerParcelScreenState
                 key: const Key('parcel-submit'),
                 label: submitLabel,
                 textColor: AxisButtonTextColor.ink,
-                onPressed: hasPhoto ? _handleSubmit : null,
+                onPressed: hasPhoto && !_sending ? _handleSubmit : null,
               ),
             ),
           ),

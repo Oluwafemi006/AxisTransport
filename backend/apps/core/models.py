@@ -329,6 +329,19 @@ class Trip(TimeStampedModel):
         return f"{self.route} — {timezone.localtime(self.departure_at):%d/%m/%Y %H:%M}"
 
 
+class TripStopArrival(models.Model):
+    """Arrivée confirmée par le contrôleur. Facultative aux arrêts : seule compte la dernière position connue."""
+
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name="stop_arrivals")
+    location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="+")
+    confirmed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
+    confirmed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-confirmed_at", "-id"]
+        constraints = [models.UniqueConstraint(fields=["trip", "location"], name="unique_trip_stop_arrival")]
+
+
 class WeeklySchedule(TimeStampedModel):
     class DayOfWeek(models.IntegerChoices):
         MONDAY = 0, "Lundi"
@@ -936,6 +949,18 @@ class Parcel(TimeStampedModel):
 
     def __str__(self):
         return self.tracking_number
+
+
+class ParcelPhoto(models.Model):
+    """Photo d'un colis, conservée chez le prestataire de stockage (voir photo_storage.py)."""
+
+    parcel = models.ForeignKey(Parcel, on_delete=models.CASCADE, related_name="photos")
+    url = models.URLField(max_length=500)
+    public_id = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
 
 
 class ParcelStatusHistory(models.Model):

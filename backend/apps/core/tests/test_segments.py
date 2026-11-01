@@ -1,7 +1,10 @@
 from datetime import datetime, time, timedelta
 from io import StringIO
+from unittest import mock
 
 from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -10,6 +13,8 @@ from apps.core.models import (
     Booking,
     LineStop,
     Location,
+    Parcel,
+    ParcelPhoto,
     PaymentMethod,
     Route,
     SegmentFare,
@@ -276,3 +281,93 @@ class StaffSaleSegmentTests(SegmentsTestCase):
         )
         self.assertIn(response.status_code, (200, 201), response.data)
         self.assertEqual(Booking.objects.get().amount, 2500)
+
+    def test_day_summary_counts_the_sale_of_this_agent(self):
+        self.test_segment_sale_is_charged_at_the_segment_price()
+        body = self.client.get("/api/v1/staff/sales/summary/").json()
+        self.assertEqual(
+            body, {"scanned_tickets": 0, "sold_tickets": 1, "parcels": 0, "cash_fcfa": 2500, "mobile_money_fcfa": 0}
+        )
+        other = User.objects.create_user(username="test-autre", password="secret", role=User.Role.CONTROLLER)
+        self.client.force_authenticate(other)
+        self.assertEqual(self.client.get("/api/v1/staff/sales/summary/").json()["sold_tickets"], 0)
+
+    def arrive(self, name):
+        return self.client.post(
+            "/api/v1/staff/sales/arrival/", {"trip": self.trip.pk, "stop": self.places[name].pk}, format="json"
+        )
+
+    def test_intermediate_stop_can_be_skipped_and_final_ends_the_trip(self):
+        self.assertEqual(self.arrive("Kétou").status_code, 200)
+        self.trip.refresh_from_db()
+        self.assertEqual(self.trip.status, Trip.Status.SCHEDULED)
+        self.assertEqual(self.arrive("Cotonou").status_code, 200)
+        self.trip.refresh_from_db()
+        self.assertEqual(self.trip.status, Trip.Status.COMPLETED)
+
+    def test_first_stop_is_not_an_arrival(self):
+        self.assertEqual(self.arrive("Parakou").status_code, 400)
+
+    def test_agency_sees_the_position_and_a_client_cannot(self):
+        self.arrive("Savè")
+        admin = User.objects.create_user(username="test-admin", password="secret", role=User.Role.ADMIN)
+        self.client.force_authenticate(admin)
+        rows = self.client.get("/api/v1/bus-positions/").json()
+        self.assertEqual((rows[0]["stop"], rows[0]["final"]), ("Savè", False))
+        client = User.objects.create_user(username="test-client", password="secret", role=User.Role.CLIENT)
+        self.client.force_authenticate(client)
+        self.assertEqual(self.client.get("/api/v1/bus-positions/").status_code, 403)
+
+    def post_parcel(self, photos=1):
+        files = [SimpleUploadedFile(f"test{index}.jpg", b"TEST", content_type="image/jpeg") for index in range(photos)]
+        return self.client.post(
+            "/api/v1/staff/sales/parcel/",
+            {
+                "sender_name": "TEST exp", "sender_phone": "90000000", "recipient_name": "TEST dest",
+                "recipient_phone": "90000001", "origin": self.places["Parakou"].pk,
+                "destination": self.places["Savè"].pk, "description": "TEST colis", "photos": files,
+            },
+            format="multipart",
+        )
+
+    def test_parcel_needs_a_photo(self):
+        self.assertEqual(self.post_parcel(photos=0).status_code, 400)
+
+    def test_parcel_is_saved_with_its_photos_and_counted(self):
+        with mock.patch("apps.core.views.upload_parcel_photo", return_value=("https://test.invalid/a.jpg", "TEST")):
+            response = self.post_parcel(photos=2)
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(ParcelPhoto.objects.count(), 2)
+        self.assertEqual(self.client.get("/api/v1/staff/sales/summary/").json()["parcels"], 1)
+
+    def test_failed_upload_saves_nothing(self):
+        with mock.patch("apps.core.views.upload_parcel_photo", side_effect=DjangoValidationError("TEST échec")):
+            self.assertEqual(self.post_parcel().status_code, 400)
+        self.assertFalse(Parcel.objects.exists())
+
+    def test_parcel_takes_the_base_price_then_the_agency_can_change_it(self):
+        SystemSetting.objects.create(key="parcel_base_price_fcfa", value=2000)
+        with mock.patch("apps.core.views.upload_parcel_photo", return_value=("https://test.invalid/a.jpg", "TEST")):
+            self.post_parcel()
+        parcel = Parcel.objects.get()
+        self.assertEqual(parcel.amount, 2000)
+        self.assertEqual(self.client.post(f"/api/v1/parcels/{parcel.pk}/price/", {"amount": 5000}).status_code, 403)
+        counter = User.objects.create_user(username="test-guichet", password="secret", role=User.Role.COUNTER)
+        self.client.force_authenticate(counter)
+        self.assertEqual(self.client.post(f"/api/v1/parcels/{parcel.pk}/price/", {"amount": 5000}).status_code, 200)
+        parcel.refresh_from_db()
+        self.assertEqual(parcel.amount, 5000)
+
+    def test_controller_lists_his_parcels_and_client_sees_the_photo(self):
+        with mock.patch("apps.core.views.upload_parcel_photo", return_value=("https://test.invalid/a.jpg", "TEST")):
+            code = self.post_parcel().data["tracking_number"]
+        rows = self.client.get("/api/v1/staff/sales/parcels/").json()
+        self.assertEqual([row["tracking_number"] for row in rows], [code])
+        self.client.force_authenticate(None)
+        body = self.client.get("/api/v1/client/parcels/track/", {"code": code}).json()
+        self.assertEqual(body["photos"], ["https://test.invalid/a.jpg"])
+        self.assertNotIn("sender_name", body)
+
+    def test_options_give_the_real_parcel_price_before_validation(self):
+        SystemSetting.objects.create(key="parcel_base_price_fcfa", value=2000)
+        self.assertEqual(self.client.get("/api/v1/staff/sales/options/").json()["parcel_base_fcfa"], 2000)

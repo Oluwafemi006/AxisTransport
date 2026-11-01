@@ -524,6 +524,40 @@ class ApiClient {
   }
 
   /// Départs vendables par cet agent, avec places restantes et montants calculés par le serveur.
+  Future<Map<String, dynamic>> confirmArrival(int trip, int stop) {
+    return _request<Map<String, dynamic>>(
+      '/staff/sales/arrival/',
+      data: {'trip': trip, 'stop': stop},
+      auth: true,
+    );
+  }
+
+  /// Colis du personnel : le serveur stocke les photos, l'application ne connaît aucune clé.
+  Future<Map<String, dynamic>> createParcel(
+    Map<String, dynamic> fields,
+    List<List<int>> photos,
+  ) {
+    return _request<Map<String, dynamic>>(
+      '/staff/sales/parcel/',
+      data: FormData.fromMap({
+        ...fields,
+        'photos': [
+          for (var index = 0; index < photos.length; index++)
+            MultipartFile.fromBytes(photos[index], filename: 'colis-$index.jpg'),
+        ],
+      }),
+      auth: true,
+    );
+  }
+
+  Future<List<dynamic>> myParcels() {
+    return _request<List<dynamic>>('/staff/sales/parcels/', auth: true);
+  }
+
+  Future<Map<String, dynamic>> saleSummary() {
+    return _request<Map<String, dynamic>>('/staff/sales/summary/', auth: true);
+  }
+
   Future<Map<String, dynamic>> saleOptions() {
     return _request<Map<String, dynamic>>('/staff/sales/options/', auth: true);
   }

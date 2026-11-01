@@ -32,6 +32,9 @@ from .models import (
     FeatureFlag,
     Location,
     Parcel,
+    ParcelPhoto,
+    TripStopArrival,
+    TicketControl,
     ParcelStatusHistory,
     PaymentMethod,
     RentalBooking,
@@ -109,10 +112,12 @@ from .payments import (
     settle_ticket_payment,
     verify_fedapay_signature,
 )
+from .photo_storage import upload_parcel_photo
 from .services import (
     ReservationsClosed,
     SEGMENT_DIRECTION_FORWARD,
     SegmentFareMissing,
+    confirm_trip_arrival,
     resolve_segment_fare,
     segment_catalog,
     cancel_held_booking,
@@ -215,7 +220,7 @@ class PublicTicketThrottle(SimpleRateThrottle):
 
 class ParcelTrackingView(APIView):
     """
-    Suivi d'un colis par son code. Ne renvoie que le parcours et les étapes :
+    Suivi d'un colis par son code. Ne renvoie que le parcours, les étapes et les photos :
     aucun nom, téléphone ni description.
     """
 
@@ -257,6 +262,7 @@ class ParcelTrackingView(APIView):
                 "destination": parcel.destination.name,
                 "current_step": PARCEL_TRACKING_STEPS[current][1],
                 "steps": steps,
+                "photos": [photo.url for photo in parcel.photos.all()],
             }
         )
 
@@ -853,6 +859,29 @@ class SegmentFareChangeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     permission_classes = [IsAxisAdmin]
 
 
+class BusPositionView(APIView):
+    """Dernières arrivées confirmées par les contrôleurs : c'est la notification de l'agence."""
+
+    permission_classes = [IsAxisAdmin]
+
+    def get(self, request):
+        arrivals = TripStopArrival.objects.select_related("trip__route__origin", "trip__route__destination", "location", "confirmed_by")[:30]
+        return Response(
+            [
+                {
+                    "id": arrival.id,
+                    "route": str(arrival.trip.route),
+                    "departure_at": arrival.trip.departure_at,
+                    "stop": arrival.location.name,
+                    "final": arrival.location_id == arrival.trip.route.destination_id,
+                    "confirmed_at": arrival.confirmed_at,
+                    "confirmed_by": (arrival.confirmed_by.get_full_name() or arrival.confirmed_by.username) if arrival.confirmed_by else "",
+                }
+                for arrival in arrivals
+            ]
+        )
+
+
 class AgencyProfileView(APIView):
     """Page « Agence et taxes » : informations de l'agence, administrateur uniquement, chaque modification journalisée."""
 
@@ -1251,6 +1280,22 @@ class ParcelViewSet(viewsets.ModelViewSet):
         ParcelStatusHistory.objects.create(
             parcel=parcel, to_status=Parcel.Status.REGISTERED, changed_by=self.request.user
         )
+
+    @action(detail=True, methods=["post"], permission_classes=[IsCounterOrAdmin])
+    def price(self, request, pk=None):
+        """Gros colis : l'agence fixe le prix ; l'ancien et le nouveau montant restent à l'historique."""
+        parcel = self.get_object()
+        amount = str(request.data.get("amount") or "")
+        if not amount.isdigit() or int(amount) <= 0:
+            raise ValidationError({"amount": "Saisissez un prix entier en FCFA, supérieur à zéro."})
+        old = parcel.amount
+        parcel.amount = int(amount)
+        parcel.save(update_fields=["amount", "updated_at"])
+        ParcelStatusHistory.objects.create(
+            parcel=parcel, from_status=parcel.status, to_status=parcel.status, changed_by=request.user,
+            note=f"Prix : {old} → {amount} FCFA",
+        )
+        return Response(ParcelSerializer(parcel).data)
 
     @action(detail=True, methods=["post"], permission_classes=[IsCounterOrAdmin])
     def transition(self, request, pk=None):
@@ -1677,6 +1722,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                     for method in methods
                 ]
             # Vente en route : tous les tronçons du départ dans le sens du bus ; sans tarif, pas de tronçon.
+            item["arrivals"] = list(trip.stop_arrivals.values_list("location_id", flat=True))
             item["segments"] = []
             stops = trip.route.get_stops_sequence()
             for index, start in enumerate(stops):
@@ -1699,7 +1745,103 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                         }
                     )
             trips.append(item)
-        return Response({"trips": trips})
+        base = SystemSetting.objects.filter(key="parcel_base_price_fcfa").first()
+        return Response({"trips": trips, "parcel_base_fcfa": base.value if base else None})
+
+    @action(detail=False, methods=["get"], url_path="parcels")
+    def parcels(self, request):
+        """Colis enregistrés par cet agent, les plus récents d'abord."""
+        ids = ParcelStatusHistory.objects.filter(
+            changed_by=request.user, to_status=Parcel.Status.REGISTERED
+        ).values("parcel_id")
+        rows = Parcel.objects.filter(pk__in=ids).select_related("origin", "destination").prefetch_related("photos")[:50]
+        return Response(
+            [
+                {
+                    "tracking_number": parcel.tracking_number,
+                    "route": f"{parcel.origin.name} → {parcel.destination.name}",
+                    "description": parcel.description,
+                    "status": parcel.get_status_display(),
+                    "amount": parcel.amount,
+                    "photos": [photo.url for photo in parcel.photos.all()],
+                }
+                for parcel in rows
+            ]
+        )
+
+    @action(detail=False, methods=["post"], url_path="parcel")
+    def parcel(self, request):
+        """Colis enregistré par un agent, avec 1 à 3 photos obligatoires."""
+        photos = request.FILES.getlist("photos")
+        if not 1 <= len(photos) <= 3:
+            raise ValidationError({"photos": "Ajoutez 1 à 3 photos du colis."})
+        serializer = ParcelSerializer(
+            data={key: request.data.get(key) for key in (
+                "sender_name", "sender_phone", "recipient_name", "recipient_phone", "origin", "destination", "description"
+            )}
+        )
+        serializer.is_valid(raise_exception=True)
+        # Envoi avant la transaction : une base ne doit pas rester verrouillée pendant un appel réseau.
+        try:
+            stored = [upload_parcel_photo(photo) for photo in photos]
+        except DjangoValidationError as exc:
+            raise service_validation_error(exc, staff=True)
+        with transaction.atomic():
+            # Prix de base réglé par l'admin ; sans réglage, l'agence le fixe ensuite.
+            base = SystemSetting.objects.filter(key="parcel_base_price_fcfa").first()
+            parcel = serializer.save(channel=Ticket.Channel.COUNTER, amount=base.value if base else None)
+            ParcelPhoto.objects.bulk_create(
+                ParcelPhoto(parcel=parcel, url=url, public_id=public_id) for url, public_id in stored
+            )
+            ParcelStatusHistory.objects.create(
+                parcel=parcel, to_status=Parcel.Status.REGISTERED, changed_by=request.user
+            )
+        return Response(
+            {"tracking_number": parcel.tracking_number, "amount": parcel.amount, "photos": [url for url, _ in stored]},
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=False, methods=["post"])
+    def arrival(self, request):
+        """Le contrôleur confirme l'arrivée du bus à un arrêt : l'agence voit la position dans /admin."""
+        trip = self._sellable_trips().filter(pk=request.data.get("trip")).first()
+        if not trip:
+            raise ValidationError({"trip": "Ce départ n'est pas en cours pour cet agent."})
+        stop = request.data.get("stop")
+        if not str(stop).isdigit():
+            raise ValidationError({"stop": "Arrêt requis."})
+        try:
+            arrival = confirm_trip_arrival(trip, int(stop), actor=request.user)
+        except DjangoValidationError as exc:
+            raise service_validation_error(exc, staff=True)
+        return Response({"stop": arrival.location.name, "confirmed_at": arrival.confirmed_at})
+
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        """Activité du jour de l'agent connecté : calculée ici, jamais dans l'application."""
+        today = timezone.localdate()
+        payments = Transaction.objects.filter(
+            ticket__booking__sold_by=request.user, status=Transaction.Status.SUCCEEDED, created_at__date=today
+        ).select_related("payment_method")
+        cash = mobile_money = Decimal("0")
+        for payment in payments:
+            if payment.payment_method.code.upper() in ONLINE_PROVIDERS:
+                mobile_money += payment.amount
+            else:
+                cash += payment.amount
+        return Response(
+            {
+                "scanned_tickets": TicketControl.objects.filter(
+                    controller=request.user, controlled_at__date=today, result=TicketControl.Result.ACCEPTED
+                ).count(),
+                "sold_tickets": payments.values("ticket").distinct().count(),
+                "parcels": ParcelStatusHistory.objects.filter(
+                    changed_by=request.user, changed_at__date=today, to_status=Parcel.Status.REGISTERED
+                ).count(),
+                "cash_fcfa": int(cash),
+                "mobile_money_fcfa": int(mobile_money),
+            }
+        )
 
     @action(detail=False, methods=["post"])
     def sell(self, request):

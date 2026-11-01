@@ -11,6 +11,18 @@ import '../../../core/widgets/route_stops_bar.dart';
 import '../../../core/widgets/skeleton_box.dart';
 import '../../sales/sale_models.dart';
 
+/// Incrémenté après une vente ou un scan : l'accueil recharge alors ses compteurs.
+class StaffActivity extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void changed() => state++;
+}
+
+final staffActivityProvider = NotifierProvider<StaffActivity, int>(
+  StaffActivity.new,
+);
+
 /// Résumé d'activité journalier du contrôleur (maquette `CtrlAccueil.html`).
 class ControllerDaySummary {
   const ControllerDaySummary({
@@ -26,6 +38,15 @@ class ControllerDaySummary {
   final int parcelsCount;
   final num cashAmountFcfa;
   final num mobileMoneyAmountFcfa;
+
+  factory ControllerDaySummary.fromJson(Map<String, dynamic> json) =>
+      ControllerDaySummary(
+        scannedTickets: json['scanned_tickets'] as int? ?? 0,
+        soldTickets: json['sold_tickets'] as int? ?? 0,
+        parcelsCount: json['parcels'] as int? ?? 0,
+        cashAmountFcfa: json['cash_fcfa'] as num? ?? 0,
+        mobileMoneyAmountFcfa: json['mobile_money_fcfa'] as num? ?? 0,
+      );
 }
 
 /// Accueil de l'espace contrôleur (`CtrlAccueil.html`).
@@ -51,6 +72,8 @@ class StaffHomeScreen extends ConsumerStatefulWidget {
 
 class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
   SaleTrip? _loadedTrip;
+  ControllerDaySummary? _summary;
+  List<Map> _parcels = const [];
   bool _loadingTrip = false;
   bool _offline = false;
 
@@ -59,6 +82,30 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
     super.initState();
     if (widget.activeTrip == null) {
       _fetchActiveTrip();
+    }
+    if (widget.daySummary == null) _fetchSummary();
+    _fetchParcels();
+  }
+
+  Future<void> _fetchParcels() async {
+    try {
+      final rows = await ref.read(apiClientProvider).myParcels();
+      if (mounted) {
+        setState(() => _parcels = rows.whereType<Map>().toList());
+      }
+    } catch (_) {
+      // Liste indisponible : l'accueil reste utilisable.
+    }
+  }
+
+  Future<void> _fetchSummary() async {
+    try {
+      final payload = await ref.read(apiClientProvider).saleSummary();
+      if (mounted) {
+        setState(() => _summary = ControllerDaySummary.fromJson(payload));
+      }
+    } catch (_) {
+      // Sans réponse du serveur, les compteurs restent à « — » : rien n'est estimé ici.
     }
   }
 
@@ -95,9 +142,42 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
     }
   }
 
+  /// Le prochain arrêt est facultatif : le contrôleur peut confirmer directement le terminus.
+  Future<void> _confirmArrival(SaleTrip trip, String stopName) async {
+    final stop = trip.stops.where((item) => item.name == stopName).firstOrNull;
+    if (stop == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(apiClientProvider).confirmArrival(trip.id, stop.id);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Arrivée à $stopName confirmée. L’agence est informée.')),
+      );
+      await _fetchActiveTrip();
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   List<RouteStopItem> _buildStopsForTrip(SaleTrip trip) {
     if (widget.stops != null && widget.stops!.isNotEmpty) {
       return widget.stops!;
+    }
+    if (trip.stops.length >= 2) {
+      final lastArrived = trip.stops.lastIndexWhere(
+        (stop) => trip.arrivedStopIds.contains(stop.id),
+      );
+      final current = lastArrived < 0 ? 0 : lastArrived;
+      return [
+        for (var index = 0; index < trip.stops.length; index++)
+          RouteStopItem(
+            name: trip.stops[index].name,
+            state: index == current
+                ? RouteStopState.current
+                : index < current
+                ? RouteStopState.passed
+                : RouteStopState.upcoming,
+          ),
+      ];
     }
     final parts = trip.label
         .split('→')
@@ -144,7 +224,13 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
     final trip = widget.activeTrip ?? _loadedTrip;
     final stops = trip != null ? _buildStopsForTrip(trip) : const <RouteStopItem>[];
     final nextStop = _resolveNextStop(stops);
-    final summary = widget.daySummary;
+    final lastStop = stops.isNotEmpty ? stops.last.name : null;
+    final finalStop = lastStop != nextStop ? lastStop : null;
+    final summary = widget.daySummary ?? _summary;
+    ref.listen(staffActivityProvider, (_, _) {
+      _fetchSummary();
+      _fetchParcels();
+    });
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -250,7 +336,15 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
                         trip: trip,
                         stops: stops,
                         nextStop: nextStop,
-                        onConfirmArrival: widget.onConfirmArrival,
+                        onConfirmArrival:
+                            widget.onConfirmArrival ??
+                            (trip != null && nextStop != null
+                                ? () => _confirmArrival(trip, nextStop)
+                                : null),
+                        finalStop: finalStop,
+                        onConfirmFinal: trip != null && finalStop != null
+                            ? () => _confirmArrival(trip, finalStop)
+                            : null,
                       ),
                     ],
                   ),
@@ -490,6 +584,44 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
                 ],
               ),
             ),
+            if (_parcels.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AxisSpacing.lg,
+                  AxisSpacing.md,
+                  AxisSpacing.lg,
+                  AxisSpacing.lg,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MES COLIS',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: axis.textSecondary,
+                      ),
+                    ),
+                    for (final parcel in _parcels)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: (parcel['photos'] as List? ?? const []).isEmpty
+                            ? const Icon(Icons.inventory_2_outlined)
+                            : Image.network(
+                                '${(parcel['photos'] as List).first}',
+                                width: 48,
+                                height: 48,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) =>
+                                    const Icon(Icons.inventory_2_outlined),
+                              ),
+                        title: Text('${parcel['tracking_number']}'),
+                        subtitle: Text(
+                          '${parcel['route']} · ${parcel['status']}',
+                        ),
+                      ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -504,6 +636,8 @@ class _ActiveTripCard extends StatelessWidget {
     required this.stops,
     required this.nextStop,
     required this.onConfirmArrival,
+    this.finalStop,
+    this.onConfirmFinal,
   });
 
   final bool loading;
@@ -511,6 +645,8 @@ class _ActiveTripCard extends StatelessWidget {
   final List<RouteStopItem> stops;
   final String? nextStop;
   final VoidCallback? onConfirmArrival;
+  final String? finalStop;
+  final VoidCallback? onConfirmFinal;
 
   @override
   Widget build(BuildContext context) {
@@ -645,6 +781,16 @@ class _ActiveTripCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (finalStop != null)
+                    TextButton(
+                      onPressed: onConfirmFinal,
+                      child: Text(
+                        'Arrivée finale à $finalStop',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: onDark,
+                        ),
+                      ),
+                    ),
                 ],
               ],
             ),

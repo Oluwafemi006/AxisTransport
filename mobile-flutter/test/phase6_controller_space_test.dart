@@ -370,19 +370,10 @@ void main() {
         );
         expect(submitBtnAfter.onPressed, isNotNull);
         expect(
-          find.text('Encaisser ${formatMoney(2500, 'FCFA')} & enregistrer'),
+          find.text('Enregistrer le colis'),
           findsOneWidget,
         );
-
-        // Bascule sur Mobile Money
-        await tester.tap(find.text('Mobile Money'));
-        await tester.pumpAndSettle();
-        expect(
-          find.text(
-            'Demander le paiement de ${formatMoney(2500, 'FCFA')} & enregistrer',
-          ),
-          findsOneWidget,
-        );
+        expect(find.text(formatMoney(2500, 'FCFA')), findsOneWidget);
       },
     );
   });

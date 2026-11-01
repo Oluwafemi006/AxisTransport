@@ -19,6 +19,7 @@ import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/segmented_toggle.dart';
 import '../../core/widgets/skeleton_box.dart';
 import '../../shared/payment_link.dart';
+import '../staff/presentation/staff_home_screen.dart';
 import '../tickets/ticket_document.dart';
 import 'sale_controller.dart';
 import 'sale_models.dart';
@@ -161,6 +162,7 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
       if (!received) return;
     }
     await _sale.sell(passengerName: _name.text, passengerPhone: _phone.text);
+    ref.read(staffActivityProvider.notifier).changed();
     if (quote.online &&
         _sale.checkout?.paymentUrl != null &&
         (_sale.sale?.isHeld ?? false)) {
