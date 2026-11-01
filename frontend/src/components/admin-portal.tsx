@@ -1923,6 +1923,19 @@ function IncidentPanel({ incidents, onChanged }: { incidents: PaymentIncident[];
 function TeamPanel({ users, onChanged }: { users: User[]; onChanged: () => Promise<void> }) {
   const feedback = useActionFeedback();
   const [form, setForm] = useState({ username: "", password: "", first_name: "", last_name: "", phone: "", role: "COUNTER" });
+  const [resetTarget, setResetTarget] = useState<User | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+
+  async function submitReset(event: FormEvent) {
+    event.preventDefault();
+    if (!resetTarget) return;
+    try {
+      await apiFetch(`/users/${resetTarget.id}/reset-password/`, { method: "POST", body: JSON.stringify({ password: resetPassword }) });
+      feedback.success(`Mot de passe de ${resetTarget.username} modifié. Ses sessions sont fermées.`);
+      setResetTarget(null);
+      setResetPassword("");
+    } catch (reason) { feedback.failure(reason, "Le mot de passe n’a pas été modifié."); }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -1939,7 +1952,7 @@ function TeamPanel({ users, onChanged }: { users: User[]; onChanged: () => Promi
         <SectionHeading eyebrow="RBAC" title="Équipe Axis" />
         <div className="table-scroll">
           <table className="staff-table min-w-[600px]">
-            <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Contact</th></tr></thead>
+            <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Contact</th><th>Mot de passe</th></tr></thead>
             <tbody>
               {users.map((user) => (
                 <tr key={user.id}>
@@ -1947,12 +1960,22 @@ function TeamPanel({ users, onChanged }: { users: User[]; onChanged: () => Promi
                   <td>{user.username}</td>
                   <td><StatusBadge tone={user.role === "ADMIN" ? "amber" : user.role === "CLIENT" ? "grey" : "blue"}>{user.role_display}</StatusBadge></td>
                   <td>{user.phone || user.email || "—"}</td>
+                  <td><button type="button" className="text-button" onClick={() => { setResetTarget(user); setResetPassword(""); }}>Réinitialiser</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </section>
+      {resetTarget && (
+        <form onSubmit={submitReset} className="card space-y-4 xl:col-start-2">
+          <SectionHeading eyebrow="Mot de passe" title={`Réinitialiser ${resetTarget.username}`} />
+          <p className="text-sm text-slate-500">Communiquez-le à la personne en main propre. Toutes ses sessions seront fermées.</p>
+          <Input label="Nouveau mot de passe" type="password" value={resetPassword} onChange={setResetPassword} />
+          <button className="primary-button w-full">Enregistrer</button>
+          <button type="button" className="text-button w-full" onClick={() => setResetTarget(null)}>Annuler</button>
+        </form>
+      )}
       <form onSubmit={submit} className="card space-y-4">
         <SectionHeading eyebrow="Accès limité" title="Ajouter un membre" />
         <Input label="Identifiant" value={form.username} onChange={(value) => setForm({ ...form, username: value })} />

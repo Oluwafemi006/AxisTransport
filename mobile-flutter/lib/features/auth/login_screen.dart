@@ -147,15 +147,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Veuillez contacter le support de votre agence pour réinitialiser votre mot de passe.',
-                            ),
-                          ),
-                        );
-                      },
+                      onPressed: () => context.push('/mot-de-passe-oublie'),
                       style: TextButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 6),
                         minimumSize: const Size(0, 44),

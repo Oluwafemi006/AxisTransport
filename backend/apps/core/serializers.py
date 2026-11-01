@@ -5,6 +5,7 @@ from django.utils import timezone
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
+from .password_reset import change_password
 from .models import (
     BoardingPoint,
     Booking,
@@ -80,8 +81,7 @@ class UserSerializer(serializers.ModelSerializer):
         password = validated_data.pop("password", None)
         instance = super().update(instance, validated_data)
         if password:
-            instance.set_password(password)
-            instance.save(update_fields=["password"])
+            change_password(instance, password)
         return instance
 
 
