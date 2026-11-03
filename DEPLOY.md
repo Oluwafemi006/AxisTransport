@@ -193,6 +193,7 @@ Ligne, de Parakou vers Cotonou : **Parakou, Savè, Glazoué, Dassa, Bohicon, Cot
 - Source unique dans le code : `backend/apps/core/axis.py` (arrêts, tarifs, points).
 - Modification d'un prix : portail `/admin`, onglet « Tarifs par tronçon », avec historique (qui, quand, ancien et nouveau prix).
 - Une réservation ou un billet garde le prix enregistré au moment de la vente.
+- **Montée en ligne au terminus seulement** (validé par le boss) : à l'aller depuis Parakou, au retour depuis Cotonou, seules montées dont l'heure affichée est exacte. Les montées à Savè, Glazoué, Dassa et Bohicon se vendent à bord, par le contrôleur (et au guichet) ; l'accueil (site et app) ne les propose plus et une réservation en ligne est refusée (« La montée à … se fait à bord, auprès du contrôleur. »). La descente à un arrêt intermédiaire reste achetable en ligne.
 - Sièges : toujours bloqués pour tout le voyage (un siège vendu sur un tronçon n'est pas revendu au-delà de l'arrêt de descente).
 
 ### Démarrage : ce qui est réécrit ou non

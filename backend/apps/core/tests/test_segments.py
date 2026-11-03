@@ -85,7 +85,7 @@ class SegmentCatalogTests(SegmentsTestCase):
         rows = self.segments()["segments"]
         self.assertEqual(
             [(row["origin"], row["destination"], row["price_fcfa"]) for row in rows],
-            priced_pairs(ORDER),
+            [row for row in priced_pairs(ORDER) if row[0] == ORDER[0]],
         )
 
     def test_priced_pairs_in_stop_order_with_the_same_prices_on_the_way_back(self):
@@ -93,17 +93,19 @@ class SegmentCatalogTests(SegmentsTestCase):
         back = ORDER[::-1]
         self.assertEqual(
             [(row["origin"], row["destination"], row["price_fcfa"]) for row in rows],
-            priced_pairs(back),
+            [row for row in priced_pairs(back) if row[0] == back[0]],
         )
 
     def test_pair_without_fare_is_listed_in_missing_fares_only(self):
-        self.drop_fare("Savè", "Bohicon")
+        self.drop_fare("Parakou", "Glazoué")
         payload = self.segments()
-        self.assertEqual(len(payload["segments"]), 7)
-        self.assertNotIn(("Savè", "Bohicon"), [(row["origin"], row["destination"]) for row in payload["segments"]])
-        missing = [(row["origin"], row["destination"]) for row in payload["missing_fares"]]
-        self.assertIn(("Savè", "Bohicon"), missing)
-        # Tronçons sans tarif (validé par le boss) : jamais vendables.
+        self.assertEqual(len(payload["segments"]), 4)
+        self.assertNotIn(("Parakou", "Glazoué"), [(row["origin"], row["destination"]) for row in payload["segments"]])
+        self.assertIn(("Parakou", "Glazoué"), [(row["origin"], row["destination"]) for row in payload["missing_fares"]])
+        # L'admin voit tous les tronçons sans tarif, au-delà des montées en ligne (validé par le boss : jamais vendables).
+        admin = User.objects.create_user(username="test-admin-m", password="s", role=User.Role.ADMIN)
+        self.client.force_authenticate(admin)
+        missing = [(row["origin"], row["destination"]) for row in self.client.get("/api/v1/segment-fares/missing/").json()]
         for pair in (("Savè", "Glazoué"), ("Savè", "Dassa"), ("Glazoué", "Dassa"), ("Glazoué", "Cotonou"), ("Dassa", "Bohicon")):
             self.assertIn(pair, missing)
 
@@ -383,3 +385,44 @@ class StaffSaleSegmentTests(SegmentsTestCase):
     def test_options_give_the_real_parcel_price_before_validation(self):
         SystemSetting.objects.create(key="parcel_base_price_fcfa", value=2000)
         self.assertEqual(self.client.get("/api/v1/staff/sales/options/").json()["parcel_base_fcfa"], 2000)
+
+
+class OnlineBoardingTests(SegmentsTestCase):
+    """En ligne, montée au terminus du sens seulement ; les autres montées se vendent à bord (validé par le boss)."""
+
+    def test_client_catalog_only_starts_from_the_terminus(self):
+        self.assertEqual({row["origin"] for row in self.segments()["segments"]}, {"Parakou"})
+        self.assertEqual({row["origin"] for row in self.segments("retour")["segments"]}, {"Cotonou"})
+        self.assertIn(("Parakou", "Savè"), [(r["origin"], r["destination"]) for r in self.segments()["segments"]])
+
+    def test_online_booking_from_an_intermediate_stop_is_refused(self):
+        trip = self.departure(self.forward)
+        seat = trip.seats.order_by("number").first()
+        response = self.client.post(
+            "/api/v1/client/bookings/",
+            {
+                "trip": trip.pk,
+                "origin": self.places["Savè"].pk,
+                "destination": self.places["Bohicon"].pk,
+                "contact_phone": "90000099",
+                "passengers": [{"full_name": "TEST Montée", "phone": "90000099", "seat": seat.pk}],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("La montée à Savè se fait à bord", str(response.data))
+        self.assertFalse(Booking.objects.exists())
+
+
+    def test_client_ticket_from_an_intermediate_stop_is_refused(self):
+        trip = self.departure(self.forward)
+        seat = trip.seats.order_by("number").first()
+        self.client.force_authenticate(User.objects.create_user(username="test-client-m", password="s", role=User.Role.CLIENT))
+        response = self.client.post(
+            "/api/v1/tickets/",
+            {"trip": trip.pk, "seat": seat.pk, "passenger_name": "TEST", "passenger_phone": "90000098",
+             "origin": self.places["Savè"].pk, "destination": self.places["Cotonou"].pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("se fait à bord", str(response.data))

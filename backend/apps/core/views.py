@@ -1123,6 +1123,8 @@ class TicketViewSet(viewsets.ModelViewSet):
                 destination=data.get("destination") or None,
                 boarding_point=b_point,
                 alighting_point=a_point,
+                # Un client achète en ligne : montée au terminus seulement ; le guichet garde tous les arrêts.
+                terminus_boarding_only=request.user.role == User.Role.CLIENT,
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc, staff=request.user.role in {User.Role.COUNTER, User.Role.ADMIN})
@@ -1289,6 +1291,8 @@ class BookingViewSet(viewsets.ModelViewSet):
                 destination=data.get("destination") or None,
                 boarding_point=b_point,
                 alighting_point=a_point,
+                # Un client achète en ligne : montée au terminus seulement ; le personnel garde tous les arrêts.
+                terminus_boarding_only=not (request.user.is_authenticated and request.user.is_axis_staff),
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc, staff=request.user.is_authenticated and request.user.role != User.Role.CLIENT)
