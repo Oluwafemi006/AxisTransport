@@ -3,8 +3,10 @@ import 'package:axis_transport_flutter/core/models.dart';
 import 'package:axis_transport_flutter/core/session.dart';
 import 'package:axis_transport_flutter/core/session_store.dart';
 import 'package:axis_transport_flutter/core/theme/axis_theme.dart';
+import 'package:axis_transport_flutter/core/widgets/axis_button.dart';
 import 'package:axis_transport_flutter/core/widgets/axis_text_field.dart';
 import 'package:axis_transport_flutter/features/auth/forgot_password_screen.dart';
+import 'package:axis_transport_flutter/features/profile/account_screen.dart';
 import 'package:axis_transport_flutter/features/auth/invitation_screen.dart';
 import 'package:axis_transport_flutter/features/auth/login_screen.dart';
 import 'package:axis_transport_flutter/features/auth/register_screen.dart';
@@ -61,6 +63,21 @@ class _MockApi extends ApiClient {
     String? lastName,
     String? email,
   }) async {}
+
+  String? savedEmail;
+
+  @override
+  Future<void> updateEmail(String email) async => savedEmail = email;
+
+  @override
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (currentPassword != 'TEST-actuel') {
+      throw ApiException('Mot de passe actuel incorrect.');
+    }
+  }
 
   @override
   Future<String> requestPasswordReset(String email) async =>
@@ -185,6 +202,41 @@ void main() {
   });
 
   group('Phase 3 — Formulaires et validations', () {
+    testWidgets('Mon compte : e-mail du client et changement de mot de passe', (tester) async {
+      tester.view.physicalSize = const Size(1080, 3600);
+      tester.view.devicePixelRatio = 1.5;
+      addTearDown(tester.view.reset);
+      final api = await _setupApp(tester, role: 'CLIENT');
+      axisRouter.push('/mon-compte');
+      await tester.pumpAndSettle();
+
+      Finder fieldOf(String label) => find.descendant(
+            of: find.widgetWithText(AxisTextField, label),
+            matching: find.byType(TextField),
+          );
+
+      await tester.enterText(fieldOf('Adresse e-mail'), 'client.test@exemple.test');
+      await tester.tap(find.text('Enregistrer l’e-mail'));
+      await tester.pumpAndSettle();
+      expect(api.savedEmail, 'client.test@exemple.test');
+      expect(find.text('E-mail enregistré.'), findsOneWidget);
+
+      await tester.enterText(fieldOf('Mot de passe actuel'), 'faux');
+      await tester.enterText(fieldOf('Nouveau mot de passe'), 'TEST-Mdp-42');
+      await tester.enterText(fieldOf('Confirmer le mot de passe'), 'TEST-Mdp-42');
+      await tester.tap(find.widgetWithText(AxisButton, 'Changer le mot de passe'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Mot de passe actuel incorrect.'), findsOneWidget);
+
+      await tester.enterText(fieldOf('Mot de passe actuel'), 'TEST-actuel');
+      await tester.enterText(fieldOf('Nouveau mot de passe'), 'TEST-Mdp-42');
+      await tester.enterText(fieldOf('Confirmer le mot de passe'), 'TEST-Mdp-42');
+      await tester.tap(find.widgetWithText(AxisButton, 'Changer le mot de passe'));
+      await tester.pumpAndSettle();
+      expect(find.text('Mot de passe modifié. Vos autres appareils sont déconnectés.'), findsOneWidget);
+      expect(find.byType(AccountScreen), findsOneWidget);
+    });
+
     testWidgets('Mot de passe oublié : code, erreur serveur, puis succès', (tester) async {
       tester.view.physicalSize = const Size(1080, 3600);
       tester.view.devicePixelRatio = 1.5;

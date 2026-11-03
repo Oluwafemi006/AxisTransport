@@ -137,6 +137,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
               const SizedBox(height: 22),
               OutlinedButton(
+                onPressed: () => context.push('/mon-compte'),
+                child: const Text('E-mail et mot de passe'),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton(
                 onPressed: () async {
                   await ref.read(sessionProvider.notifier).logout();
                   if (context.mounted) context.go('/');

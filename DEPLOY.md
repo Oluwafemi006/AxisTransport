@@ -61,6 +61,7 @@ Points d'attention :
 | `AXIS_REGISTER_RATE_ADDRESS` | Créations de compte client par adresse IP. | `10/hour` (proposition) |
 | `AXIS_PASSWORD_RESET_RATE_EMAIL` | Mot de passe oublié : demandes de code par adresse e-mail. | `3/hour` (proposition) |
 | `AXIS_PASSWORD_RESET_RATE_ADDRESS` | Mot de passe oublié : demandes de code par adresse IP. | `20/hour` (proposition) |
+| `AXIS_PASSWORD_CHANGE_RATE` | Changement de mot de passe depuis le profil : essais par compte connecté. | `10/hour` (proposition) |
 | `AXIS_PASSWORD_RESET_CONFIRM_RATE` | Mot de passe oublié : saisies du code par adresse IP. | `30/hour` (proposition) |
 
 **Limite de connexion : fonctionnement et seuils proposés** (propositions techniques, pas des règles de la direction ; modifiables par les variables ci-dessus) :

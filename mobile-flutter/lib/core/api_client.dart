@@ -147,6 +147,31 @@ class ApiClient {
     await login(username, password);
   }
 
+  Future<void> updateEmail(String email) async {
+    await _request<dynamic>(
+      '/auth/me/',
+      data: {'email': email},
+      auth: true,
+      method: 'PATCH',
+    );
+  }
+
+  /// Les autres sessions sont fermées par le serveur ; celle-ci garde les nouveaux jetons.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final payload = await _request<Map<String, dynamic>>(
+      '/auth/password/change/',
+      data: {'current_password': currentPassword, 'new_password': newPassword},
+      auth: true,
+    );
+    await _store.saveTokens(
+      access: payload['access'] as String,
+      refresh: payload['refresh'] as String?,
+    );
+  }
+
   Future<String> requestPasswordReset(String email) async {
     final res = await _request<Map<String, dynamic>>(
       '/auth/password-reset/request/',
@@ -711,6 +736,7 @@ class ApiClient {
     bool auth = false,
     Map<String, dynamic>? queryParameters,
     Map<String, String>? headers,
+    String? method,
   }) async {
     try {
       final response = await _dio.request<dynamic>(
@@ -718,7 +744,7 @@ class ApiClient {
         data: data,
         queryParameters: queryParameters,
         options: Options(
-          method: data == null ? 'GET' : 'POST',
+          method: method ?? (data == null ? 'GET' : 'POST'),
           extra: {'auth': auth},
           headers: headers,
         ),

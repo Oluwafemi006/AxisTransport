@@ -12,6 +12,7 @@ class User {
     required this.lastName,
     required this.phone,
     required this.role,
+    this.email = '',
   });
 
   final int id;
@@ -20,6 +21,7 @@ class User {
   final String lastName;
   final String phone;
   final String role;
+  final String email;
 
   bool get isClient => role == 'CLIENT';
 
@@ -33,6 +35,7 @@ class User {
     'last_name': lastName,
     'phone': phone,
     'role': role,
+    'email': email,
   };
 
   String get displayName {
@@ -51,6 +54,7 @@ class User {
       lastName: json['last_name'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       role: json['role'] as String? ?? 'CLIENT',
+      email: json['email'] as String? ?? '',
     );
   }
 }

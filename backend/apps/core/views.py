@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from . import password_reset
@@ -275,6 +276,18 @@ class MeView(APIView):
     def get(self, request):
         return Response(UserSerializer(request.user).data)
 
+    def patch(self, request):
+        """Le client complète ou corrige son e-mail (seul champ modifiable ici)."""
+        user = request.user
+        if user.role != User.Role.CLIENT:
+            raise PermissionDenied("Votre e-mail se modifie par un administrateur.")
+        if set(request.data) - {"email"}:
+            raise ValidationError({"detail": "Seul l'e-mail peut être modifié ici."})
+        serializer = UserSerializer(user, data={"email": request.data.get("email", "")}, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(UserSerializer(user).data)
+
 
 class TooManyAttempts(Throttled):
     """Blocage temporaire, avec un message en français sans jargon ; l'en-tête Retry-After est conservé."""
@@ -468,6 +481,37 @@ class RegisterView(FrenchThrottleMixin, APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save(role=User.Role.CLIENT)
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+class PasswordChangeThrottle(_LiveRateThrottle):
+    """Essais du mot de passe actuel, par compte connecté."""
+
+    scope = "password_change"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {"scope": self.scope, "ident": request.user.pk}
+
+
+class PasswordChangeView(FrenchThrottleMixin, APIView):
+    """Changement par le titulaire : les autres sessions sont fermées, celle-ci reçoit de nouveaux jetons."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [PasswordChangeThrottle]
+
+    def post(self, request):
+        user = request.user
+        if not user.check_password(str(request.data.get("current_password") or "")):
+            return Response(
+                {"current_password": ["Mot de passe actuel incorrect."]}, status=status.HTTP_400_BAD_REQUEST
+            )
+        password = str(request.data.get("new_password") or "")
+        try:
+            validate_password(password, user)
+        except DjangoValidationError as error:
+            return Response({"new_password": error.messages}, status=status.HTTP_400_BAD_REQUEST)
+        password_reset.change_password(user, password)
+        refresh = RefreshToken.for_user(user)
+        return Response({"detail": "Mot de passe modifié.", "access": str(refresh.access_token), "refresh": str(refresh)})
 
 
 class PasswordResetRequestView(FrenchThrottleMixin, APIView):
