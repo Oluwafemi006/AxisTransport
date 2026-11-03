@@ -419,8 +419,10 @@ def trip_fare(trip):
     return SimpleNamespace(id=fare.id, name=fare.label, amount=Decimal(fare.amount), currency=fare.currency)
 
 
-def segment_catalog(direction):
+def segment_catalog(direction, *, online=False):
     """
+    `online` : vente aux clients, montée au terminus du sens seulement (l'heure affichée est celle de son départ) ;
+    les montées aux autres arrêts se vendent à bord, par le contrôleur.
     Tronçons d'un sens, dans l'ordre des arrêts actifs de la ligne : ceux qui ont un tarif, et `missing_fares` pour les autres.
     Les paires sont déduites des arrêts et de la grille ; `aller` suit l'ordre de la ligne, `retour` l'inverse.
     """
@@ -447,6 +449,8 @@ def segment_catalog(direction):
 
     segments, missing = [], []
     for from_index, start in enumerate(ordered):
+        if online and from_index > 0:
+            break
         for end in ordered[from_index + 1:]:
             names = {
                 "origin_id": start.location_id,
@@ -917,9 +921,11 @@ def reserve_booking(
     destination=None,
     boarding_point=None,
     alighting_point=None,
+    terminus_boarding_only=False,
 ):
     """
     Reserve all seats for a group or none of them.
+    `terminus_boarding_only` : vente en ligne, montée au départ du parcours seulement (les autres montées se font à bord).
     Départ déjà parti : refusé, sauf `allow_departed` (vente du contrôleur à l'arrêt, départs du jour seulement).
     """
     buyer_ifu = clean_buyer_ifu(buyer_ifu)
@@ -995,6 +1001,8 @@ def reserve_booking(
         raise ValidationError(
             f"Le trajet {locked_trip.route.label} ne dessert pas le tronçon {origin_loc.name} vers {dest_loc.name} dans ce sens."
         )
+    if terminus_boarding_only and origin_loc.pk != locked_trip.route.origin_id:
+        raise ValidationError(f"La montée à {origin_loc.name} se fait à bord, auprès du contrôleur.")
 
     seg_fare = resolve_segment_fare(origin_loc, dest_loc)
     fare = SimpleNamespace(id=seg_fare.id, name=seg_fare.label, amount=Decimal(seg_fare.amount), currency=seg_fare.currency)
@@ -1121,6 +1129,7 @@ def reserve_ticket(
     destination=None,
     boarding_point=None,
     alighting_point=None,
+    terminus_boarding_only=False,
 ):
     if trip.status not in {Trip.Status.SCHEDULED, Trip.Status.BOARDING}:
         raise ValidationError("Ce trajet n'accepte pas de nouvelle réservation.")
@@ -1163,6 +1172,8 @@ def reserve_ticket(
         raise ValidationError(
             f"Le trajet {trip.route.label} ne dessert pas le tronçon {origin_loc.name} vers {dest_loc.name} dans ce sens."
         )
+    if terminus_boarding_only and origin_loc.pk != trip.route.origin_id:
+        raise ValidationError(f"La montée à {origin_loc.name} se fait à bord, auprès du contrôleur.")
 
     seg_fare = resolve_segment_fare(origin_loc, dest_loc)
     fare = SimpleNamespace(id=seg_fare.id, name=seg_fare.label, amount=Decimal(seg_fare.amount), currency=seg_fare.currency)

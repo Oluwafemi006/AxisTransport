@@ -198,21 +198,28 @@ class SegmentBookingAndPricingTests(APITestCase):
 
     # ── 2. Savè → Cotonou = 6 500 FCFA ──────────────────────────────────────
     def test_save_to_cotonou_pricing_and_booking(self):
-        """Cas Savè → Cotonou = 6 500 FCFA."""
+        """Savè → Cotonou : vendu à bord par le personnel ; refusé en ligne (montée au terminus seulement)."""
         seat = self.seats[1]
-        book_res = self.client.post(
+        online = self.client.post(
             CLIENT_BOOKINGS,
             {
                 "trip": self.trip.pk,
                 "origin": self.save.pk,
                 "destination": self.cotonou.pk,
                 "contact_phone": "97000002",
-                "passengers": [{"full_name": "Passager Cotonou", "phone": "97000002", "seat": seat.pk}],
+                "passengers": [{"full_name": "TEST En ligne", "phone": "97000002", "seat": seat.pk}],
             },
             format="json",
         )
-        self.assertEqual(book_res.status_code, status.HTTP_201_CREATED, book_res.data)
-        booking = Booking.objects.get(pk=book_res.data["id"])
+        self.assertEqual(online.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("se fait à bord", str(online.data))
+        booking, _ = reserve_booking(
+            trip=self.trip,
+            passengers=[{"full_name": "TEST À bord", "seat": seat}],
+            origin=self.save,
+            destination=self.cotonou,
+            channel=Ticket.Channel.COUNTER,
+        )
         self.assertEqual(booking.amount, Decimal("6500.00"))
         self.assertEqual(booking.origin, self.save)
         self.assertEqual(booking.destination, self.cotonou)
@@ -237,27 +244,33 @@ class SegmentBookingAndPricingTests(APITestCase):
 
     # ── 3. Dassa → Bohicon = 4 000 FCFA ──────────────────────────────────
     def test_dassa_to_bohicon_pricing_and_booking(self):
-        """Cas Dassa → Bohicon = 4 000 FCFA."""
+        """Dassa → Bohicon : vendu à bord par le personnel ; refusé en ligne (montée au terminus seulement)."""
         seat = self.seats[2]
-        book_res = self.client.post(
+        online = self.client.post(
             CLIENT_BOOKINGS,
             {
                 "trip": self.trip.pk,
                 "origin": self.dassa.pk,
                 "destination": self.bohicon.pk,
                 "contact_phone": "97000003",
-                "passengers": [{"full_name": "Passager Porto", "phone": "97000003", "seat": seat.pk}],
+                "passengers": [{"full_name": "TEST En ligne", "phone": "97000003", "seat": seat.pk}],
             },
             format="json",
         )
-        self.assertEqual(book_res.status_code, status.HTTP_201_CREATED, book_res.data)
-        booking = Booking.objects.get(pk=book_res.data["id"])
+        self.assertEqual(online.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("se fait à bord", str(online.data))
+        booking, _ = reserve_booking(
+            trip=self.trip,
+            passengers=[{"full_name": "TEST À bord", "seat": seat}],
+            origin=self.dassa,
+            destination=self.bohicon,
+            channel=Ticket.Channel.COUNTER,
+        )
         self.assertEqual(booking.amount, Decimal("4000.00"))
         self.assertEqual(booking.origin, self.dassa)
         self.assertEqual(booking.destination, self.bohicon)
         self.assertEqual(booking.segment_label, "Dassa → Bohicon")
 
-    # ── 4. Sens inverse refusé côté serveur ─────────────────────────────────
     def test_reverse_direction_is_strictly_rejected(self):
         """Sens inverse refusé côté serveur avec message clair en français."""
         seat = self.seats[3]

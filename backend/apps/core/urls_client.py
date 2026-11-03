@@ -242,7 +242,7 @@ class ClientSegmentView(APIView):
         key = segment_cache_key(direction)
         payload = cache.get(key)
         if payload is None:
-            payload = segment_catalog(direction)
+            payload = segment_catalog(direction, online=True)
             cache.set(key, payload, SEGMENT_CACHE_SECONDS)
         return Response(payload)
 
@@ -496,6 +496,7 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
                 destination=data.get("destination"),
                 boarding_point=b_point,
                 alighting_point=a_point,
+                terminus_boarding_only=True,
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc)
