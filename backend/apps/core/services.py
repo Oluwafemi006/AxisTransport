@@ -468,6 +468,8 @@ def segment_catalog(direction, *, online=False):
                 {
                     **names,
                     "price_fcfa": fare.amount,
+                    # Montée achetable en ligne : au terminus du sens seulement ; ailleurs, à bord auprès du contrôleur.
+                    "online_boarding": from_index == 0,
                     "next_departure": timezone.localtime(trip.departure_at) if trip else None,
                     # Ville d'où part le bus : son parcours réel, sinon le terminus du sens.
                     "line_origin": trip.route.origin.name if trip else ordered[0].location.name,
@@ -495,7 +497,8 @@ def segment_cache_key(direction):
 
 
 def invalidate_segment_catalog():
-    cache.delete_many([segment_cache_key(direction) for direction in SEGMENT_DIRECTIONS])
+    keys = [segment_cache_key(direction) for direction in SEGMENT_DIRECTIONS]
+    cache.delete_many(keys + [f"{key}:all" for key in keys])
 
 
 def tax_breakdown(price, taxes=None):

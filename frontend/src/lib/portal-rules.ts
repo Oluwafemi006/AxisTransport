@@ -211,6 +211,8 @@ export interface SegmentOffer {
   price_fcfa: number;
   line_origin: string;
   next_departure: string | null;
+  // Avec scope=all : faux pour une montée à un arrêt intermédiaire (vendue à bord, pas en ligne).
+  online_boarding?: boolean;
 }
 
 export type SegmentDirection = "aller" | "retour";
