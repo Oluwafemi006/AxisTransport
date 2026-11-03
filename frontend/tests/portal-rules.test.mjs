@@ -13,7 +13,7 @@ const source = readFileSync(path.join(here, "../src/lib/portal-rules.ts"), "utf8
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
 const compiled = path.join(mkdtempSync(path.join(tmpdir(), "axis-portal-rules-")), "portal-rules.mjs");
 writeFileSync(compiled, outputText);
-const { placeChoices, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE } = await import(pathToFileURL(compiled).href);
+const { placeChoices, segmentDepartureLabel, segmentSearchDate, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE } = await import(pathToFileURL(compiled).href);
 
 const places = [{ id: 1, name: "Cotonou" }, { id: 2, name: "Parakou" }];
 
@@ -194,4 +194,17 @@ test("tarif manquant : message clair pour le client et le guichet, sans texte te
   assert.equal(actionErrorText(refused, "Vente impossible."), SEGMENT_FARE_MISSING_MESSAGE);
   assert.equal(isSegmentFareMissing({ status: 400, details: { detail: "Autre refus." } }), false);
   assert.equal(isSegmentFareMissing(null), false);
+});
+
+test("libellé du prochain départ d'un tronçon, à l'heure du Bénin, comme dans l'app", () => {
+  assert.equal(
+    segmentDepartureLabel({ next_departure: "2026-11-05T07:00:00Z", line_origin: "Parakou" }),
+    "Prochain départ : jeu. 5 nov., départ de Parakou à 08:00",
+  );
+  assert.equal(segmentDepartureLabel({ next_departure: null, line_origin: "Parakou" }), "Aucun départ programmé");
+});
+
+test("recherche préremplie : jour du Bénin du prochain départ, sinon aujourd'hui", () => {
+  assert.equal(segmentSearchDate({ next_departure: "2026-11-05T23:30:00Z" }), "2026-11-06");
+  assert.equal(segmentSearchDate({ next_departure: null }, new Date("2026-11-03T10:00:00Z")), "2026-11-03");
 });

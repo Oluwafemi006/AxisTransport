@@ -201,3 +201,30 @@ export function nextPagePath(path: string, next: string | null | undefined): str
   params.set("page", page);
   return `${base}?${params.toString()}`;
 }
+
+// Tronçon de l'accueil (« Nos trajets ») : prix et prochain départ viennent du serveur (/client/segments/).
+export interface SegmentOffer {
+  origin_id: number;
+  origin: string;
+  destination_id: number;
+  destination: string;
+  price_fcfa: number;
+  line_origin: string;
+  next_departure: string | null;
+}
+
+export type SegmentDirection = "aller" | "retour";
+
+// Même libellé que l'app : heure du Bénin, départ de la ville d'origine du bus.
+export function segmentDepartureLabel(segment: Pick<SegmentOffer, "next_departure" | "line_origin">): string {
+  if (!segment.next_departure) return "Aucun départ programmé";
+  const at = new Date(segment.next_departure);
+  const day = new Intl.DateTimeFormat("fr-FR", { timeZone: "Africa/Porto-Novo", weekday: "short", day: "numeric", month: "short" }).format(at);
+  const hour = new Intl.DateTimeFormat("fr-FR", { timeZone: "Africa/Porto-Novo", hour: "2-digit", minute: "2-digit" }).format(at);
+  return `Prochain départ : ${day}, départ de ${segment.line_origin} à ${hour}`;
+}
+
+// Recherche préremplie : date du prochain départ (jour du Bénin), sinon aujourd'hui.
+export function segmentSearchDate(segment: Pick<SegmentOffer, "next_departure">, now: Date = new Date()): string {
+  return segment.next_departure ? beninDateKey(new Date(segment.next_departure)) : beninDateKey(now);
+}

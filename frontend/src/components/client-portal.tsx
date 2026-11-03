@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import { SEGMENT_FARE_MISSING_MESSAGE, beninDateKey, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
+import { SEGMENT_FARE_MISSING_MESSAGE, beninDateKey, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { BusSeatMap } from "./bus-seat-map";
@@ -106,7 +106,36 @@ export function ClientPortal() {
   const beninToday = beninDateKey();
 
   // Rechercher sans les deux villes, sans date, ou avec une date passée : message, et rien n'est lancé.
-  async function runSearch() {
+  const searchOriginValue = searchOrigin;
+  const searchDestinationValue = searchDestination;
+  const searchDateValue = searchDate;
+
+  // « Nos trajets » : tronçons d'un sens, comme dans l'app ; un clic préremplit et lance la recherche.
+  const [segmentDirection, setSegmentDirection] = useState<SegmentDirection>("aller");
+  const [segments, setSegments] = useState<SegmentOffer[]>([]);
+  const [segmentsState, setSegmentsState] = useState<"loading" | "ready" | "error">("loading");
+  const [segmentsRetry, setSegmentsRetry] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setSegmentsState("loading");
+    apiFetch<{ segments: SegmentOffer[] }>(`/client/segments/?direction=${segmentDirection}`, {}, false)
+      .then((payload) => { if (!cancelled) { setSegments(payload.segments || []); setSegmentsState("ready"); } })
+      .catch(() => { if (!cancelled) { setSegments([]); setSegmentsState("error"); } });
+    return () => { cancelled = true; };
+  }, [segmentDirection, segmentsRetry]);
+
+  function pickSegment(segment: SegmentOffer) {
+    const origin = String(segment.origin_id);
+    const destination = String(segment.destination_id);
+    const date = segmentSearchDate(segment);
+    setSearchOrigin(origin);
+    setSearchDestination(destination);
+    setSearchDate(date);
+    void runSearch(origin, destination, date);
+    document.getElementById("prochains-departs")?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  async function runSearch(searchOrigin = searchOriginValue, searchDestination = searchDestinationValue, searchDate = searchDateValue) {
     const problem = searchError(searchOrigin, searchDestination) ?? searchDateError(searchDate, beninDateKey());
     setSearchMessage(problem ?? "");
     setNextAvailable(null);
@@ -174,11 +203,10 @@ export function ClientPortal() {
       }
     }
 
-    if (searchDate) {
-      // Date du départ au Bénin (et non en UTC : un départ à 00 h 30 tombe le bon jour).
-      const tripDate = beninDateKey(new Date(trip.departure_at));
-      if (tripDate !== searchDate) match = false;
-    }
+    // Date du départ au Bénin (et non en UTC : un départ à 00 h 30 tombe le bon jour).
+    // Sans date recherchée, l'accueil ne montre que les départs du jour : les autres jours passent par la recherche.
+    const tripDate = beninDateKey(new Date(trip.departure_at));
+    if (tripDate !== (searchDate || beninDateKey())) match = false;
     return match;
   });
 
@@ -273,15 +301,68 @@ export function ClientPortal() {
                       <option value="3">3 passagers</option>
                     </select>
                   </div>
-                  <button className="btn p" onClick={runSearch}>Rechercher</button>
+                  <button className="btn p" onClick={() => void runSearch()}>Rechercher</button>
                 </div>
                 {searchMessage && <p role="alert" style={{ color: 'var(--warn)', marginTop: '10px', fontWeight: 600 }}>{searchMessage}</p>}
 
-                <section className="section-margin">
+                <section className="section-margin" aria-labelledby="nos-trajets">
                   <div className="head">
                     <div>
-                      <h2>Prochains départs</h2>
-                      <p className="sub">Trouvez un trajet et réservez votre place en quelques clics.</p>
+                      <h2 id="nos-trajets">Nos trajets</h2>
+                    </div>
+                  </div>
+                  <div role="tablist" style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                    {([["aller", "Parakou → Cotonou"], ["retour", "Cotonou → Parakou"]] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        role="tab"
+                        aria-selected={segmentDirection === value}
+                        onClick={() => setSegmentDirection(value)}
+                        style={{ padding: '12px 20px', borderRadius: '14px', fontWeight: 700, fontSize: '15px', cursor: 'pointer', border: segmentDirection === value ? '1px solid var(--ink)' : '1px solid var(--line)', background: segmentDirection === value ? 'var(--ink)' : '#fff', color: segmentDirection === value ? '#fff' : 'var(--ink)' }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {segmentsState === "loading" && segments.length === 0 ? (
+                    <p style={{ color: 'var(--mute)' }}>Chargement des trajets…</p>
+                  ) : segmentsState === "error" ? (
+                    <div style={{ textAlign: 'center', padding: '28px 20px', background: '#fff', borderRadius: '16px', border: '1px dashed var(--line)', color: 'var(--mute)' }}>
+                      <p style={{ color: 'var(--ink)', fontWeight: 700 }}>Connexion indisponible</p>
+                      <p>Impossible de récupérer les trajets pour le moment.</p>
+                      <button type="button" className="btn s" style={{ marginTop: '10px' }} onClick={() => setSegmentsRetry((n) => n + 1)}>Réessayer</button>
+                    </div>
+                  ) : segments.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '28px 20px', background: '#fff', borderRadius: '16px', border: '1px dashed var(--line)', color: 'var(--mute)' }}>
+                      <p style={{ color: 'var(--ink)', fontWeight: 700 }}>Aucun trajet disponible</p>
+                      <p>Aucun tronçon n’est proposé dans ce sens pour le moment.</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+                      {segments.map((segment) => (
+                        <button
+                          key={`${segment.origin_id}-${segment.destination_id}`}
+                          type="button"
+                          onClick={() => pickSegment(segment)}
+                          style={{ textAlign: 'left', background: '#fff', border: '1px solid var(--line)', borderRadius: '18px', padding: '18px 20px', cursor: 'pointer', font: 'inherit' }}
+                        >
+                          <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px' }}>
+                            <strong style={{ fontSize: '18px', color: 'var(--ink)' }}>{segment.origin} → {segment.destination}</strong>
+                            <strong style={{ fontSize: '18px', color: 'var(--navy)', whiteSpace: 'nowrap' }}>{money(segment.price_fcfa)}</strong>
+                          </span>
+                          <span style={{ display: 'block', marginTop: '6px', color: 'var(--mute)', fontSize: '14px' }}>{segmentDepartureLabel(segment)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="section-margin" id="prochains-departs">
+                  <div className="head">
+                    <div>
+                      <h2>{searchDate ? "Départs trouvés" : "Départs du jour"}</h2>
+                      <p className="sub">{searchDate ? "Départs de la date recherchée." : "Pour un autre jour, choisissez une date dans la recherche."}</p>
                     </div>
                     <button style={{ background: 'none', border: 'none', color: 'var(--blue)', fontWeight: 600, fontSize: '14px', cursor: 'pointer', marginBottom: '18px' }} onClick={() => setTab("billets")}>
                       Voir tous les départs →
@@ -326,7 +407,7 @@ export function ClientPortal() {
                           </button>
                         </div>
                       ) : (
-                        <p>Aucun départ publié pour ces critères.</p>
+                        <p>{searchDate ? "Aucun départ publié pour ces critères." : "Aucun départ aujourd’hui. Choisissez une date dans la recherche."}</p>
                       )}
                     </div>
                   ) : (
