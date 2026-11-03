@@ -1,4 +1,5 @@
 import { nextPagePath } from "./portal-rules";
+import type { User } from "./types";
 
 // Adresse de l'API (se termine par /api/v1). Aucune valeur par défaut : voir DEPLOY.md.
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
@@ -90,6 +91,20 @@ export interface StaffInvitationAcceptResponse {
   username: string;
   role: string;
   group: string;
+}
+
+export async function updateMyEmail(email: string) {
+  return await apiFetch<User>("/auth/me/", { method: "PATCH", body: JSON.stringify({ email }) });
+}
+
+/** Les autres sessions sont fermées par le serveur ; celle-ci garde les nouveaux jetons. */
+export async function changeMyPassword(currentPassword: string, newPassword: string) {
+  const result = await apiFetch<{ detail: string; access: string; refresh: string }>("/auth/password/change/", {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  setTokens(result.access, result.refresh);
+  return result;
 }
 
 export async function requestPasswordReset(email: string) {

@@ -137,6 +137,7 @@ REST_FRAMEWORK = {
         # Mot de passe oublié : demandes par adresse e-mail et par IP, saisies du code par IP.
         "password_reset_email": os.environ.get("AXIS_PASSWORD_RESET_RATE_EMAIL", "3/hour"),
         "password_reset_address": os.environ.get("AXIS_PASSWORD_RESET_RATE_ADDRESS", "20/hour"),
+        "password_change": os.environ.get("AXIS_PASSWORD_CHANGE_RATE", "10/hour"),
         "password_reset_confirm": os.environ.get("AXIS_PASSWORD_RESET_CONFIRM_RATE", "30/hour"),
     },
     # Nombre de proxys de confiance devant l'API (pour lire la vraie adresse IP du client).

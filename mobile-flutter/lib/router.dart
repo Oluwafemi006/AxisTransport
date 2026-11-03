@@ -6,6 +6,7 @@ import 'core/session.dart';
 import 'features/auth/invitation_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/forgot_password_screen.dart';
+import 'features/profile/account_screen.dart';
 import 'features/auth/register_screen.dart';
 import 'features/bookings/presentation/booking_review_screen.dart';
 import 'features/home/home_screen.dart';
@@ -103,6 +104,11 @@ GoRouter buildAxisRouter() => GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       path: '/login',
       redirect: (context, state) => '/connexion',
+    ),
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/mon-compte',
+      builder: (context, state) => const AccountScreen(),
     ),
     GoRoute(
       parentNavigatorKey: _rootNavigatorKey,

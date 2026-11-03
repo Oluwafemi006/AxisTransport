@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
+import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail } from "@/lib/api";
 import { SEGMENT_FARE_MISSING_MESSAGE, beninDateKey, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
@@ -1698,7 +1698,79 @@ function Profile({ user, tickets, parcels, rentals, onAuthenticated, onLogout }:
         </div>
       </div>
       
+      <AccountSettings user={user} onSaved={onAuthenticated} />
+
       <button className="btn" style={{ width: '100%', borderColor: 'var(--warn)', color: 'var(--warn)' }} onClick={onLogout}>Se déconnecter</button>
+    </div>
+  );
+}
+
+// E-mail (pour le mot de passe oublié) et changement de mot de passe du titulaire.
+function AccountSettings({ user, onSaved }: { user: User; onSaved: () => Promise<void> }) {
+  const [email, setEmail] = useState(user.email || "");
+  const [current, setCurrent] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [emailNotice, setEmailNotice] = useState({ ok: "", error: "" });
+  const [passwordNotice, setPasswordNotice] = useState({ ok: "", error: "" });
+  const [busy, setBusy] = useState(false);
+
+  async function saveEmail(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await updateMyEmail(email.trim());
+      setEmailNotice({ ok: "E-mail enregistré.", error: "" });
+      await onSaved();
+    } catch (reason) {
+      setEmailNotice({ ok: "", error: reason instanceof Error ? reason.message : "Enregistrement impossible." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function savePassword(event: FormEvent) {
+    event.preventDefault();
+    if (password !== confirmation) {
+      setPasswordNotice({ ok: "", error: "Les deux mots de passe ne correspondent pas." });
+      return;
+    }
+    setBusy(true);
+    try {
+      await changeMyPassword(current, password);
+      setCurrent(""); setPassword(""); setConfirmation("");
+      setPasswordNotice({ ok: "Mot de passe modifié. Vos autres appareils sont déconnectés.", error: "" });
+    } catch (reason) {
+      setPasswordNotice({ ok: "", error: reason instanceof Error ? reason.message : "Modification impossible." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: '24px', marginBottom: '32px' }}>
+      {user.role === "CLIENT" && (
+        <form onSubmit={saveEmail}>
+          <h4 style={{ fontSize: '17px', marginBottom: '4px' }}>E-mail</h4>
+          <p style={{ color: 'var(--mute)', fontSize: '13px', marginBottom: '8px' }}>Il sert à recevoir un code si vous oubliez votre mot de passe.</p>
+          <input type="email" className="field" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          {emailNotice.error && <p className="notice notice-error mt-2" role="alert">{emailNotice.error}</p>}
+          {emailNotice.ok && <p className="notice mt-2" role="status">{emailNotice.ok}</p>}
+          <button className="btn mt-2" disabled={busy}>Enregistrer l’e-mail</button>
+        </form>
+      )}
+      <form onSubmit={savePassword}>
+        <h4 style={{ fontSize: '17px', marginBottom: '8px' }}>Changer le mot de passe</h4>
+        <label className="field-label" htmlFor="currentPassword">Mot de passe actuel</label>
+        <input id="currentPassword" type="password" className="field" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
+        <label className="field-label mt-2" htmlFor="newPassword">Nouveau mot de passe</label>
+        <input id="newPassword" type="password" className="field" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <label className="field-label mt-2" htmlFor="newPasswordConfirmation">Confirmer le mot de passe</label>
+        <input id="newPasswordConfirmation" type="password" className="field" autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} required />
+        {passwordNotice.error && <p className="notice notice-error mt-2" role="alert">{passwordNotice.error}</p>}
+        {passwordNotice.ok && <p className="notice mt-2" role="status">{passwordNotice.ok}</p>}
+        <button className="primary-button mt-2 w-full" disabled={busy}>Changer le mot de passe</button>
+      </form>
     </div>
   );
 }

@@ -5,6 +5,8 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Mon compte : e-mail du client et changement de mot de passe (app et site) | `cc/changer-mot-de-passe-v2` | Claude Code | à valider par Eddy |
+| Couleur principale de l'app alignée sur le bleu du site (mise de côté, `git stash`) | `cc/couleur-primaire` | Claude Code | en attente |
 | Nouvel axe Parakou–Savè–Glazoué–Dassa–Bohicon–Cotonou, tarifs, points, démarrage sans réécriture | `cc/nouvel-axe` | Claude Code | à valider par Eddy |
 | Mot de passe oublié : code e-mail clients, réinitialisation admin, fermeture des sessions | `cc/mot-de-passe-oublie` | Claude Code | à valider par Eddy |
 | Bandeau dynamique d'accueil (sens du bus), prochains départs tous sens et next_available | `ag/accueil-bandeau-sens-du-bus` | Antigravity | à valider par Eddy |

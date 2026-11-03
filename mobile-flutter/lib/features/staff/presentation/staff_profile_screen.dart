@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/session.dart';
 import '../../../core/theme/axis_spacing.dart';
@@ -73,6 +74,12 @@ class StaffProfileScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: AxisSpacing.md),
+                AxisButton(
+                  label: 'Changer mon mot de passe',
+                  variant: AxisButtonVariant.outline,
+                  onPressed: () => context.push('/mon-compte'),
+                ),
+                const SizedBox(height: AxisSpacing.sm),
                 AxisButton(
                   label: 'Se déconnecter',
                   variant: AxisButtonVariant.secondary,
