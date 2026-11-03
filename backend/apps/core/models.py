@@ -1317,6 +1317,9 @@ class StaffInvitation(TimeStampedModel):
     """
 
     email = models.EmailField(verbose_name="Adresse e-mail")
+    # Saisis par l'administrateur ; repris sur le compte à l'activation.
+    first_name = models.CharField(max_length=150, blank=True)
+    last_name = models.CharField(max_length=150, blank=True)
     group = models.ForeignKey(
         "auth.Group",
         on_delete=models.PROTECT,
@@ -1347,17 +1350,22 @@ class StaffInvitation(TimeStampedModel):
     def is_valid(self):
         return not self.is_used and self.expires_at > timezone.now()
 
-    def send_invitation_email(self):
-        """Envoie l'e-mail d'invitation avec le lien d'activation et les liens mobile."""
+    def activation_url(self):
         from django.conf import settings
-        from django.core.mail import send_mail
 
         base_url = (
             getattr(settings, "FRONTEND_URL", "")
             or getattr(settings, "PUBLIC_WEB_URL", "")
             or "https://axistransportlogistique.com"
         ).rstrip("/")
-        activation_url = f"{base_url}/activation?token={self.token}"
+        return f"{base_url}/activation?token={self.token}"
+
+    def send_invitation_email(self):
+        """Envoie l'e-mail d'invitation avec le lien d'activation et les liens mobile."""
+        from django.conf import settings
+        from django.core.mail import send_mail
+
+        activation_url = self.activation_url()
 
         role_name = self.group.name
         subject = f"Invitation à rejoindre l'équipe AXIS Transport ({role_name})"
@@ -1385,3 +1393,23 @@ class StaffInvitation(TimeStampedModel):
             recipient_list=[self.email],
             fail_silently=False,
         )
+
+
+class AccountChange(models.Model):
+    """Journal des comptes : création, invitation, changement de rôle, désactivation, réactivation."""
+
+    class Action(models.TextChoices):
+        CREATED = "CREATED", "Compte créé"
+        INVITED = "INVITED", "Invitation envoyée"
+        ROLE = "ROLE", "Rôle changé"
+        DEACTIVATED = "DEACTIVATED", "Compte désactivé"
+        ACTIVATED = "ACTIVATED", "Compte réactivé"
+
+    target = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="account_changes")
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
+    action = models.CharField(max_length=16, choices=Action.choices)
+    detail = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]

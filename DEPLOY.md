@@ -832,3 +832,10 @@ Solution proposée (non faite) : une vue Django protégée, par exemple `/api/v1
 - **Bouton « Débloquer un compte » dans le portail `/admin`.** Aujourd'hui, débloquer un identifiant bloqué après trop de connexions échouées demande une commande sur le serveur : `python manage.py unblock_login <identifiant>` (voir section 2). Le bouton appellerait le même code, réservé à l'administrateur, et resterait journalisé.
 - **Supprimer les routes en double avant l'ouverture au public.** Les mêmes points d'accès répondent sous `/api/` et sous `/api/v1/` (`backend/config/urls.py`). Vérifier qu'aucun écran ni aucune app n'utilise plus `/api/` seul, puis retirer ce préfixe : une seule adresse par point d'accès, une seule surface à surveiller.
 - **Réservations client ouvertes, protégées dans le code.** `/api/v1/client/bookings/` accepte toute demande (`AllowAny`, pour l'achat sans compte sur le web) ; l'accès à une réservation existante n'est protégé que par une vérification écrite dans la vue (propriétaire connecté ou jeton invité, `_assert_can_access` dans `backend/apps/core/urls_client.py`). Cette protection fonctionne et elle est testée, mais elle est fragile : une nouvelle action ajoutée sans cette vérification serait ouverte à tous. Garder les tests existants et en ajouter un pour chaque nouvelle action.
+
+## Équipe et invitations (lot cc/admin-equipe)
+
+- Migration `0024_account_admin` : noms sur l'invitation et journal des comptes (`AccountChange`). À appliquer au déploiement (`migrate`, lancé au démarrage du backend).
+- `/admin`, onglet « Équipe & rôles » : recherche, changement de rôle (sessions fermées), désactivation et réactivation (sessions fermées, historique conservé), journal des comptes.
+- « Inviter un membre » : l'e-mail part par le SMTP (`EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL`). Sans messagerie configurée, l'invitation est créée et l'écran le dit ; pour un guichetier ou un contrôleur, « Copier le lien » permet de transmettre le lien d'activation à la main. Une invitation d'administrateur ne propose pas de lien copiable.
+

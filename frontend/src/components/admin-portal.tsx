@@ -1920,11 +1920,101 @@ function IncidentPanel({ incidents, onChanged }: { incidents: PaymentIncident[];
   );
 }
 
-function TeamPanel({ users, onChanged }: { users: User[]; onChanged: () => Promise<void> }) {
+type TeamInvitation = { id: number; email: string; first_name: string; last_name: string; role: string; role_display: string; state: "PENDING" | "USED" | "EXPIRED"; state_display: string; expires_at: string; activation_url: string | null; email_sent?: boolean; email_error?: string };
+type AccountChangeRow = { id: number; created_at: string; action_display: string; detail: string; target: string; actor: string };
+const staffRoles: string[][] = [["COUNTER", "Guichetier"], ["CONTROLLER", "Contrôleur"], ["ADMIN", "Administrateur"]];
+const emptyMember = { username: "", password: "", first_name: "", last_name: "", phone: "", role: "COUNTER" };
+const emptyInvite = { first_name: "", last_name: "", email: "", role: "COUNTER" };
+
+function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChanged: () => Promise<void> }) {
   const feedback = useActionFeedback();
-  const [form, setForm] = useState({ username: "", password: "", first_name: "", last_name: "", phone: "", role: "COUNTER" });
+  const [users, setUsers] = useState<User[]>(initialUsers);
+  const [search, setSearch] = useState("");
+  const [form, setForm] = useState(emptyMember);
+  const [invite, setInvite] = useState(emptyInvite);
+  const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
+  const [changes, setChanges] = useState<AccountChangeRow[]>([]);
+  const [busy, setBusy] = useState(false);
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [resetPassword, setResetPassword] = useState("");
+  const [lastLink, setLastLink] = useState<string | null>(null);
+
+  const reload = useCallback(async (query = search) => {
+    try {
+      const [rows, pending, log] = await Promise.all([
+        apiList<User>(`/users/${query.trim() ? `?search=${encodeURIComponent(query.trim())}` : ""}`),
+        apiFetch<TeamInvitation[]>("/staff-invitations/"),
+        apiFetch<AccountChangeRow[]>("/users/changes/"),
+      ]);
+      setUsers(rows); setInvitations(pending); setChanges(log);
+    } catch (reason) { feedback.failure(reason, "L’équipe n’a pas pu être chargée."); }
+  }, [feedback, search]);
+
+  useEffect(() => { void reload(""); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const timer = window.setTimeout(() => void reload(search), 300); return () => window.clearTimeout(timer); }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try {
+      await apiFetch("/users/", { method: "POST", body: JSON.stringify(form) });
+      feedback.success(`Membre ${form.username} ajouté.`);
+      setForm(emptyMember);
+      setSearch("");
+      await Promise.all([reload(""), onChanged()]);
+    } catch (reason) { feedback.failure(reason, "Le membre n’a pas été ajouté."); }
+    finally { setBusy(false); }
+  }
+
+  async function sendInvite(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try {
+      const created = await apiFetch<TeamInvitation>("/staff-invitations/", { method: "POST", body: JSON.stringify(invite) });
+      if (created.email_sent) feedback.success(`Invitation envoyée à ${created.email}.`);
+      else feedback.failure(null, `Invitation créée, mais ${created.email_error || "l’e-mail n’a pas été envoyé."}${created.activation_url ? " Copiez le lien et transmettez-le à la personne." : " Configurez la messagerie, puis cliquez sur « Renvoyer »."}`);
+      setLastLink(created.activation_url);
+      setInvite(emptyInvite);
+      await reload();
+    } catch (reason) { feedback.failure(reason, "L’invitation n’a pas été créée."); }
+    finally { setBusy(false); }
+  }
+
+  async function resend(item: TeamInvitation) {
+    try {
+      const updated = await apiFetch<TeamInvitation>(`/staff-invitations/${item.id}/resend/`, { method: "POST", body: "{}" });
+      if (updated.email_sent) feedback.success(`Invitation renvoyée à ${updated.email}.`);
+      else feedback.failure(null, `Invitation prolongée de 48 h, mais ${updated.email_error || "l’e-mail n’a pas été envoyé."}`);
+      await reload();
+    } catch (reason) { feedback.failure(reason, "L’invitation n’a pas été renvoyée."); }
+  }
+
+  async function copyLink(url: string) {
+    try { await navigator.clipboard.writeText(url); feedback.success("Lien d’activation copié. Transmettez-le uniquement à la personne invitée."); }
+    catch { window.prompt("Copiez ce lien :", url); }
+  }
+
+  async function changeRole(user: User, role: string) {
+    if (role === user.role) return;
+    if (!window.confirm(`Changer le rôle de ${user.username} en « ${[...staffRoles, ["CLIENT", "Client"]].find(([key]) => key === role)?.[1]} » ? Ses sessions ouvertes seront fermées.`)) return;
+    try {
+      await apiFetch(`/users/${user.id}/`, { method: "PATCH", body: JSON.stringify({ role }) });
+      feedback.success(`Rôle de ${user.username} modifié.`);
+      await reload();
+    } catch (reason) { feedback.failure(reason, "Le rôle n’a pas été modifié."); }
+  }
+
+  async function toggleActive(user: User) {
+    const active = user.is_active !== false;
+    if (active && !window.confirm(`Désactiver ${user.username} ? Il ne pourra plus se connecter et ses sessions seront fermées. Son historique est conservé.`)) return;
+    try {
+      await apiFetch(`/users/${user.id}/${active ? "deactivate" : "activate"}/`, { method: "POST", body: "{}" });
+      feedback.success(`${user.username} ${active ? "désactivé" : "réactivé"}.`);
+      await reload();
+    } catch (reason) { feedback.failure(reason, "Le compte n’a pas été modifié."); }
+  }
 
   async function submitReset(event: FormEvent) {
     event.preventDefault();
@@ -1937,55 +2027,111 @@ function TeamPanel({ users, onChanged }: { users: User[]; onChanged: () => Promi
     } catch (reason) { feedback.failure(reason, "Le mot de passe n’a pas été modifié."); }
   }
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    try {
-      await apiFetch("/users/", { method: "POST", body: JSON.stringify(form) });
-      feedback.success(`Membre ${form.username} ajouté.`);
-      await onChanged();
-    } catch (reason) { feedback.failure(reason, "Le membre n’a pas été ajouté."); }
-  }
+  const pendingInvitations = invitations.filter((item) => item.state !== "USED");
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[1.25fr_.75fr]">
-      <section className="card self-start">
-        <SectionHeading eyebrow="RBAC" title="Équipe Axis" />
-        <div className="table-scroll">
-          <table className="staff-table min-w-[600px]">
-            <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Contact</th><th>Mot de passe</th></tr></thead>
-            <tbody>
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <td className="strong">{[user.first_name, user.last_name].filter(Boolean).join(" ") || "—"}</td>
-                  <td>{user.username}</td>
-                  <td><StatusBadge tone={user.role === "ADMIN" ? "amber" : user.role === "CLIENT" ? "grey" : "blue"}>{user.role_display}</StatusBadge></td>
-                  <td>{user.phone || user.email || "—"}</td>
-                  <td><button type="button" className="text-button" onClick={() => { setResetTarget(user); setResetPassword(""); }}>Réinitialiser</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      {resetTarget && (
-        <form onSubmit={submitReset} className="card space-y-4 xl:col-start-2">
-          <SectionHeading eyebrow="Mot de passe" title={`Réinitialiser ${resetTarget.username}`} />
-          <p className="text-sm text-slate-500">Communiquez-le à la personne en main propre. Toutes ses sessions seront fermées.</p>
-          <Input label="Nouveau mot de passe" type="password" value={resetPassword} onChange={setResetPassword} />
-          <button className="primary-button w-full">Enregistrer</button>
-          <button type="button" className="text-button w-full" onClick={() => setResetTarget(null)}>Annuler</button>
+    <div className="grid min-w-0 gap-5 xl:grid-cols-[1.25fr_.75fr]">
+      <div className="min-w-0 space-y-5">
+        <section className="card min-w-0">
+          <SectionHeading eyebrow="Personnel d’abord, puis clients" title="Équipe Axis" />
+          <input className="field mb-4" type="search" placeholder="Rechercher par nom, identifiant, e-mail ou téléphone" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="table-scroll">
+            <table className="staff-table min-w-[760px]">
+              <thead><tr><th>Nom</th><th>Identifiant</th><th>Rôle</th><th>Contact</th><th>État</th><th>Actions</th></tr></thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.id} className={user.is_active === false ? "opacity-60" : undefined}>
+                    <td className="strong">{[user.first_name, user.last_name].filter(Boolean).join(" ") || "—"}</td>
+                    <td>{user.username}</td>
+                    <td>
+                      <select className="field max-w-40" aria-label={`Rôle de ${user.username}`} value={user.role} onChange={(e) => void changeRole(user, e.target.value)}>
+                        {[...staffRoles, ["CLIENT", "Client"]].map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                      </select>
+                    </td>
+                    <td>{user.phone || user.email || "—"}</td>
+                    <td><StatusBadge tone={user.is_active === false ? "grey" : "green"}>{user.is_active === false ? "Désactivé" : "Actif"}</StatusBadge></td>
+                    <td className="whitespace-nowrap">
+                      <button type="button" className="text-button mr-2" onClick={() => { setResetTarget(user); setResetPassword(""); }}>Mot de passe</button>
+                      <button type="button" className="text-button danger" onClick={() => void toggleActive(user)}>{user.is_active === false ? "Réactiver" : "Désactiver"}</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {users.length === 0 && <EmptyState title="Aucun compte" text="Aucun compte ne correspond à la recherche." />}
+        </section>
+        <section className="card min-w-0">
+          <SectionHeading eyebrow="Envoyées par e-mail, valables 48 h" title="Invitations" />
+          {pendingInvitations.length === 0 ? <EmptyState title="Aucune invitation en cours" text="Les invitations envoyées apparaîtront ici." /> : (
+            <div className="table-scroll">
+              <table className="staff-table min-w-[620px]">
+                <thead><tr><th>Personne</th><th>Rôle</th><th>État</th><th>Expire</th><th /></tr></thead>
+                <tbody>
+                  {pendingInvitations.map((item) => (
+                    <tr key={item.id}>
+                      <td><b>{[item.first_name, item.last_name].filter(Boolean).join(" ") || "—"}</b><br /><span className="text-xs text-slate-500">{item.email}</span></td>
+                      <td>{item.role_display}</td>
+                      <td><StatusBadge tone={item.state === "PENDING" ? "amber" : "grey"}>{item.state_display}</StatusBadge></td>
+                      <td className="whitespace-nowrap">{formatDate(item.expires_at)}</td>
+                      <td className="whitespace-nowrap text-right">
+                        {item.activation_url && <button type="button" className="text-button mr-2" onClick={() => void copyLink(item.activation_url!)}>Copier le lien</button>}
+                        <button type="button" className="text-button" onClick={() => void resend(item)}>Renvoyer</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+        <section className="card min-w-0">
+          <SectionHeading eyebrow="Lecture seule" title="Journal des comptes" />
+          {changes.length === 0 ? <EmptyState title="Aucune action" text="Créations, invitations, rôles et désactivations apparaîtront ici." /> : (
+            <div className="table-scroll">
+              <table className="staff-table min-w-[620px]">
+                <thead><tr><th>Date</th><th>Action</th><th>Compte</th><th>Détail</th><th>Par</th></tr></thead>
+                <tbody>
+                  {changes.map((row) => (
+                    <tr key={row.id}><td className="whitespace-nowrap">{formatDate(row.created_at)}</td><td>{row.action_display}</td><td>{row.target || "—"}</td><td>{row.detail || "—"}</td><td>{row.actor || "—"}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+      <div className="min-w-0 space-y-5 self-start">
+        {resetTarget && (
+          <form onSubmit={submitReset} className="card space-y-4">
+            <SectionHeading eyebrow="Mot de passe" title={`Réinitialiser ${resetTarget.username}`} />
+            <p className="text-sm text-slate-500">Communiquez-le à la personne en main propre. Toutes ses sessions seront fermées.</p>
+            <Input label="Nouveau mot de passe" type="password" value={resetPassword} onChange={setResetPassword} />
+            <button className="primary-button w-full">Enregistrer</button>
+            <button type="button" className="text-button w-full" onClick={() => setResetTarget(null)}>Annuler</button>
+          </form>
+        )}
+        <form onSubmit={sendInvite} className="card space-y-4">
+          <SectionHeading eyebrow="Par e-mail" title="Inviter un membre" />
+          <p className="text-sm text-slate-500">La personne reçoit un lien pour choisir elle-même son mot de passe. Son identifiant sera son e-mail.</p>
+          <Input label="Prénom" value={invite.first_name} onChange={(value) => setInvite({ ...invite, first_name: value })} />
+          <Input label="Nom" value={invite.last_name} onChange={(value) => setInvite({ ...invite, last_name: value })} />
+          <Input label="E-mail" type="email" value={invite.email} onChange={(value) => setInvite({ ...invite, email: value })} />
+          <Select label="Rôle" value={invite.role} onChange={(value) => setInvite({ ...invite, role: value })} options={staffRoles} />
+          <button className="primary-button w-full" disabled={busy}>{busy ? "Envoi…" : "Envoyer l’invitation"}</button>
+          {lastLink && <button type="button" className="secondary-button w-full" onClick={() => void copyLink(lastLink)}>Copier le lien d’activation</button>}
         </form>
-      )}
-      <form onSubmit={submit} className="card space-y-4">
-        <SectionHeading eyebrow="Accès limité" title="Ajouter un membre" />
-        <Input label="Identifiant" value={form.username} onChange={(value) => setForm({ ...form, username: value })} />
-        <Input label="Mot de passe initial" type="password" value={form.password} onChange={(value) => setForm({ ...form, password: value })} />
-        <Input label="Prénom" value={form.first_name} onChange={(value) => setForm({ ...form, first_name: value })} required={false} />
-        <Input label="Nom" value={form.last_name} onChange={(value) => setForm({ ...form, last_name: value })} required={false} />
-        <Input label="Téléphone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} required={false} />
-        <Select label="Rôle" value={form.role} onChange={(value) => setForm({ ...form, role: value })} options={[["COUNTER", "Guichetier"], ["CONTROLLER", "Contrôleur"], ["ADMIN", "Administrateur"], ["CLIENT", "Client"]]} />
-        <button className="primary-button w-full">Créer le compte</button>
-      </form>
+        <form onSubmit={submit} className="card space-y-4">
+          <SectionHeading eyebrow="Sans e-mail" title="Créer un compte" />
+          <Input label="Identifiant" value={form.username} onChange={(value) => setForm({ ...form, username: value })} />
+          <Input label="Mot de passe initial" type="password" value={form.password} onChange={(value) => setForm({ ...form, password: value })} />
+          <Input label="Prénom" value={form.first_name} onChange={(value) => setForm({ ...form, first_name: value })} required={false} />
+          <Input label="Nom" value={form.last_name} onChange={(value) => setForm({ ...form, last_name: value })} required={false} />
+          <Input label="Téléphone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} required={false} />
+          <Select label="Rôle" value={form.role} onChange={(value) => setForm({ ...form, role: value })} options={[...staffRoles, ["CLIENT", "Client"]]} />
+          <button className="primary-button w-full" disabled={busy}>{busy ? "Création…" : "Créer le compte"}</button>
+        </form>
+      </div>
     </div>
   );
 }
