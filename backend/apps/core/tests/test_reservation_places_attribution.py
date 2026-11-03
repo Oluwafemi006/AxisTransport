@@ -36,10 +36,12 @@ class ReservationPlacesAttributionTests(APITestCase):
         SystemSetting.objects.update_or_create(key="ticket_hold_minutes", defaults={"value": "5"})
         self.fedapay = PaymentMethod.objects.create(code="FEDAPAY", label="FedaPay", active=True)
 
+        Location.objects.update(active=True)
         self.parakou = Location.objects.get(name="Parakou")
         self.save_loc = Location.objects.get(name="Savè")
-        self.ketou = Location.objects.get(name="Kétou")
-        self.porto_novo = Location.objects.get(name="Porto-Novo")
+        self.glazoue = Location.objects.get(name="Glazoué")
+        self.dassa = Location.objects.get(name="Dassa")
+        self.bohicon = Location.objects.get(name="Bohicon")
         self.cotonou = Location.objects.get(name="Cotonou")
 
         self.route = Route.objects.create(origin=self.parakou, destination=self.cotonou, active=True)
@@ -47,8 +49,9 @@ class ReservationPlacesAttributionTests(APITestCase):
             [
                 (self.parakou, 0),
                 (self.save_loc, 120),
-                (self.ketou, 210),
-                (self.porto_novo, 300),
+                (self.glazoue, 180),
+                (self.dassa, 210),
+                (self.bohicon, 300),
                 (self.cotonou, 360),
             ],
             start=1,
@@ -386,11 +389,11 @@ class ReservationPlacesAttributionTests(APITestCase):
         self.assertEqual(results[0]["reference"], booking.reference)
         self.assertEqual(results[0]["client_status_display"], "Payée, places indisponibles")
 
-    def test_segment_4500_and_full_trip_7500_prices_unchanged(self):
-        """Aucune régression sur les prix : Parakou -> Savè = 4500 FCFA, Parakou -> Cotonou = 7500 FCFA."""
+    def test_segment_3500_and_full_trip_7500_prices_unchanged(self):
+        """Aucune régression sur les prix : Parakou -> Savè = 3500 FCFA, Parakou -> Cotonou = 7500 FCFA."""
         self.client.force_authenticate(self.client1)
 
-        # Tronçon Parakou -> Savè (2 passagers sans choix de siège = 2 x 4500 = 9000 FCFA)
+        # Tronçon Parakou -> Savè (2 passagers sans choix de siège = 2 x 3500 = 7000 FCFA)
         res_seg = self.client.post(
             CLIENT_BOOKINGS,
             {
@@ -405,9 +408,9 @@ class ReservationPlacesAttributionTests(APITestCase):
             format="json",
         )
         self.assertEqual(res_seg.status_code, 201, res_seg.data)
-        self.assertEqual(Decimal(str(res_seg.data["amount"])), Decimal("9000.00"))
+        self.assertEqual(Decimal(str(res_seg.data["amount"])), Decimal("7000.00"))
         for t in res_seg.data["tickets"]:
-            self.assertEqual(Decimal(str(t["amount"])), Decimal("4500.00"))
+            self.assertEqual(Decimal(str(t["amount"])), Decimal("3500.00"))
 
         # Trajet complet Parakou -> Cotonou (1 passager sans choix de siège = 7500 FCFA)
         res_full = self.client.post(

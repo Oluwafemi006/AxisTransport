@@ -27,12 +27,13 @@ class BoardingPointsTests(APITestCase):
         call_command("load_segment_fares", stdout=StringIO())
         call_command("load_boarding_points", stdout=StringIO())
         SystemSetting.objects.update_or_create(key="ticket_hold_minutes", defaults={"value": 10})
+        Location.objects.filter(name__in=["Parakou", "Savè", "Cotonou"]).update(active=True)
         self.parakou = Location.objects.get(name="Parakou")
         self.save = Location.objects.get(name="Savè")
-        self.save.active = True
-        self.save.save(update_fields=["active"])
-        self.porto = Location.objects.get(name="Porto-Novo")
+        # Ville retirée de la ligne, gardée pour vérifier qu'aucun point ne lui est créé.
+        self.porto = Location.objects.create(name="Porto-Novo", active=False)
         self.cotonou = Location.objects.get(name="Cotonou")
+        self.calavi = BoardingPoint.objects.get(location=self.cotonou, name="Calavi")
 
         self.route = Route.objects.create(
             origin=self.parakou,
@@ -87,15 +88,20 @@ class BoardingPointsTests(APITestCase):
             first_name="Client TEST",
         )
 
-    def test_load_boarding_points_creates_only_parc_albarika_in_parakou_idempotently(self):
+    def test_load_boarding_points_creates_the_axis_points_idempotently(self):
         call_command("load_boarding_points", stdout=StringIO())
-        points = list(BoardingPoint.objects.select_related("location"))
-        self.assertEqual(len(points), 1)
-        self.assertEqual(points[0].location, self.parakou)
-        self.assertEqual(points[0].name, "Parc ALBARIKA")
-        self.assertTrue(points[0].active)
+        points = sorted(BoardingPoint.objects.values_list("location__name", "name", "active", "order"))
+        self.assertEqual(
+            points,
+            [
+                ("Bohicon", "Bohicon", True, 1),
+                ("Cotonou", "Agontikon", True, 2),
+                ("Cotonou", "Calavi", True, 1),
+                ("Parakou", "Parc ALBARIKA", True, 1),
+            ],
+        )
         self.assertEqual(BoardingPoint.objects.filter(location=self.porto).count(), 0)
-        self.assertEqual(BoardingPoint.objects.filter(location=self.cotonou).count(), 0)
+        self.assertEqual(BoardingPoint.objects.filter(location=self.save).count(), 0)
 
     def test_load_boarding_points_does_not_recreate_after_rename_or_deactivation(self):
         point = BoardingPoint.objects.get(location=self.parakou, name="Parc ALBARIKA")
@@ -111,9 +117,10 @@ class BoardingPointsTests(APITestCase):
         self.assertFalse(points[0].active)
         self.assertFalse(BoardingPoint.objects.filter(location=self.parakou, name="Parc ALBARIKA").exists())
 
-    def test_single_point_preselected_zero_point_city_alone_and_full_fare_7500(self):
+    def test_single_point_preselected_cotonou_choice_required_and_full_fare_7500(self):
         seat = self.trip.seats.first()
-        response = self.client.post(
+        # Calavi et Agontikon à Cotonou : le choix du point de débarquement est obligatoire.
+        without_choice = self.client.post(
             "/api/v1/client/bookings/",
             {
                 "trip": self.trip.pk,
@@ -122,19 +129,31 @@ class BoardingPointsTests(APITestCase):
             },
             format="json",
         )
+        self.assertEqual(without_choice.status_code, 400)
+        self.assertIn("Veuillez choisir un point de débarquement pour la ville de Cotonou", str(without_choice.data))
+        response = self.client.post(
+            "/api/v1/client/bookings/",
+            {
+                "trip": self.trip.pk,
+                "alighting_point_id": self.calavi.pk,
+                "contact_phone": "90000001",
+                "passengers": [{"full_name": "Passager TEST", "phone": "90000001", "seat": seat.pk}],
+            },
+            format="json",
+        )
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(Decimal(str(response.data["amount"])), Decimal("7500"))
         self.assertEqual(response.data["boarding_point_name"], "Parc ALBARIKA")
-        self.assertEqual(response.data["alighting_point_name"], "")
+        self.assertEqual(response.data["alighting_point_name"], "Calavi")
         self.assertEqual(response.data["boarding_display"], "Parakou – Parc ALBARIKA")
-        self.assertEqual(response.data["alighting_display"], "Cotonou")
+        self.assertEqual(response.data["alighting_display"], "Cotonou – Calavi")
         ticket_data = response.data["tickets"][0]
         self.assertEqual(ticket_data["boarding_display"], "Parakou – Parc ALBARIKA")
-        self.assertEqual(ticket_data["alighting_display"], "Cotonou")
+        self.assertEqual(ticket_data["alighting_display"], "Cotonou – Calavi")
         self.assertEqual(ticket_data["print_info"]["boarding_display"], "Parakou – Parc ALBARIKA")
-        self.assertEqual(ticket_data["print_info"]["alighting_display"], "Cotonou")
+        self.assertEqual(ticket_data["print_info"]["alighting_display"], "Cotonou – Calavi")
 
-    def test_segment_parakou_save_keeps_4500_fare_and_boarding_point_snapshot_on_rename(self):
+    def test_segment_parakou_save_keeps_3500_fare_and_boarding_point_snapshot_on_rename(self):
         albarika = BoardingPoint.objects.get(location=self.parakou, name="Parc ALBARIKA")
         seat = self.trip.seats.first()
         response = self.client.post(
@@ -150,7 +169,7 @@ class BoardingPointsTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(Decimal(str(response.data["amount"])), Decimal("4500"))
+        self.assertEqual(Decimal(str(response.data["amount"])), Decimal("3500"))
         booking = Booking.objects.get(pk=response.data["id"])
         ticket = booking.tickets.get()
         self.assertEqual(ticket.boarding_point_name, "Parc ALBARIKA")
@@ -272,6 +291,7 @@ class BoardingPointsTests(APITestCase):
                 "passenger_phone": "90000004",
                 "payment_method": self.cash.pk,
                 "boarding_point_id": albarika.pk,
+                "alighting_point_id": self.calavi.pk,
             },
             format="json",
         )

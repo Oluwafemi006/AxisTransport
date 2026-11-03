@@ -29,12 +29,22 @@ from apps.core.services import generate_trip_seats
 
 SEGMENTS = "/api/v1/client/segments/"
 TRIPS = "/api/v1/client/trips/"
-ORDER = ["Parakou", "Savè", "Kétou", "Porto-Novo", "Cotonou"]
+ORDER = ["Parakou", "Savè", "Glazoué", "Dassa", "Bohicon", "Cotonou"]
 GRID = {
-    ("Parakou", "Savè"): 4500, ("Parakou", "Kétou"): 6500, ("Parakou", "Porto-Novo"): 7500, ("Parakou", "Cotonou"): 7500,
-    ("Savè", "Kétou"): 2500, ("Savè", "Porto-Novo"): 6500, ("Savè", "Cotonou"): 6500,
-    ("Kétou", "Porto-Novo"): 4000, ("Kétou", "Cotonou"): 4000, ("Porto-Novo", "Cotonou"): 1500,
+    ("Parakou", "Cotonou"): 7500, ("Parakou", "Bohicon"): 6000, ("Parakou", "Glazoué"): 5000, ("Parakou", "Dassa"): 5000,
+    ("Parakou", "Savè"): 3500, ("Savè", "Cotonou"): 6000, ("Savè", "Bohicon"): 3000, ("Bohicon", "Cotonou"): 3000,
 }
+
+
+def priced_pairs(order):
+    """Paires dans l'ordre du bus qui ont un tarif (le même dans les deux sens) ; les autres ne sont pas vendables."""
+    rows = []
+    for index, first in enumerate(order):
+        for second in order[index + 1:]:
+            amount = GRID.get((first, second), GRID.get((second, first)))
+            if amount is not None:
+                rows.append((first, second, amount))
+    return rows
 
 
 class SegmentsTestCase(APITestCase):
@@ -71,35 +81,37 @@ class SegmentsTestCase(APITestCase):
 
 
 class SegmentCatalogTests(SegmentsTestCase):
-    def test_ten_pairs_in_stop_order_with_their_prices_on_the_way_out(self):
+    def test_priced_pairs_in_stop_order_on_the_way_out(self):
         rows = self.segments()["segments"]
         self.assertEqual(
             [(row["origin"], row["destination"], row["price_fcfa"]) for row in rows],
-            [(first, second, GRID[(first, second)]) for first_i, first in enumerate(ORDER) for second in ORDER[first_i + 1:]],
+            priced_pairs(ORDER),
         )
 
-    def test_ten_pairs_in_stop_order_with_the_same_prices_on_the_way_back(self):
+    def test_priced_pairs_in_stop_order_with_the_same_prices_on_the_way_back(self):
         rows = self.segments("retour")["segments"]
         back = ORDER[::-1]
         self.assertEqual(
             [(row["origin"], row["destination"], row["price_fcfa"]) for row in rows],
-            [(first, second, GRID[(second, first)]) for first_i, first in enumerate(back) for second in back[first_i + 1:]],
+            priced_pairs(back),
         )
 
     def test_pair_without_fare_is_listed_in_missing_fares_only(self):
-        self.drop_fare("Savè", "Kétou")
+        self.drop_fare("Savè", "Bohicon")
         payload = self.segments()
-        self.assertEqual(len(payload["segments"]), 9)
-        self.assertNotIn(("Savè", "Kétou"), [(row["origin"], row["destination"]) for row in payload["segments"]])
-        self.assertEqual(
-            [(row["origin"], row["destination"]) for row in payload["missing_fares"]], [("Savè", "Kétou")]
-        )
+        self.assertEqual(len(payload["segments"]), 7)
+        self.assertNotIn(("Savè", "Bohicon"), [(row["origin"], row["destination"]) for row in payload["segments"]])
+        missing = [(row["origin"], row["destination"]) for row in payload["missing_fares"]]
+        self.assertIn(("Savè", "Bohicon"), missing)
+        # Tronçons sans tarif (validé par le boss) : jamais vendables.
+        for pair in (("Savè", "Glazoué"), ("Savè", "Dassa"), ("Glazoué", "Dassa"), ("Glazoué", "Cotonou"), ("Dassa", "Bohicon")):
+            self.assertIn(pair, missing)
 
     def test_inactive_stop_gives_no_pair(self):
-        Location.objects.filter(name="Kétou").update(active=False)
+        Location.objects.filter(name="Glazoué").update(active=False)
         cache.clear()
         names = {row["origin"] for row in self.segments()["segments"]} | {row["destination"] for row in self.segments()["segments"]}
-        self.assertNotIn("Kétou", names)
+        self.assertNotIn("Glazoué", names)
 
     def test_next_departure_is_the_first_bus_of_this_direction(self):
         self.departure(self.backward, days=1)
@@ -129,7 +141,7 @@ class SegmentCatalogTests(SegmentsTestCase):
 
 class SegmentCacheTests(SegmentsTestCase):
     def test_changing_a_fare_refreshes_the_list(self):
-        self.assertEqual(self.segments()["segments"][0]["price_fcfa"], 4500)
+        self.assertEqual(self.segments()["segments"][0]["price_fcfa"], 3500)
         admin = User.objects.create_user(username="admin-test", password="secret", role=User.Role.ADMIN)
         self.client.force_authenticate(admin)
         fare = SegmentFare.objects.get(start__location__name="Parakou", end__location__name="Savè")
@@ -209,7 +221,7 @@ class MissingFareRefusalTests(SegmentsTestCase):
         admin = User.objects.create_user(username="admin-test", password="secret", role=User.Role.ADMIN)
         self.client.force_authenticate(admin)
         rows = self.client.get("/api/v1/segment-fares/missing/").json()
-        self.assertEqual([(row["origin"], row["destination"]) for row in rows], [("Parakou", "Savè")])
+        self.assertIn(("Parakou", "Savè"), [(row["origin"], row["destination"]) for row in rows])
 
     def test_missing_fares_are_refused_to_a_client(self):
         client = User.objects.create_user(username="client-test", password="secret", role=User.Role.CLIENT)
@@ -255,14 +267,14 @@ class StaffSaleSegmentTests(SegmentsTestCase):
         rows = self.segments_of_trip()
         self.assertEqual(
             [(row["origin"], row["destination"], int(float(row["quotes"][0]["total"]))) for row in rows],
-            [(first, second, GRID[(first, second)]) for first_i, first in enumerate(ORDER) for second in ORDER[first_i + 1:]],
+            priced_pairs(ORDER),
         )
 
     def test_pair_without_fare_is_not_offered(self):
-        self.drop_fare("Savè", "Kétou")
+        self.drop_fare("Savè", "Bohicon")
         names = [(row["origin"], row["destination"]) for row in self.segments_of_trip()]
-        self.assertEqual(len(names), 9)
-        self.assertNotIn(("Savè", "Kétou"), names)
+        self.assertEqual(len(names), 7)
+        self.assertNotIn(("Savè", "Bohicon"), names)
 
     def test_segment_sale_is_charged_at_the_segment_price(self):
         seat = self.trip.seats.order_by("number").first()
@@ -275,18 +287,18 @@ class StaffSaleSegmentTests(SegmentsTestCase):
                 "passenger_name": "TEST",
                 "payment_method": self.cash.pk,
                 "origin": str(self.places["Savè"].pk),
-                "destination": str(self.places["Kétou"].pk),
+                "destination": str(self.places["Bohicon"].pk),
             },
             format="json",
         )
         self.assertIn(response.status_code, (200, 201), response.data)
-        self.assertEqual(Booking.objects.get().amount, 2500)
+        self.assertEqual(Booking.objects.get().amount, 3000)
 
     def test_day_summary_counts_the_sale_of_this_agent(self):
         self.test_segment_sale_is_charged_at_the_segment_price()
         body = self.client.get("/api/v1/staff/sales/summary/").json()
         self.assertEqual(
-            body, {"scanned_tickets": 0, "sold_tickets": 1, "parcels": 0, "cash_fcfa": 2500, "mobile_money_fcfa": 0}
+            body, {"scanned_tickets": 0, "sold_tickets": 1, "parcels": 0, "cash_fcfa": 3000, "mobile_money_fcfa": 0}
         )
         other = User.objects.create_user(username="test-autre", password="secret", role=User.Role.CONTROLLER)
         self.client.force_authenticate(other)
@@ -298,7 +310,7 @@ class StaffSaleSegmentTests(SegmentsTestCase):
         )
 
     def test_intermediate_stop_can_be_skipped_and_final_ends_the_trip(self):
-        self.assertEqual(self.arrive("Kétou").status_code, 200)
+        self.assertEqual(self.arrive("Dassa").status_code, 200)
         self.trip.refresh_from_db()
         self.assertEqual(self.trip.status, Trip.Status.SCHEDULED)
         self.assertEqual(self.arrive("Cotonou").status_code, 200)

@@ -8,7 +8,7 @@ Ticket _ticket(int id, String status) => Ticket(
   reference: 'AX-$id',
   trip: Trip(
     id: 5,
-    route: const RouteInfo(id: 1, label: 'Cotonou → Porto-Novo'),
+    route: const RouteInfo(id: 1, label: 'Cotonou → Bohicon'),
     departureAt: DateTime.utc(2026, 10, 4, 8, 30),
     status: 'SCHEDULED',
     statusDisplay: 'Programmé',
@@ -44,7 +44,7 @@ void main() {
       expect(tickets, hasLength(1));
       expect(tickets.single.id, 2);
       expect(tickets.single.qrToken, 'qr-2');
-      expect(tickets.single.trip.route.label, 'Cotonou → Porto-Novo');
+      expect(tickets.single.trip.route.label, 'Cotonou → Bohicon');
       expect(
         tickets.single.trip.departureAt,
         DateTime.utc(2026, 10, 4, 8, 30).toLocal(),

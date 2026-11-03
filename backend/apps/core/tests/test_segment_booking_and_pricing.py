@@ -27,6 +27,7 @@ from apps.core.models import (
 )
 from apps.core.payments import settle_booking_payment
 from apps.core.services import generate_trip_seats, reserve_booking
+from django.core.exceptions import ValidationError
 
 from .test_payment_security import FEDAPAY_SETTINGS
 
@@ -43,7 +44,7 @@ class SegmentBookingAndPricingTests(APITestCase):
     Tests complets de vente par tronçon :
     - Parakou → Savè = 4 500 FCFA de bout en bout (réservation, montant envoyé à FedaPay, billet)
     - Savè → Cotonou = 6 500 FCFA
-    - Kétou → Porto-Novo = 4 000 FCFA
+    - Dassa → Bohicon = 4 000 FCFA
     - Sens inverse refusé côté serveur (validation du sens du bus)
     - Réservation « trajet complet » existante inchangée
     - Guichet et App (staff sales / tickets)
@@ -54,15 +55,15 @@ class SegmentBookingAndPricingTests(APITestCase):
         # 1. Villes de la ligne
         self.parakou = Location.objects.create(name="Parakou", address="Gare Parakou", active=True)
         self.save = Location.objects.create(name="Savè", address="Carrefour Savè", active=True)
-        self.ketou = Location.objects.create(name="Kétou", address="Gare Kétou", active=True)
-        self.porto = Location.objects.create(name="Porto-Novo", address="Gare Porto-Novo", active=True)
+        self.dassa = Location.objects.create(name="Dassa", address="Gare Dassa", active=True)
+        self.bohicon = Location.objects.create(name="Bohicon", address="Gare Bohicon", active=True)
         self.cotonou = Location.objects.create(name="Cotonou", address="Gare Cotonou", active=True)
 
-        # 2. LineStop (ordre global de la ligne : Parakou 1, Savè 2, Kétou 3, Porto-Novo 4, Cotonou 5)
+        # 2. LineStop (ordre global de la ligne : Parakou 1, Savè 2, Dassa 3, Bohicon 4, Cotonou 5)
         self.ls_parakou = LineStop.objects.create(location=self.parakou, position=1)
         self.ls_save = LineStop.objects.create(location=self.save, position=2)
-        self.ls_ketou = LineStop.objects.create(location=self.ketou, position=3)
-        self.ls_porto = LineStop.objects.create(location=self.porto, position=4)
+        self.ls_dassa = LineStop.objects.create(location=self.dassa, position=3)
+        self.ls_bohicon = LineStop.objects.create(location=self.bohicon, position=4)
         self.ls_cotonou = LineStop.objects.create(location=self.cotonou, position=5)
 
         # 3. Grille tarifaire par tronçon
@@ -74,11 +75,11 @@ class SegmentBookingAndPricingTests(APITestCase):
         _add_fare(self.ls_parakou, self.ls_cotonou, 7500)
         _add_fare(self.ls_parakou, self.ls_save, 4500)
         _add_fare(self.ls_save, self.ls_cotonou, 6500)
-        _add_fare(self.ls_save, self.ls_porto, 6500)
-        _add_fare(self.ls_save, self.ls_ketou, 2500)
-        _add_fare(self.ls_ketou, self.ls_porto, 4000)
-        _add_fare(self.ls_ketou, self.ls_cotonou, 4000)
-        _add_fare(self.ls_porto, self.ls_cotonou, 1500)
+        _add_fare(self.ls_save, self.ls_bohicon, 6500)
+        _add_fare(self.ls_save, self.ls_dassa, 2500)
+        _add_fare(self.ls_dassa, self.ls_bohicon, 4000)
+        _add_fare(self.ls_dassa, self.ls_cotonou, 4000)
+        _add_fare(self.ls_bohicon, self.ls_cotonou, 1500)
 
         # 4. Véhicule et Itinéraire descendant (Parakou → Cotonou)
         self.vehicle = Vehicle.objects.create(
@@ -91,8 +92,8 @@ class SegmentBookingAndPricingTests(APITestCase):
         # Étapes ordonnées RouteStop avec décalage optionnel
         self.rs_parakou = RouteStop.objects.create(route=self.route, location=self.parakou, position=1, offset_minutes=0)
         self.rs_save = RouteStop.objects.create(route=self.route, location=self.save, position=2, offset_minutes=120)  # +2h
-        self.rs_ketou = RouteStop.objects.create(route=self.route, location=self.ketou, position=3, offset_minutes=180)
-        self.rs_porto = RouteStop.objects.create(route=self.route, location=self.porto, position=4, offset_minutes=360)
+        self.rs_dassa = RouteStop.objects.create(route=self.route, location=self.dassa, position=3, offset_minutes=180)
+        self.rs_bohicon = RouteStop.objects.create(route=self.route, location=self.bohicon, position=4, offset_minutes=360)
         self.rs_cotonou = RouteStop.objects.create(route=self.route, location=self.cotonou, position=5, offset_minutes=420)
 
         # Départ demain à 08:00
@@ -217,16 +218,33 @@ class SegmentBookingAndPricingTests(APITestCase):
         self.assertEqual(booking.destination, self.cotonou)
         self.assertEqual(booking.segment_label, "Savè → Cotonou")
 
-    # ── 3. Kétou → Porto-Novo = 4 000 FCFA ──────────────────────────────────
-    def test_ketou_to_porto_pricing_and_booking(self):
-        """Cas Kétou → Porto-Novo = 4 000 FCFA."""
+    def test_inactive_city_refuses_new_sales_and_keeps_issued_tickets(self):
+        """Ville retirée : plus de nouvelle vente vers ou depuis elle ; le billet déjà vendu ne change pas."""
+        booking, _ = reserve_booking(
+            trip=self.trip, passengers=[{"full_name": "TEST Avant", "seat": self.seats[0]}],
+            origin=self.dassa, destination=self.cotonou,
+        )
+        Location.objects.filter(pk=self.dassa.pk).update(active=False)
+        for origin, destination in ((self.dassa, self.cotonou), (self.parakou, self.dassa)):
+            with self.assertRaisesMessage(ValidationError, "Cette ville n'est plus desservie"):
+                reserve_booking(
+                    trip=self.trip, passengers=[{"full_name": "TEST Après", "seat": self.seats[1]}],
+                    origin=origin, destination=destination,
+                )
+        booking.refresh_from_db()
+        self.assertEqual(booking.origin, self.dassa)
+        self.assertEqual(booking.tickets.count(), 1)
+
+    # ── 3. Dassa → Bohicon = 4 000 FCFA ──────────────────────────────────
+    def test_dassa_to_bohicon_pricing_and_booking(self):
+        """Cas Dassa → Bohicon = 4 000 FCFA."""
         seat = self.seats[2]
         book_res = self.client.post(
             CLIENT_BOOKINGS,
             {
                 "trip": self.trip.pk,
-                "origin": self.ketou.pk,
-                "destination": self.porto.pk,
+                "origin": self.dassa.pk,
+                "destination": self.bohicon.pk,
                 "contact_phone": "97000003",
                 "passengers": [{"full_name": "Passager Porto", "phone": "97000003", "seat": seat.pk}],
             },
@@ -235,9 +253,9 @@ class SegmentBookingAndPricingTests(APITestCase):
         self.assertEqual(book_res.status_code, status.HTTP_201_CREATED, book_res.data)
         booking = Booking.objects.get(pk=book_res.data["id"])
         self.assertEqual(booking.amount, Decimal("4000.00"))
-        self.assertEqual(booking.origin, self.ketou)
-        self.assertEqual(booking.destination, self.porto)
-        self.assertEqual(booking.segment_label, "Kétou → Porto-Novo")
+        self.assertEqual(booking.origin, self.dassa)
+        self.assertEqual(booking.destination, self.bohicon)
+        self.assertEqual(booking.segment_label, "Dassa → Bohicon")
 
     # ── 4. Sens inverse refusé côté serveur ─────────────────────────────────
     def test_reverse_direction_is_strictly_rejected(self):

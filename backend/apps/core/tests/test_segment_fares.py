@@ -26,10 +26,9 @@ from apps.core.services import generate_trip_seats, reserve_booking, resolve_far
 FARES = "/api/v1/segment-fares/"
 CHANGES = "/api/v1/segment-fare-changes/"
 EXPECTED = {
-    ("Parakou", "Cotonou"): 7500, ("Parakou", "Porto-Novo"): 7500, ("Parakou", "Kétou"): 6500,
-    ("Parakou", "Savè"): 4500, ("Savè", "Cotonou"): 6500, ("Savè", "Porto-Novo"): 6500,
-    ("Savè", "Kétou"): 2500, ("Kétou", "Porto-Novo"): 4000, ("Kétou", "Cotonou"): 4000,
-    ("Porto-Novo", "Cotonou"): 1500,
+    ("Parakou", "Cotonou"): 7500, ("Parakou", "Bohicon"): 6000, ("Parakou", "Glazoué"): 5000,
+    ("Parakou", "Dassa"): 5000, ("Parakou", "Savè"): 3500, ("Savè", "Cotonou"): 6000,
+    ("Savè", "Bohicon"): 3000, ("Bohicon", "Cotonou"): 3000,
 }
 
 
@@ -42,17 +41,17 @@ def place(name):
 
 
 class SegmentFareLoadingTests(APITestCase):
-    def test_loads_five_stops_in_line_order_and_ten_fares(self):
+    def test_loads_six_stops_in_line_order_and_eight_fares(self):
         load()
         self.assertEqual(
             [stop.location.name for stop in LineStop.objects.select_related("location")],
-            ["Parakou", "Savè", "Kétou", "Porto-Novo", "Cotonou"],
+            ["Parakou", "Savè", "Glazoué", "Dassa", "Bohicon", "Cotonou"],
         )
-        self.assertEqual(SegmentFare.objects.count(), 10)
+        self.assertEqual(SegmentFare.objects.count(), 8)
         for (a, b), amount in EXPECTED.items():
             self.assertEqual(resolve_segment_fare(place(a), place(b)).amount, amount, (a, b))
             self.assertEqual(resolve_segment_fare(place(b), place(a)).amount, amount, (b, a))  # même prix au retour
-        self.assertEqual(SegmentFareChange.objects.filter(changed_by__isnull=True, old_amount__isnull=True).count(), 10)
+        self.assertEqual(SegmentFareChange.objects.filter(changed_by__isnull=True, old_amount__isnull=True).count(), 8)
 
     def test_existing_data_is_untouched_and_no_account_is_created(self):
         parakou = Location.objects.create(name="Parakou", address="Okédama", active=True)
@@ -66,7 +65,7 @@ class SegmentFareLoadingTests(APITestCase):
         payload = self.client.get("/api/v1/client/locations/").json()
         names = [item["name"] for item in (payload["results"] if isinstance(payload, dict) else payload)]
         self.assertNotIn("Savè", names)
-        self.assertNotIn("Kétou", names)
+        self.assertNotIn("Glazoué", names)
 
     def test_reloading_never_overwrites_a_modified_price(self):
         load()
@@ -75,15 +74,15 @@ class SegmentFareLoadingTests(APITestCase):
         load()
         fare.refresh_from_db()
         self.assertEqual(fare.amount, 5000)
-        self.assertEqual(SegmentFare.objects.count(), 10)
+        self.assertEqual(SegmentFare.objects.count(), 8)
 
     def test_pair_without_price_is_not_sellable(self):
         load()
-        pair = SegmentFare.objects.filter(start__location__name="Savè", end__location__name="Kétou")
+        pair = SegmentFare.objects.filter(start__location__name="Savè", end__location__name="Bohicon")
         SegmentFareChange.objects.filter(fare__in=pair).delete()
         pair.delete()
         with self.assertRaises(ImproperlyConfigured):
-            resolve_segment_fare(place("Kétou"), place("Savè"))
+            resolve_segment_fare(place("Bohicon"), place("Savè"))
         other = Location.objects.create(name="Ville hors ligne")
         with self.assertRaises(ImproperlyConfigured):
             resolve_segment_fare(place("Parakou"), other)
@@ -99,11 +98,11 @@ class SegmentFareAdminApiTests(APITestCase):
         self.url = f"{FARES}{self.fare.pk}/"
         self.client.force_authenticate(self.admin)
 
-    def test_admin_lists_the_ten_pairs_in_line_order(self):
+    def test_admin_lists_the_eight_pairs_in_line_order(self):
         rows = self.client.get(FARES).json()
-        self.assertEqual(len(rows), 10)
+        self.assertEqual(len(rows), 8)
         self.assertEqual(rows[0]["label"], "Parakou ↔ Savè")
-        self.assertEqual(rows[0]["amount"], 4500)
+        self.assertEqual(rows[0]["amount"], 3500)
         positions = [(row["start_position"], row["end_position"]) for row in rows]
         self.assertEqual(positions, sorted(positions))
 
@@ -121,7 +120,7 @@ class SegmentFareAdminApiTests(APITestCase):
         self.assertEqual(self.client.get(FARES).status_code, 401)
         self.assertEqual(self.client.get(CHANGES).status_code, 401)
         self.fare.refresh_from_db()
-        self.assertEqual(self.fare.amount, 4500)
+        self.assertEqual(self.fare.amount, 3500)
 
     def test_change_is_visible_at_once_and_logged(self):
         response = self.client.patch(self.url, {"amount": "5 000"}, format="json")
@@ -135,11 +134,11 @@ class SegmentFareAdminApiTests(APITestCase):
         entry = self.client.get(CHANGES).json()["results"][0]
         self.assertEqual(
             (entry["label"], entry["old_amount"], entry["new_amount"], entry["changed_by_name"]),
-            ("Parakou ↔ Savè", 4500, 5000, "Adèle"),
+            ("Parakou ↔ Savè", 3500, 5000, "Adèle"),
         )
 
     def test_same_price_is_not_logged(self):
-        response = self.client.patch(self.url, {"amount": 4500}, format="json")
+        response = self.client.patch(self.url, {"amount": 3500}, format="json")
         self.assertEqual((response.status_code, response.data["changed"]), (200, False))
         self.assertEqual(SegmentFareChange.objects.filter(changed_by=self.admin).count(), 0)
 
@@ -149,7 +148,7 @@ class SegmentFareAdminApiTests(APITestCase):
             self.assertEqual(response.status_code, 400, value)
             self.assertIn("amount", response.data)
         self.fare.refresh_from_db()
-        self.assertEqual(self.fare.amount, 4500)
+        self.assertEqual(self.fare.amount, 3500)
         self.assertEqual(SegmentFareChange.objects.filter(changed_by=self.admin).count(), 0)
 
     def test_only_the_price_can_change_and_pairs_cannot_be_created_or_deleted(self):
@@ -158,7 +157,7 @@ class SegmentFareAdminApiTests(APITestCase):
         self.assertEqual(self.client.post(FARES, {"amount": 1000}, format="json").status_code, 405)
         self.assertEqual(self.client.delete(self.url).status_code, 405)
         self.assertEqual(self.client.post(CHANGES, {}, format="json").status_code, 405)
-        self.assertEqual(SegmentFare.objects.count(), 10)
+        self.assertEqual(SegmentFare.objects.count(), 8)
 
 
 class FullTripPricedByGridTests(APITestCase):
@@ -166,6 +165,8 @@ class FullTripPricedByGridTests(APITestCase):
 
     def setUp(self):
         load()
+        # Les terminus sont actifs en service (créés par bootstrap_axis) ; la grille seule les crée inactifs.
+        Location.objects.filter(name__in=["Parakou", "Cotonou"]).update(active=True)
         parakou, cotonou = place("Parakou"), place("Cotonou")
         route = Route.objects.create(origin=parakou, destination=cotonou)
         FareRule.objects.create(route=route, name="Standard", amount=Decimal("5000"))  # ignorée pour le prix

@@ -172,29 +172,63 @@ Pour appeler ce backend depuis le site Vercel (hors du but de cet essai) : ajout
 - **Incidents dans le portail** : onglet « Incidents de paiement » de `/admin` (administrateur seulement), en lecture seule avec une case « traité ».
 - La documentation FedaPay ne publie aucune limite de débit pour son API. Le rattrapage se borne lui-même : au plus `AXIS_PAYMENT_RECONCILE_BATCH` appels par passage, relectures espacées (chaque passage pendant 30 min, puis toutes les 10 min jusqu'à 2 h, puis chaque heure), arrêt du passage dès une réponse 429 ou 5xx.
 
-## 2 ter. Tarifs par tronçon (validée par la direction, transmise par Eddy)
+## 2 ter. Axe et tarifs par tronçon (validés par le boss, transmis par Eddy)
 
-Ligne, dans l'ordre : Parakou, Savè, Kétou, Porto-Novo, Cotonou. Un prix par paire d'arrêts, le même dans les deux sens.
-Ces dix prix sont la grille **validée par la direction (transmise par Eddy)** :
+Ligne, de Parakou vers Cotonou : **Parakou, Savè, Glazoué, Dassa, Bohicon, Cotonou** ; le retour suit l'ordre inverse. L'ordre de Savè, Glazoué et Dassa vient de Google et doit encore être confirmé par le boss. Un prix par paire d'arrêts, le même dans les deux sens :
 
 | Tronçon | Prix (FCFA) |
 |---|---|
 | Parakou ↔ Cotonou | 7 500 |
-| Parakou ↔ Porto-Novo | 7 500 |
-| Parakou ↔ Kétou | 6 500 |
-| Parakou ↔ Savè | 4 500 |
-| Savè ↔ Cotonou | 6 500 |
-| Savè ↔ Porto-Novo | 6 500 |
-| Savè ↔ Kétou | 2 500 |
-| Kétou ↔ Porto-Novo | 4 000 |
-| Kétou ↔ Cotonou | 4 000 |
-| Porto-Novo ↔ Cotonou | 1 500 |
+| Parakou ↔ Bohicon | 6 000 |
+| Parakou ↔ Glazoué | 5 000 |
+| Parakou ↔ Dassa | 5 000 |
+| Parakou ↔ Savè | 3 500 |
+| Savè ↔ Cotonou | 6 000 |
+| Savè ↔ Bohicon | 3 000 |
+| Bohicon ↔ Cotonou | 3 000 |
 
-- Chargement : commande `python manage.py load_segment_fares`, aussi lancée par `bootstrap_axis` à chaque démarrage. Elle n'ajoute que ce qui manque : un prix déjà présent (modifié par l'administrateur) n'est jamais écrasé. Les arrêts Savè, Kétou et Porto-Novo, s'ils n'existent pas, sont créés **inactifs** (invisibles des clients). Aucun compte n'est créé.
-- Modification : portail `/admin`, onglet « Tarifs par tronçon » (administrateur uniquement), avec confirmation et historique (qui, quand, ancien et nouveau prix).
-- **Prix de vente du trajet complet** (lot 2) : un départ se vend au prix du tronçon entre le départ et l'arrivée de son parcours (Parakou ↔ Cotonou : 7 500). La règle tarifaire du parcours (« Tarifs & règles ») ne fixe plus le prix ; elle reste enregistrée. Un parcours sans prix dans la grille n'est pas vendable. La vente d'un tronçon intermédiaire n'est pas ouverte (places par tronçon : étape 3).
-- Les arrêts Savè, Kétou et Porto-Novo restent **inactifs** : absents des listes de villes lues par le site et les apps, jusqu'à ce que l'administrateur les active.
-- Une réservation ou un billet garde le prix enregistré au moment de la vente, même si la grille change ensuite.
+- **Aucun autre tronçon n'a de tarif** (Savè–Glazoué, Savè–Dassa, Glazoué–Dassa, départs depuis Glazoué ou Dassa…) : il n'est ni affiché ni vendable, et figure dans la liste « tronçons sans tarif » de l'admin.
+- Points d'embarquement : Parakou « Parc ALBARIKA », Bohicon « Bohicon », Cotonou « Calavi » et « Agontikon » (choix obligatoire, à la montée comme à la descente). Savè, Glazoué et Dassa : aucun point connu.
+- **Kétou et Porto-Novo** sont retirées : villes désactivées, arrêts retirés des parcours, rangs repoussés hors de la ligne (au-delà de 100). Leurs tarifs, billets, réservations et colis sont conservés. Le serveur refuse toute **nouvelle** vente vers ou depuis une ville inactive ; un billet déjà émis ne change pas.
+- Source unique dans le code : `backend/apps/core/axis.py` (arrêts, tarifs, points).
+- Modification d'un prix : portail `/admin`, onglet « Tarifs par tronçon », avec historique (qui, quand, ancien et nouveau prix).
+- Une réservation ou un billet garde le prix enregistré au moment de la vente.
+- Sièges : toujours bloqués pour tout le voyage (un siège vendu sur un tronçon n'est pas revendu au-delà de l'arrêt de descente).
+
+### Démarrage : ce qui est réécrit ou non
+
+- `bootstrap_axis` (à chaque démarrage) appelle `load_segment_fares`, `init_weekly_schedule` et `load_boarding_points`. Aucune ne réécrit ce qui existe :
+  - `load_segment_fares` n'ajoute que les tarifs manquants. Sur une base encore à l'**ancien axe**, elle s'arrête avec un avertissement (« lancez apply_axis ») sans empêcher le démarrage du backend.
+  - `init_weekly_schedule` crée les parcours et leurs arrêts seulement s'ils n'existent pas, et seulement les jours de planning absents : **un horaire ou un jour saisi dans l'admin n'est jamais réécrit**. Aucune heure aux escales (`offset_minutes` vides).
+  - `load_boarding_points` crée les points de l'axe uniquement pour une ville qui n'a **aucun** point (actif ou non) : un point renommé, désactivé ou supprimé dans l'admin n'est jamais recréé.
+- Le passage d'une base existante au nouvel axe se fait **uniquement** par les deux commandes ci-dessous, jamais au démarrage.
+
+### Mise en production du nouvel axe (une seule fois, sur le VPS, dans `~/axis`)
+
+```bash
+# 0. Sauvegarde de la base avant toute modification
+./deploy/backup.sh
+
+# 1. Code à jour, image reconstruite, migrations et démarrage
+git pull
+docker compose --env-file .env.vps -f compose.vps.yaml up -d --build
+docker compose --env-file .env.vps -f compose.vps.yaml exec backend python manage.py showmigrations core
+
+# 2. Axe : villes, ordre de la ligne et des deux parcours, Kétou et Porto-Novo désactivées
+docker compose --env-file .env.vps -f compose.vps.yaml exec backend python manage.py apply_axis
+
+# 3. Tarifs : met à jour Parakou–Savè (4 500 → 3 500) et Savè–Cotonou (6 500 → 6 000), crée les 5 manquants,
+#    affiche ancien et nouveau prix, ne touche à aucun autre tarif
+docker compose --env-file .env.vps -f compose.vps.yaml exec backend python manage.py apply_axis_fares
+
+# 4. Points d'embarquement (Bohicon, Calavi, Agontikon ; Parakou déjà équipé reste inchangé)
+docker compose --env-file .env.vps -f compose.vps.yaml exec backend python manage.py load_boarding_points
+```
+
+- `apply_axis` et `apply_axis_fares` peuvent être relancées sans effet (« inchangé »).
+- Au démarrage qui précède l'étape 2, le journal du backend affiche « Grille des tronçons non chargée… lancez apply_axis » : c'est attendu.
+- Vérification : onglet « Tarifs par tronçon » (8 tarifs de l'axe), onglet « Points d'embarquement », recherche Parakou → Bohicon sur le site.
+- Ne jamais lancer `docker compose up -d` sans `--env-file .env.vps -f compose.vps.yaml` sur le VPS : la commande lirait `compose.yaml`, prévu pour le poste de développement.
 
 ### Montant payé par le client (décision de la direction, lot 2)
 
@@ -607,7 +641,7 @@ Limites : la sauvegarde reste sur le même serveur (une copie hors du serveur es
 ### 5.7 Aucune donnée de démonstration ; compte administrateur réel
 
 - Ne jamais lancer `seed_demo` sur le serveur. La commande refuse de tourner si `DJANGO_DEBUG` n'est pas `true` **ou** si `AXIS_ENVIRONMENT` ne vaut pas `local` ; `compose.vps.yaml` fixe le debug à `false` et ne définit pas `AXIS_ENVIRONMENT`. Ne jamais ajouter `AXIS_ENVIRONMENT` dans `.env.vps`.
-- Au premier démarrage, `bootstrap_axis` crée seulement : les lieux Cotonou et Parakou, leurs deux itinéraires, le véhicule « Yutong » sans capacité, le moyen de paiement FedaPay sans frais client, des réglages vides, les arrêts de la ligne et la grille des 10 prix par tronçon (section 2 ter ; Savè, Kétou et Porto-Novo créés inactifs). Aucun compte de démonstration, aucun départ.
+- Au premier démarrage, `bootstrap_axis` crée seulement : les lieux Cotonou et Parakou, leurs deux itinéraires, le véhicule « Yutong » sans capacité, le moyen de paiement FedaPay sans frais client, des réglages vides, les arrêts de la ligne et les 8 prix par tronçon (section 2 ter ; Savè, Glazoué, Dassa et Bohicon créés inactifs, à activer avec `apply_axis`). Aucun compte de démonstration, aucun départ.
 - Le compte administrateur réel se crée sur place avec `create_admin` (5.0, étape 5) : mot de passe saisi masqué, jamais écrit dans un fichier. Laisser `AXIS_ADMIN_USERNAME` et `AXIS_ADMIN_PASSWORD` vides. (Ces variables restent possibles, mais elles obligent à écrire le mot de passe dans `.env.vps` puis à l'en retirer.)
 - Ne pas utiliser `createsuperuser` : le compte serait créé avec le rôle « Client » et refusé par le portail `/admin`.
 - À saisir ensuite dans le portail `/admin` avant toute vente : capacité du véhicule, départs, durée de blocage d'un siège (`ticket_hold_minutes`), téléphone et WhatsApp de contact.
@@ -750,7 +784,7 @@ Un tronçon sans tarif renvoie désormais une erreur 400 `segment_fare_missing`,
 
 But : sur le serveur fraîchement installé (5.0 terminé, `FEDAPAY_ENVIRONMENT=sandbox`), obtenir un départ réservable et payer un billet en mode test. **Aucune donnée de démonstration** : `seed_demo` n'est ni nécessaire ni autorisé (il refuse de tourner sur le serveur). Tout se crée dans le portail `https://axistransportlogistique.com/admin`, avec le compte administrateur de l'étape 10.
 
-**Ce qui existe déjà après le premier démarrage** : les villes Cotonou et Parakou (actives), les parcours Parakou → Cotonou et Cotonou → Parakou, le car « Yutong » sans capacité, la grille des 10 prix (Parakou ↔ Cotonou : 7 500 FCFA), le moyen de paiement FedaPay, la TVA 18 % incluse. Savè, Kétou et Porto-Novo restent **inactives** : ne pas les activer (la vente par tronçon n'est pas ouverte).
+**Ce qui existe déjà après le premier démarrage** : les villes Cotonou et Parakou (actives), les parcours Parakou → Cotonou et Cotonou → Parakou, le car « Yutong » sans capacité, les 8 prix par tronçon (Parakou ↔ Cotonou : 7 500 FCFA), le moyen de paiement FedaPay, la TVA 18 % incluse. Savè, Glazoué, Dassa et Bohicon sont créées inactives : `apply_axis` les active (section 2 ter).
 
 **À créer dans `/admin`** (valeurs réelles décidées par l'agence ; rien n'est proposé ici) :
 

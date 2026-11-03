@@ -590,12 +590,12 @@ void main() {
           'origin_id': 3,
           'origin': 'Savè',
           'destination_id': 4,
-          'destination': 'Kétou',
+          'destination': 'Dassa',
           'quotes': [_quote(1, 'Espèces', 2500)],
         },
       ],
     });
-    expect(choices.single.label, 'Savè → Kétou');
+    expect(choices.single.label, 'Savè → Dassa');
     expect(choices.single.quotes.single.total, 2500);
     expect(choices.single.originId, 3);
   });

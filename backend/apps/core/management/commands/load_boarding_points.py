@@ -1,27 +1,27 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from apps.core.axis import AXIS_BOARDING_POINTS
 from apps.core.models import BoardingPoint, Location
 
 
 class Command(BaseCommand):
     help = (
-        "Crée de façon idempotente le point d'embarquement « Parc ALBARIKA » à Parakou "
-        "uniquement si Parakou n'a encore aucun point d'arrêt (actif ou non). "
-        "Ne crée aucun point pour Porto-Novo ni pour les autres villes."
+        "Crée les points d'embarquement de l'axe (Parakou : Parc ALBARIKA ; Bohicon : Bohicon ; "
+        "Cotonou : Calavi et Agontikon), uniquement pour une ville qui n'a encore AUCUN point (actif ou non). "
+        "Une ville modifiée dans l'admin n'est jamais complétée ni recréée. Ne crée aucune ville."
     )
 
     @transaction.atomic
     def handle(self, *args, **options):
-        parakou, _ = Location.objects.get_or_create(name="Parakou")
-        if BoardingPoint.objects.filter(location=parakou).exists():
-            self.stdout.write("Parakou possède déjà au moins un point d'embarquement (inchangé).")
-            return
-        point = BoardingPoint.objects.create(
-            location=parakou,
-            name="Parc ALBARIKA",
-            active=True,
-            order=1,
-        )
-        self.stdout.write(f"Point d'embarquement {point} (créé).")
-
+        for city, names in AXIS_BOARDING_POINTS.items():
+            place = Location.objects.filter(name=city).first()
+            if place is None:
+                self.stdout.write(f"{city} : ville absente, aucun point créé.")
+                continue
+            if BoardingPoint.objects.filter(location=place).exists():
+                self.stdout.write(f"{city} : possède déjà au moins un point (inchangé).")
+                continue
+            for order, name in enumerate(names, start=1):
+                BoardingPoint.objects.create(location=place, name=name, active=True, order=order)
+            self.stdout.write(f"{city} : {', '.join(names)} (créés).")
