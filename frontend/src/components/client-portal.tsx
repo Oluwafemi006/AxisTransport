@@ -118,7 +118,7 @@ export function ClientPortal() {
   useEffect(() => {
     let cancelled = false;
     setSegmentsState("loading");
-    apiFetch<{ segments: SegmentOffer[] }>(`/client/segments/?direction=${segmentDirection}`, {}, false)
+    apiFetch<{ segments: SegmentOffer[] }>(`/client/segments/?direction=${segmentDirection}&scope=all`, {}, false)
       .then((payload) => { if (!cancelled) { setSegments(payload.segments || []); setSegmentsState("ready"); } })
       .catch(() => { if (!cancelled) { setSegments([]); setSegmentsState("error"); } });
     return () => { cancelled = true; };
@@ -351,7 +351,10 @@ export function ClientPortal() {
                             <strong style={{ fontSize: '18px', color: 'var(--ink)' }}>{segment.origin} → {segment.destination}</strong>
                             <strong style={{ fontSize: '18px', color: 'var(--navy)', whiteSpace: 'nowrap' }}>{money(segment.price_fcfa)}</strong>
                           </span>
-                          <span style={{ display: 'block', marginTop: '6px', color: 'var(--mute)', fontSize: '14px' }}>{segmentDepartureLabel(segment)}</span>
+                          <span style={{ display: 'block', marginTop: '6px', color: 'var(--mute)', fontSize: '14px' }}>
+                            {/* Montée intermédiaire : pas d'heure de passage connue, vente à bord seulement. */}
+                            {segment.online_boarding === false ? "Montée à bord, auprès du contrôleur" : segmentDepartureLabel(segment)}
+                          </span>
                         </button>
                       ))}
                     </div>
