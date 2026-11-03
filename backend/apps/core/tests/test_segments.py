@@ -426,3 +426,21 @@ class OnlineBoardingTests(SegmentsTestCase):
         )
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn("se fait à bord", str(response.data))
+
+    def test_scope_all_lists_every_priced_pair_and_flags_onboard_boarding(self):
+        rows = self.client.get(SEGMENTS, {"direction": "aller", "scope": "all"}).json()["segments"]
+        self.assertEqual([(r["origin"], r["destination"], r["price_fcfa"]) for r in rows], priced_pairs(ORDER))
+        flags = {(r["origin"], r["destination"]): r["online_boarding"] for r in rows}
+        self.assertTrue(flags[("Parakou", "Bohicon")])
+        self.assertFalse(flags[("Savè", "Cotonou")])
+        self.assertFalse(flags[("Bohicon", "Cotonou")])
+        # Sans le paramètre (accueil, app publiée) : inchangé.
+        self.assertEqual({r["origin"] for r in self.segments()["segments"]}, {"Parakou"})
+
+    def test_a_fare_change_refreshes_both_lists(self):
+        self.client.get(SEGMENTS, {"direction": "aller", "scope": "all"})
+        fare = SegmentFare.objects.get(start__location__name="Parakou", end__location__name="Savè")
+        fare.amount = 3600
+        fare.save()
+        rows = self.client.get(SEGMENTS, {"direction": "aller", "scope": "all"}).json()["segments"]
+        self.assertEqual(rows[0]["price_fcfa"], 3600)

@@ -239,10 +239,13 @@ class ClientSegmentView(APIView):
         direction = request.query_params.get("direction", SEGMENT_DIRECTION_FORWARD)
         if direction not in SEGMENT_DIRECTIONS:
             raise ValidationError({"direction": "Sens attendu : aller ou retour."})
-        key = segment_cache_key(direction)
+        # « scope=all » (page de réservation du site) : tous les tronçons avec tarif, montée intermédiaire signalée.
+        # Sans ce paramètre (accueil, app publiée) : montées au terminus seulement.
+        scope_all = request.query_params.get("scope") == "all"
+        key = segment_cache_key(direction) + (":all" if scope_all else "")
         payload = cache.get(key)
         if payload is None:
-            payload = segment_catalog(direction, online=True)
+            payload = segment_catalog(direction, online=not scope_all)
             cache.set(key, payload, SEGMENT_CACHE_SECONDS)
         return Response(payload)
 

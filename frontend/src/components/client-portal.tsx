@@ -607,6 +607,61 @@ function Tickets({
   const [tripId, setTripId] = useState(preselectedTripId || "");
   const [originId, setOriginId] = useState(searchOrigin || "");
   const [destinationId, setDestinationId] = useState(searchDestination || "");
+  // Tronçons de la page de réservation : tous ceux qui ont un tarif (scope=all), montée intermédiaire signalée.
+  const [routeDirection, setRouteDirection] = useState<SegmentDirection>("aller");
+  const [routeSegments, setRouteSegments] = useState<SegmentOffer[]>([]);
+  const [segmentKey, setSegmentKey] = useState("");
+  const [segmentTrips, setSegmentTrips] = useState<Trip[]>([]);
+  const [segmentTripsLoading, setSegmentTripsLoading] = useState(false);
+  const flippedForPreselection = useRef(false);
+  const keyOf = (segment: SegmentOffer) => `${segment.origin_id}-${segment.destination_id}`;
+  const chosenSegment = routeSegments.find((segment) => keyOf(segment) === segmentKey) || null;
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<{ segments: SegmentOffer[] }>(`/client/segments/?direction=${routeDirection}&scope=all`, {}, false)
+      .then((payload) => { if (!cancelled) setRouteSegments(payload.segments || []); })
+      .catch(() => { if (!cancelled) setRouteSegments([]); });
+    return () => { cancelled = true; };
+  }, [routeDirection]);
+
+  // Choix d'un tronçon : ses départs viennent du serveur ; une montée intermédiaire ne se vend pas en ligne.
+  function chooseSegment(key: string) {
+    setSegmentKey(key);
+    setTripId("");
+    setSegmentTrips([]);
+    const segment = routeSegments.find((item) => keyOf(item) === key);
+    if (!segment) return;
+    setOriginId(String(segment.origin_id));
+    setDestinationId(String(segment.destination_id));
+    if (!segment.online_boarding) return;
+    setSegmentTripsLoading(true);
+    const query = new URLSearchParams({ origin: String(segment.origin_id), destination: String(segment.destination_id) });
+    apiFetch<Trip[] | { results: Trip[] }>(`/client/trips/?${query.toString()}`, {}, false)
+      .then((payload) => setSegmentTrips(Array.isArray(payload) ? payload : payload.results || []))
+      .catch(() => setSegmentTrips([]))
+      .finally(() => setSegmentTripsLoading(false));
+  }
+
+  // Arrivée depuis l'accueil (départ déjà choisi) : le tronçon et la date correspondants sont présélectionnés.
+  useEffect(() => {
+    if (!preselectedTripId || segmentKey || routeSegments.length === 0) return;
+    const trip = trips.find((item) => String(item.id) === preselectedTripId);
+    if (!trip) return;
+    const origin = searchOrigin || String(trip.route_detail.origin);
+    const destination = searchDestination || String(trip.route_detail.destination);
+    const segment = routeSegments.find((item) => String(item.origin_id) === origin && String(item.destination_id) === destination);
+    if (segment) {
+      chooseSegment(keyOf(segment));
+      setTripId(preselectedTripId);
+    } else if (!flippedForPreselection.current) {
+      // Le départ choisi est dans l'autre sens : on bascule une seule fois.
+      flippedForPreselection.current = true;
+      setRouteDirection((current) => (current === "aller" ? "retour" : "aller"));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preselectedTripId, routeSegments]);
+
   const [boardingPointId, setBoardingPointId] = useState("");
   const [alightingPointId, setAlightingPointId] = useState("");
 
@@ -644,7 +699,7 @@ function Tickets({
   const locked = useRef(false);
   const [now, setNow] = useState(() => Date.now());
   const [message, setMessage] = useState("");
-  const selectedTrip = trips.find((trip) => String(trip.id) === tripId);
+  const selectedTrip = segmentTrips.find((trip) => String(trip.id) === tripId) || trips.find((trip) => String(trip.id) === tripId);
   const effectiveOriginId = originId || searchOrigin || (selectedTrip ? String(selectedTrip.route_detail.origin) : "");
   const effectiveDestId = destinationId || searchDestination || (selectedTrip ? String(selectedTrip.route_detail.destination) : "");
 
@@ -1082,70 +1137,60 @@ function Tickets({
         <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
         {trips.length === 0 ? <p>Aucun trajet disponible.</p> : (
           <form onSubmit={singleQuote ? payNow : reserveOnly} className="f">
-            <label style={{ marginTop: '10px' }}>Voyage</label>
-            <select
-              value={tripId}
-              onChange={(e) => {
-                const newId = e.target.value;
-                setTripId(newId);
-                setPassengers([
-                  { seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" },
-                ]);
-                const found = trips.find((t) => String(t.id) === newId);
-                const stops = found?.route_detail?.stops || [];
-                if (stops.length >= 2) {
-                  setOriginId(String(stops[0].id));
-                  setDestinationId(String(stops[stops.length - 1].id));
-                } else if (found) {
-                  setOriginId(String(found.route_detail.origin));
-                  setDestinationId(String(found.route_detail.destination));
-                }
-              }}
-              required
-            >
-              <option value="">Choisir un départ</option>
-              {trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.route_detail.label} — {formatDate(trip.departure_at)}</option>)}
+            {/* Comme l'app : sens, puis tronçon avec son prix, puis date du départ. */}
+            <label style={{ marginTop: '10px' }}>Sens</label>
+            <div role="tablist" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {([["aller", "Parakou → Cotonou"], ["retour", "Cotonou → Parakou"]] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  aria-selected={routeDirection === value}
+                  onClick={() => { setRouteDirection(value); chooseSegment(""); }}
+                  style={{ padding: '10px 16px', borderRadius: '12px', fontWeight: 700, cursor: 'pointer', border: routeDirection === value ? '1px solid var(--ink)' : '1px solid var(--line)', background: routeDirection === value ? 'var(--ink)' : '#fff', color: routeDirection === value ? '#fff' : 'var(--ink)' }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <label style={{ marginTop: '10px' }}>Trajet</label>
+            <select value={segmentKey} onChange={(e) => chooseSegment(e.target.value)} required>
+              <option value="">{routeSegments.length ? "Choisir un trajet" : "Chargement des trajets…"}</option>
+              {routeSegments.map((segment) => (
+                <option key={keyOf(segment)} value={keyOf(segment)}>
+                  {segment.origin} → {segment.destination} — {money(segment.price_fcfa)}
+                </option>
+              ))}
             </select>
 
-            {selectedTrip?.route_detail?.stops && selectedTrip.route_detail.stops.length > 2 && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
-                <div>
-                  <label style={{ fontSize: '13px' }}>Arrêt de montée</label>
+            {chosenSegment && !chosenSegment.online_boarding && (
+              <p role="status" style={{ marginTop: '10px', padding: '12px 14px', borderRadius: '12px', background: 'var(--warnbg)', color: 'var(--warn)', fontWeight: 600 }}>
+                {chosenSegment.origin} → {chosenSegment.destination} : {money(chosenSegment.price_fcfa)}. Montée à bord, auprès du contrôleur.
+              </p>
+            )}
+
+            {chosenSegment?.online_boarding && (
+              <>
+                <label style={{ marginTop: '10px' }}>Date du départ</label>
+                {segmentTripsLoading ? (
+                  <p style={{ color: 'var(--mute)' }}>Recherche des départs…</p>
+                ) : segmentTrips.length === 0 ? (
+                  <p style={{ color: 'var(--mute)' }}>Aucun départ programmé pour ce trajet.</p>
+                ) : (
                   <select
-                    value={originId}
+                    value={tripId}
                     onChange={(e) => {
-                      const val = e.target.value;
-                      setOriginId(val);
-                      const stops = selectedTrip.route_detail.stops || [];
-                      const origIdx = stops.findIndex((s) => String(s.id) === val);
-                      const destIdx = stops.findIndex((s) => String(s.id) === destinationId);
-                      if (destIdx <= origIdx && origIdx < stops.length - 1) {
-                        setDestinationId(String(stops[origIdx + 1].id));
-                      }
+                      setTripId(e.target.value);
+                      setPassengers([{ seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" }]);
                     }}
+                    required
                   >
-                    {selectedTrip.route_detail.stops.slice(0, -1).map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
+                    <option value="">Choisir une date</option>
+                    {segmentTrips.map((trip) => <option key={trip.id} value={trip.id}>{formatDate(trip.departure_at)}</option>)}
                   </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: '13px' }}>Arrêt de descente</label>
-                  <select
-                    value={destinationId}
-                    onChange={(e) => setDestinationId(e.target.value)}
-                  >
-                    {(() => {
-                      const stops = selectedTrip.route_detail.stops || [];
-                      const origIdx = stops.findIndex((s) => String(s.id) === originId);
-                      const validStops = origIdx >= 0 ? stops.slice(origIdx + 1) : stops.slice(1);
-                      return validStops.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ));
-                    })()}
-                  </select>
-                </div>
-              </div>
+                )}
+              </>
             )}
 
             {selectedTrip && (activeBoardingPoints.length > 0 || activeAlightingPoints.length > 0) && (
