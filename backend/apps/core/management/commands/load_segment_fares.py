@@ -1,24 +1,12 @@
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from apps.core.axis import AXIS_FARES, AXIS_STOPS
 from apps.core.models import LineStop, Location, SegmentFare, SegmentFareChange
 
-# Ligne Parakou ↔ Cotonou, dans l'ordre de parcours du trajet aller.
-STOPS = ["Parakou", "Savè", "Kétou", "Porto-Novo", "Cotonou"]
-
-# Prix en francs CFA, identiques dans les deux sens. Grille validée par la direction (transmise par Eddy).
-FARES = {
-    ("Parakou", "Cotonou"): 7500,
-    ("Parakou", "Porto-Novo"): 7500,
-    ("Parakou", "Kétou"): 6500,
-    ("Parakou", "Savè"): 4500,
-    ("Savè", "Cotonou"): 6500,
-    ("Savè", "Porto-Novo"): 6500,
-    ("Savè", "Kétou"): 2500,
-    ("Kétou", "Porto-Novo"): 4000,
-    ("Kétou", "Cotonou"): 4000,
-    ("Porto-Novo", "Cotonou"): 1500,
-}
+# Arrêts et tarifs de l'axe : définis dans apps/core/axis.py (une seule source).
+STOPS = AXIS_STOPS
+FARES = AXIS_FARES
 
 
 class Command(BaseCommand):
@@ -39,10 +27,16 @@ class Command(BaseCommand):
             stop = LineStop.objects.filter(location=location).first()
             if stop is None:
                 if LineStop.objects.filter(position=position).exists():
-                    raise CommandError(f"Le rang {position} est déjà occupé par un autre arrêt : rien n'a été chargé.")
+                    raise CommandError(
+                        f"Le rang {position} est déjà occupé par un autre arrêt : rien n'a été chargé. "
+                        "Base sur l'ancien axe : lancez apply_axis puis apply_axis_fares (DEPLOY.md)."
+                    )
                 stop = LineStop.objects.create(location=location, position=position)
             elif stop.position != position:
-                raise CommandError(f"{name} est déjà enregistré au rang {stop.position} (attendu {position}) : rien n'a été chargé.")
+                raise CommandError(
+                    f"{name} est déjà enregistré au rang {stop.position} (attendu {position}) : rien n'a été chargé. "
+                    "Base sur l'ancien axe : lancez apply_axis puis apply_axis_fares (DEPLOY.md)."
+                )
             stops[name] = stop
 
         created_fares, kept = 0, 0

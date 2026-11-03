@@ -154,7 +154,7 @@ class _BookingApi extends ApiClient {
   Future<List<Trip>> trips() async => [
     Trip(
       id: 1,
-      route: const RouteInfo(id: 1, label: 'Cotonou → Porto-Novo'),
+      route: const RouteInfo(id: 1, label: 'Cotonou → Bohicon'),
       departureAt: DateTime(2026, 10, 4, 9, 30),
       status: 'SCHEDULED',
       statusDisplay: 'Programmé',
@@ -283,7 +283,7 @@ void main() {
       reference: 'AX-44',
       trip: Trip(
         id: 1,
-        route: const RouteInfo(id: 1, label: 'Cotonou → Porto-Novo'),
+        route: const RouteInfo(id: 1, label: 'Cotonou → Bohicon'),
         departureAt: DateTime(2026, 10, 4, 9, 30),
         status: 'SCHEDULED',
         statusDisplay: 'Programmé',

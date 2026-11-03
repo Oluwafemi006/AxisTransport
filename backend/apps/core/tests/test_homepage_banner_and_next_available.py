@@ -24,15 +24,15 @@ class HomepageBannerAndNextAvailableTests(APITestCase):
         # Villes
         self.parakou = Location.objects.create(name="Parakou TEST", active=True)
         self.save = Location.objects.create(name="Savè TEST", active=True)
-        self.ketou = Location.objects.create(name="Kétou TEST", active=True)
-        self.porto = Location.objects.create(name="Porto-Novo TEST", active=True)
+        self.dassa = Location.objects.create(name="Dassa TEST", active=True)
+        self.bohicon = Location.objects.create(name="Bohicon TEST", active=True)
         self.cotonou = Location.objects.create(name="Cotonou TEST", active=True)
 
         # LineStop
         self.ls_parakou = LineStop.objects.create(location=self.parakou, position=1)
         self.ls_save = LineStop.objects.create(location=self.save, position=2)
-        self.ls_ketou = LineStop.objects.create(location=self.ketou, position=3)
-        self.ls_porto = LineStop.objects.create(location=self.porto, position=4)
+        self.ls_dassa = LineStop.objects.create(location=self.dassa, position=3)
+        self.ls_bohicon = LineStop.objects.create(location=self.bohicon, position=4)
         self.ls_cotonou = LineStop.objects.create(location=self.cotonou, position=5)
 
         # Tarifs
@@ -56,7 +56,7 @@ class HomepageBannerAndNextAvailableTests(APITestCase):
         # Route 1 : Cotonou → Parakou (Montant)
         self.route_up = Route.objects.create(origin=self.cotonou, destination=self.parakou, active=True)
         for pos, (loc, offset) in enumerate(
-            [(self.cotonou, 0), (self.porto, 45), (self.ketou, 120), (self.save, 210), (self.parakou, 360)],
+            [(self.cotonou, 0), (self.bohicon, 45), (self.dassa, 120), (self.save, 210), (self.parakou, 360)],
             start=1,
         ):
             RouteStop.objects.create(route=self.route_up, location=loc, position=pos, offset_minutes=offset)
@@ -64,7 +64,7 @@ class HomepageBannerAndNextAvailableTests(APITestCase):
         # Route 2 : Parakou → Cotonou (Descendant)
         self.route_down = Route.objects.create(origin=self.parakou, destination=self.cotonou, active=True)
         for pos, (loc, offset) in enumerate(
-            [(self.parakou, 0), (self.save, 150), (self.ketou, 240), (self.porto, 315), (self.cotonou, 360)],
+            [(self.parakou, 0), (self.save, 150), (self.dassa, 240), (self.bohicon, 315), (self.cotonou, 360)],
             start=1,
         ):
             RouteStop.objects.create(route=self.route_down, location=loc, position=pos, offset_minutes=offset)
@@ -86,7 +86,7 @@ class HomepageBannerAndNextAvailableTests(APITestCase):
         banner = build_homepage_banner()
         self.assertTrue(banner["has_departure_today"])
         self.assertIn("Aujourd'hui, le bus va de Parakou TEST vers Cotonou TEST", banner["banner_text"])
-        self.assertIn("Savè TEST, Kétou TEST, Porto-Novo TEST", banner["banner_text"])
+        self.assertIn("Savè TEST, Dassa TEST, Bohicon TEST", banner["banner_text"])
         self.assertIn("Demain, il repart vers Parakou TEST", banner["banner_text"])
 
         # Test endpoint API

@@ -56,6 +56,8 @@ TICKET_TRANSITIONS = {
 
 AUTO_SEAT_NOTE = "Attribution automatique du siège"
 SEAT_JUST_TAKEN_MESSAGE = "Cette place vient d'être prise"
+# Ville retirée de la ligne : plus aucune nouvelle vente ; les billets déjà émis ne changent pas.
+INACTIVE_PLACE_MESSAGE = "Cette ville n'est plus desservie : choisissez un autre arrêt."
 
 PARCEL_TRANSITIONS = {
     Parcel.Status.REGISTERED: {Parcel.Status.DEPOSITED},
@@ -985,6 +987,8 @@ def reserve_booking(
 
     if origin_loc.pk == dest_loc.pk:
         raise ValidationError("La ville de départ et la ville d'arrivée doivent être distinctes.")
+    if Location.objects.filter(pk__in=[origin_loc.pk, dest_loc.pk], active=False).exists():
+        raise ValidationError(INACTIVE_PLACE_MESSAGE)
 
     # Validation stricte : les deux arrêts sont sur la ligne du trajet et la montée précède la descente dans le sens du bus
     if not locked_trip.route.has_waypoint_direction(origin_loc, dest_loc):
@@ -1152,6 +1156,8 @@ def reserve_ticket(
 
     if origin_loc.pk == dest_loc.pk:
         raise ValidationError("La ville de départ et la ville d'arrivée doivent être distinctes.")
+    if Location.objects.filter(pk__in=[origin_loc.pk, dest_loc.pk], active=False).exists():
+        raise ValidationError(INACTIVE_PLACE_MESSAGE)
 
     if not trip.route.has_waypoint_direction(origin_loc, dest_loc):
         raise ValidationError(

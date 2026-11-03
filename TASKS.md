@@ -5,6 +5,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Nouvel axe Parakou–Savè–Glazoué–Dassa–Bohicon–Cotonou, tarifs, points, démarrage sans réécriture | `cc/nouvel-axe` | Claude Code | à valider par Eddy |
 | Mot de passe oublié : code e-mail clients, réinitialisation admin, fermeture des sessions | `cc/mot-de-passe-oublie` | Claude Code | à valider par Eddy |
 | Bandeau dynamique d'accueil (sens du bus), prochains départs tous sens et next_available | `ag/accueil-bandeau-sens-du-bus` | Antigravity | à valider par Eddy |
 | Réservation multi-passagers, choix/attribution de places et paiements tardifs | `ag/reservation-places-attribution` | Antigravity | fusionnée dans main |
@@ -37,7 +38,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 - Ne touche pas à la logique de paiement sans relecture. N'ajoute jamais AXIS_ENVIRONMENT, AXIS_PAYMENT_SIMULATION ou DJANGO_DEBUG dans .env.vps.
 
 ### 1. PROJET
-Billetterie en ligne de bus Yutong (Parakou–Savè–Kétou–Porto-Novo–Cotonou), puis colis et location. Stack : Django 5.1/DRF + PostgreSQL, site Next.js, application Flutter unique (mobile-flutter). Dépôt GitHub Oluwafemi006/AxisTransport.
+Billetterie en ligne de bus Yutong (Parakou–Savè–Glazoué–Dassa–Bohicon–Cotonou), puis colis et location. Stack : Django 5.1/DRF + PostgreSQL, site Next.js, application Flutter unique (mobile-flutter). Dépôt GitHub Oluwafemi006/AxisTransport.
 
 ### 2. MISE EN LIGNE (VPS Contabo)
 - Site https://axistransportlogistique.com ; API https://api.axistransportlogistique.com/api/v1 ; www redirige vers le domaine sans www. Docker Compose (compose.vps.yaml) + Caddy en HTTPS. Services : db, backend, holds, payments, frontend, caddy.
@@ -57,14 +58,14 @@ Billetterie en ligne de bus Yutong (Parakou–Savè–Kétou–Porto-Novo–Coto
   - Reprise Dimanche 13h00 Cotonou → Parakou, et ainsi de suite.
 - **TVA retirée de la billetterie** (validé le 19/10/2026) : pas de TVA sur le billet ni sur la facture (seul le montant net TTC en FCFA apparaît, aucune TVA séparée).
 - **Frais FedaPay à la charge de l'agence** (confirmé le 19/10/2026) : le client paie exactement le prix affiché (7 500 FCFA), l'agence absorbe les frais dans les paramètres de son compte FedaPay.
-- **Prix par paire de villes**, identiques dans les deux sens : Parakou–Cotonou 7500 ; Parakou–Porto-Novo 7500 ; Parakou–Kétou 6500 ; Parakou–Savè 4500 ; Savè–Cotonou 6500 ; Savè–Porto-Novo 6500 ; Savè–Kétou 2500 ; Kétou–Porto-Novo 4000 ; Kétou–Cotonou 4000 ; Porto-Novo–Cotonou 1500. Modifiables par l'admin ; un billet vendu garde son prix.
+- **Prix par paire de villes**, identiques dans les deux sens (nouvel axe, validé par le boss) : Parakou–Cotonou 7500 ; Parakou–Bohicon 6000 ; Parakou–Glazoué 5000 ; Parakou–Dassa 5000 ; Parakou–Savè 3500 ; Savè–Cotonou 6000 ; Savè–Bohicon 3000 ; Bohicon–Cotonou 3000. Aucun autre tronçon n'a de tarif. Modifiables par l'administrateur (onglet « Tarifs par tronçon »).
 - Billet : « Billet de transport », jamais « facture » ; FCFA (jamais XOF) ; aucun numéro de facture, NIM, code MeCeF/DGI ni QR DGI générés par Axis ; aucun compte bancaire imprimé.
 - Embarquement = départ − 30 min. Heure du Bénin (UTC+1).
 - Expiration du blocage de siège : 5 minutes (réglé dans l'admin).
 - Paiement en ligne : FedaPay seulement (KKiaPay est inactif et non intégré). Le personnel encaisse en Espèces ou par Mobile Money.
 - Comptes du personnel créés par l'admin, une seule application mobile, tableau de bord admin uniquement. Le boss aura un compte administrateur nominatif (pas de rôle « boss »).
 - **Limite connue (vente par tronçon)** : le blocage et la vente de sièges restent globaux par trajet entier (un siège vendu sur un tronçon, ex. Parakou–Savè, bloque le siège pour tout le voyage du car et ne peut pas être revendu sur un autre tronçon du même départ). La réutilisation d'un même siège sur des tronçons disjoints fera l'objet d'une étape ultérieure.
-- Aujourd'hui, seul Parakou ↔ Cotonou est réservable (parcours Cotonou→Parakou et Parakou→Cotonou). Savè, Kétou et Porto-Novo sont inactifs : ne pas les activer avant la vente par tronçon (étape 3, non construite).
+- Kétou et Porto-Novo sont retirées de la ligne (désactivées, données conservées) ; le serveur refuse les nouvelles ventes vers ou depuis une ville inactive.
 
 ### 4. BRANCHES ET STATUTS
 - `main` : fusions de `cc/dates-passees` et `cc/planning-guichet` intégrées.

@@ -24,15 +24,15 @@ class WaypointDirectionSearchTests(APITestCase):
         # Création des 5 villes de la ligne
         self.parakou = Location.objects.create(name="Parakou", address="Okédama", active=True)
         self.save = Location.objects.create(name="Savè", active=True)
-        self.ketou = Location.objects.create(name="Kétou", active=True)
-        self.porto = Location.objects.create(name="Porto-Novo", active=True)
+        self.dassa = Location.objects.create(name="Dassa", active=True)
+        self.bohicon = Location.objects.create(name="Bohicon", active=True)
         self.cotonou = Location.objects.create(name="Cotonou", active=True)
 
         # LineStop (ordre de la ligne Parakou ↔ Cotonou)
         self.ls_parakou = LineStop.objects.create(location=self.parakou, position=1)
         self.ls_save = LineStop.objects.create(location=self.save, position=2)
-        self.ls_ketou = LineStop.objects.create(location=self.ketou, position=3)
-        self.ls_porto = LineStop.objects.create(location=self.porto, position=4)
+        self.ls_dassa = LineStop.objects.create(location=self.dassa, position=3)
+        self.ls_bohicon = LineStop.objects.create(location=self.bohicon, position=4)
         self.ls_cotonou = LineStop.objects.create(location=self.cotonou, position=5)
 
         # Grille tarifaire pour les tronçons
@@ -43,8 +43,8 @@ class WaypointDirectionSearchTests(APITestCase):
 
         _add_fare(self.ls_parakou, self.ls_cotonou, 7500)
         _add_fare(self.ls_save, self.ls_cotonou, 6500)
-        _add_fare(self.ls_save, self.ls_porto, 6500)
-        _add_fare(self.ls_save, self.ls_ketou, 2500)
+        _add_fare(self.ls_save, self.ls_bohicon, 6500)
+        _add_fare(self.ls_save, self.ls_dassa, 2500)
         _add_fare(self.ls_parakou, self.ls_save, 4500)
 
         # Véhicule bus Yutong
@@ -57,12 +57,12 @@ class WaypointDirectionSearchTests(APITestCase):
 
         # Itinéraire Descendant (Parakou → Cotonou)
         self.route_down = Route.objects.create(origin=self.parakou, destination=self.cotonou, active=True)
-        for pos, loc in enumerate([self.parakou, self.save, self.ketou, self.porto, self.cotonou], start=1):
+        for pos, loc in enumerate([self.parakou, self.save, self.dassa, self.bohicon, self.cotonou], start=1):
             RouteStop.objects.create(route=self.route_down, location=loc, position=pos)
 
         # Itinéraire Montant (Cotonou → Parakou)
         self.route_up = Route.objects.create(origin=self.cotonou, destination=self.parakou, active=True)
-        for pos, loc in enumerate([self.cotonou, self.porto, self.ketou, self.save, self.parakou], start=1):
+        for pos, loc in enumerate([self.cotonou, self.bohicon, self.dassa, self.save, self.parakou], start=1):
             RouteStop.objects.create(route=self.route_up, location=loc, position=pos)
 
         # Trajet Descendant (demain à 08h00)
@@ -190,7 +190,7 @@ class WaypointDirectionSearchTests(APITestCase):
         results = response.json()
         items = results.get("results", results) if isinstance(results, dict) else results
         names = [item["name"] for item in items]
-        self.assertEqual(names, ["Parakou", "Savè", "Kétou", "Porto-Novo", "Cotonou"])
+        self.assertEqual(names, ["Parakou", "Savè", "Dassa", "Bohicon", "Cotonou"])
 
     def test_payment_quote_with_waypoint_direction(self):
         """Le devis payment-quotes prend en compte le tronçon demandé."""

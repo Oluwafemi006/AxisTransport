@@ -176,8 +176,8 @@ class _AxisWidgetGalleryPageState extends State<AxisWidgetGalleryPage> {
                   stops: [
                     RouteStopItem(name: 'Parakou', state: RouteStopState.passed),
                     RouteStopItem(name: 'Savè', state: RouteStopState.passed),
-                    RouteStopItem(name: 'Kétou', state: RouteStopState.current),
-                    RouteStopItem(name: 'Porto-Novo', state: RouteStopState.upcoming),
+                    RouteStopItem(name: 'Dassa', state: RouteStopState.current),
+                    RouteStopItem(name: 'Bohicon', state: RouteStopState.upcoming),
                     RouteStopItem(name: 'Cotonou', state: RouteStopState.upcoming),
                   ],
                 ),
@@ -192,7 +192,7 @@ class _AxisWidgetGalleryPageState extends State<AxisWidgetGalleryPage> {
                       state: TimelineStepState.done,
                     ),
                     TimelineStepItem(
-                      title: 'En route vers Kétou',
+                      title: 'En route vers Dassa',
                       meta: 'Étape en cours',
                       state: TimelineStepState.now,
                     ),

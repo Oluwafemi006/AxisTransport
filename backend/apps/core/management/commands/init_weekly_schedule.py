@@ -1,6 +1,7 @@
 from datetime import time
 from django.core.management.base import BaseCommand
-from apps.core.models import Location, Route, RouteStop, Vehicle, WeeklySchedule
+from apps.core.axis import AXIS_STOPS, axis_routes, set_route_stops
+from apps.core.models import Location, Vehicle, WeeklySchedule
 from apps.core.services import generate_trips_from_schedule
 
 
@@ -22,41 +23,19 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        # Villes de la ligne : créées ou récupérées
-        stop_names = ["Parakou", "Savè", "Kétou", "Porto-Novo", "Cotonou"]
-        activate_stops = options.get("activate_stops", False)
-        locations = {}
-        for name in stop_names:
-            loc, _ = Location.objects.get_or_create(name=name)
-            if activate_stops and not loc.active:
-                loc.active = True
-                loc.save(update_fields=["active"])
-            locations[name] = loc
-
-        cotonou = locations["Cotonou"]
-        parakou = locations["Parakou"]
-
-        route_cotonou_parakou, _ = Route.objects.get_or_create(origin=cotonou, destination=parakou)
-        route_parakou_cotonou, _ = Route.objects.get_or_create(origin=parakou, destination=cotonou)
-
-        # Séquence ordonnée des étapes pour chaque itinéraire (RouteStop)
-        # Parakou → Cotonou (descente : 1=Parakou, 2=Savè, 3=Kétou, 4=Porto-Novo, 5=Cotonou)
-        descending_order = ["Parakou", "Savè", "Kétou", "Porto-Novo", "Cotonou"]
-        for pos, name in enumerate(descending_order, start=1):
-            RouteStop.objects.update_or_create(
-                route=route_parakou_cotonou,
-                position=pos,
-                defaults={"location": locations[name]},
-            )
-
-        # Cotonou → Parakou (montée : 1=Cotonou, 2=Porto-Novo, 3=Kétou, 4=Savè, 5=Parakou)
-        ascending_order = ["Cotonou", "Porto-Novo", "Kétou", "Savè", "Parakou"]
-        for pos, name in enumerate(ascending_order, start=1):
-            RouteStop.objects.update_or_create(
-                route=route_cotonou_parakou,
-                position=pos,
-                defaults={"location": locations[name]},
-            )
+        # Parcours et arrêts : créés seulement s'ils manquent (nouvelle base). La transition
+        # d'une base existante se fait par apply_axis, jamais au démarrage.
+        route_parakou_cotonou, route_cotonou_parakou = axis_routes()
+        for route, names in (
+            (route_parakou_cotonou, AXIS_STOPS),
+            (route_cotonou_parakou, list(reversed(AXIS_STOPS))),
+        ):
+            if not route.stops.exists():
+                for name in names:
+                    Location.objects.get_or_create(name=name, defaults={"active": False})
+                set_route_stops(route, names)
+        if options.get("activate_stops", False):
+            Location.objects.filter(name__in=AXIS_STOPS, active=False).update(active=True)
 
         # Bus Yutong par défaut
         yutong, _ = Vehicle.objects.get_or_create(
@@ -84,7 +63,8 @@ class Command(BaseCommand):
         ]
 
         for day_of_week, dep_time, route, is_active, notes in specs:
-            WeeklySchedule.objects.update_or_create(
+            # Un jour déjà saisi (dans l'admin ou avant) n'est jamais réécrit.
+            WeeklySchedule.objects.get_or_create(
                 day_of_week=day_of_week,
                 defaults={
                     "departure_time": dep_time,
@@ -95,7 +75,7 @@ class Command(BaseCommand):
                 },
             )
 
-        self.stdout.write(self.style.SUCCESS("Planning hebdomadaire par défaut initialisé (7 jours configurés)."))
+        self.stdout.write(self.style.SUCCESS("Planning hebdomadaire : jours manquants créés, jours existants inchangés."))
 
         weeks = options["weeks"]
         created = generate_trips_from_schedule(weeks=weeks)

@@ -185,10 +185,9 @@ class FirstStartTests(APITestCase):
         self.assertEqual(
             FARES,
             {
-                ("Parakou", "Cotonou"): 7500, ("Parakou", "Porto-Novo"): 7500, ("Parakou", "Kétou"): 6500,
-                ("Parakou", "Savè"): 4500, ("Savè", "Cotonou"): 6500, ("Savè", "Porto-Novo"): 6500,
-                ("Savè", "Kétou"): 2500, ("Kétou", "Porto-Novo"): 4000, ("Kétou", "Cotonou"): 4000,
-                ("Porto-Novo", "Cotonou"): 1500,
+                ("Parakou", "Cotonou"): 7500, ("Parakou", "Bohicon"): 6000, ("Parakou", "Glazoué"): 5000,
+                ("Parakou", "Dassa"): 5000, ("Parakou", "Savè"): 3500, ("Savè", "Cotonou"): 6000,
+                ("Savè", "Bohicon"): 3000, ("Bohicon", "Cotonou"): 3000,
             },
         )
         loaded = {(fare.start.location.name, fare.end.location.name): fare.amount for fare in SegmentFare.objects.all()}
@@ -198,7 +197,7 @@ class FirstStartTests(APITestCase):
         from apps.core.models import Location
 
         self.assertEqual(
-            set(Location.objects.filter(active=False).values_list("name", flat=True)), {"Savè", "Kétou", "Porto-Novo"}
+            set(Location.objects.filter(active=False).values_list("name", flat=True)), {"Savè", "Glazoué", "Dassa", "Bohicon"}
         )
         for url in ("/api/v1/client/locations/", "/api/v1/locations/"):
             body = self.client.get(url).json()

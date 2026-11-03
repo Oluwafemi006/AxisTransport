@@ -16,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
-const _stops = [(2, 'Parakou'), (3, 'Savè'), (4, 'Kétou'), (5, 'Porto-Novo'), (1, 'Cotonou')];
+const _stops = [(2, 'Parakou'), (3, 'Savè'), (4, 'Dassa'), (5, 'Bohicon'), (1, 'Cotonou')];
 
 /// Dix tronçons au prix fictif distinct : la carte ne peut afficher que ce que dit le serveur.
 List<SegmentOffer> _ten(List<(int, String)> stops, {DateTime? next}) {
@@ -138,10 +138,10 @@ void main() {
   });
 
   testWidgets('un tronçon absent de la liste du serveur n\'a aucune carte', (tester) async {
-    final rows = _ten(_stops)..removeWhere((item) => item.label == 'Savè → Kétou');
+    final rows = _ten(_stops)..removeWhere((item) => item.label == 'Savè → Dassa');
     await _pump(tester, _Api(rows: rows))();
 
-    expect(find.text('Savè → Kétou'), findsNothing);
+    expect(find.text('Savè → Dassa'), findsNothing);
     expect(find.text('Parakou → Savè'), findsOneWidget);
     expect(find.textContaining('À renseigner'), findsNothing);
   });
@@ -257,7 +257,7 @@ class _SegmentsAdapter implements HttpClientAdapter {
         },
       ],
       'missing_fares': [
-        {'origin_id': 3, 'origin': 'Savè', 'destination_id': 4, 'destination': 'Kétou'},
+        {'origin_id': 3, 'origin': 'Savè', 'destination_id': 4, 'destination': 'Dassa'},
       ],
     }),
     200,
