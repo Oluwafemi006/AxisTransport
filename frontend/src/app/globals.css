@@ -624,6 +624,10 @@ footer {
   .search,.whyg,.fg{grid-template-columns:1fr}
   .top .wrap span:nth-child(2){display:none}
   .nav .btn:not(.p){display:none}
+  /* Portails équipe : la déconnexion reste visible sur téléphone. */
+  .nav .btn.staff-logout{display:inline-flex;padding:8px 12px;font-size:13px}
+  .staff-user{font-size:11px}
+  .staff-user b{font-size:12px}
 }
 
 /* Portails équipe (admin, guichet, contrôleur) et formulaire de connexion.
@@ -634,6 +638,8 @@ footer {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    /* Un tableau trop large défile dans sa carte, jamais toute la page (l'en-tête reste entier). */
+    overflow-x: clip;
   }
 
   .staff-user {
@@ -678,6 +684,7 @@ footer {
   .staff-main {
     flex: 1;
     width: 100%;
+    min-width: 0;
     padding-top: 28px;
     padding-bottom: 56px;
   }
