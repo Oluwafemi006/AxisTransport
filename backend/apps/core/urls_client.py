@@ -26,6 +26,8 @@ from django.conf import settings
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
+
+from .booking_limits import check_online_booking_limits
 from rest_framework.response import Response
 from rest_framework.routers import DefaultRouter
 from rest_framework.views import APIView
@@ -92,6 +94,9 @@ from .views import (
     ParcelTrackingView,
     PublicContactView,
     PublicTicketDetailView,
+    TicketLookupView,
+    BookingAddressThrottle,
+    BookingPhoneThrottle,
     checkout_response,
     refund_due_response,
     service_validation_error,
@@ -428,6 +433,12 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
         # Création ouverte (invité + client), retrieve/pay restreints à l'owner/guest.
         return [AllowAny()]
 
+    def get_throttles(self):
+        # Limites anti-abus seulement sur la création (pas sur la consultation ni le paiement).
+        if self.action == "create":
+            return [BookingAddressThrottle(), BookingPhoneThrottle()]
+        return super().get_throttles()
+
     def _guest_token(self):
         return self.request.headers.get("X-Booking-Token") or self.request.data.get("guest_token", "")
 
@@ -482,6 +493,9 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
                 {"contact_phone": "Un numéro de téléphone valide est obligatoire pour réserver sans compte."}
             )
         try:
+            check_online_booking_limits(
+                customer=customer, contact_phone=data.get("contact_phone", ""), seats=len(data["passengers"])
+            )
             b_point = data.get("boarding_point_id")
             if b_point is None:
                 b_point = data.get("boarding_point")
@@ -662,6 +676,7 @@ client_router.register("rentals", ClientRentalViewSet, basename="client-rental")
 
 client_urlpatterns = [
     path("tickets/public/<str:reference>/", PublicTicketDetailView.as_view(), name="public-ticket-detail"),
+    path("tickets/lookup/", TicketLookupView.as_view(), name="ticket-lookup"),
     path("contact/", PublicContactView.as_view(), name="public-contact"),
     path("segments/", ClientSegmentView.as_view(), name="client-segments"),
     path("parcels/track/", ParcelTrackingView.as_view(), name="parcel-tracking"),
