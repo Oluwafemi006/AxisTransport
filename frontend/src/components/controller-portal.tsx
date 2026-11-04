@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { LoginCard } from "./login-card";
 import { AccessDenied, EmptyState, Loading, Notice, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge } from "./ui";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken } from "@/lib/api";
+import { beninDateKey } from "@/lib/portal-rules";
 import type { Seat, Ticket, Trip, User } from "@/lib/types";
 
 type ScanResult = { ticket: Ticket; control_id: number };
@@ -27,7 +28,11 @@ export function ControllerPortal() {
       if (!["CONTROLLER", "ADMIN"].includes(me.role)) { setUser(me); setAccessDenied(true); return; }
       const allTrips = await apiList<Trip>("/trips/?all=true");
       // Les départs d'un itinéraire désactivé ne sont pas proposés.
-      setUser(me); setTrips(allTrips.filter((trip) => trip.route_detail.active && !["COMPLETED", "CANCELLED"].includes(trip.status)));
+      setUser(me); // Départs d'aujourd'hui (heure du Bénin) et à venir seulement, du plus proche au plus lointain.
+      const today = beninDateKey();
+      setTrips(allTrips
+        .filter((trip) => trip.route_detail.active && !["COMPLETED", "CANCELLED"].includes(trip.status) && beninDateKey(new Date(trip.departure_at)) >= today)
+        .sort((a, b) => a.departure_at.localeCompare(b.departure_at)));
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Connexion impossible."); if ((reason as { status?: number }).status === 401) { clearTokens(); setUser(null); } }
     finally { setLoading(false); }
   }, []);

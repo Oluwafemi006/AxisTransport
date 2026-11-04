@@ -58,12 +58,18 @@ export function AdminPortal() {
     try {
       const currentUser = await apiFetch<User>("/auth/me/");
       if (currentUser.role !== "ADMIN") { setMe(currentUser); setAccessDenied(true); return; }
+      // Chaque liste est chargée à part : une erreur sur l'une n'empêche pas d'ouvrir les autres onglets.
+      const failed: string[] = [];
+      const safe = <T,>(label: string, fallback: T, request: Promise<T>) => request.catch(() => { failed.push(label); return fallback; });
       const [dash, allLocations, allRoutes, allTrips, allVehicles, allFares, allFlags, team, allParcels, methods, allSettings, allIncidents, allWeekly] = await Promise.all([
-        apiFetch<Dashboard>("/dashboard/"), apiList<Location>("/locations/?all=true"), apiList<Route>("/routes/?all=true"),
-        apiList<Trip>("/trips/?all=true"), apiList<Vehicle>("/vehicles/"), apiList<FareRule>("/fare-rules/?all=true"),
-        apiList<FeatureFlag>("/feature-flags/"), apiList<User>("/users/"), apiList<Parcel>("/parcels/"), apiList<PaymentMethod>("/payment-methods/?all=true"), apiList<SystemSetting>("/settings/"),
-        apiList<PaymentIncident>("/payment-incidents/"), apiList<WeeklySchedule>("/weekly-schedules/"),
+        safe<Dashboard>("tableau de bord", { tickets: { sold: 0, checked: 0, online: 0, counter: 0, cancelled_or_refunded: 0 }, parcels: [], revenue: { total: "0" } } as unknown as Dashboard, apiFetch<Dashboard>("/dashboard/")),
+        safe<Location[]>("villes", [], apiList<Location>("/locations/?all=true")), safe<Route[]>("parcours", [], apiList<Route>("/routes/?all=true")),
+        safe<Trip[]>("départs", [], apiList<Trip>("/trips/?all=true")), safe<Vehicle[]>("flotte", [], apiList<Vehicle>("/vehicles/")), safe<FareRule[]>("règles tarifaires", [], apiList<FareRule>("/fare-rules/?all=true")),
+        safe<FeatureFlag[]>("fonctions", [], apiList<FeatureFlag>("/feature-flags/")), safe<User[]>("équipe", [], apiList<User>("/users/")), safe<Parcel[]>("colis", [], apiList<Parcel>("/parcels/")),
+        safe<PaymentMethod[]>("moyens de paiement", [], apiList<PaymentMethod>("/payment-methods/?all=true")), safe<SystemSetting[]>("réglages", [], apiList<SystemSetting>("/settings/")),
+        safe<PaymentIncident[]>("incidents", [], apiList<PaymentIncident>("/payment-incidents/")), safe<WeeklySchedule[]>("planning", [], apiList<WeeklySchedule>("/weekly-schedules/")),
       ]);
+      if (failed.length) setError(`Chargement incomplet : ${failed.join(", ")}. Cliquez sur « Actualiser » pour réessayer.`);
       setMe(currentUser); setDashboard(dash); setLocations(allLocations); setRoutes(allRoutes); setTrips(allTrips); setVehicles(allVehicles);
       setFares(allFares); setFlags(allFlags); setUsers(team); setParcels(allParcels); setPayments(methods); setSettings(allSettings); setIncidents(allIncidents);
       setWeeklySchedules(allWeekly);
@@ -136,7 +142,10 @@ function DashboardPanel({ data, trips }: { data: Dashboard | null; trips: Trip[]
   if (!data) return null;
   const cards = [[data.tickets.sold, "Billets vendus"], [data.tickets.checked, "Passagers contrôlés"], [data.parcels.reduce((sum, item) => sum + item.count, 0), "Colis suivis"], [money(data.revenue.total), "Encaissements"]];
   // Les départs d'un itinéraire désactivé ne sont pas listés ici ; ils restent visibles dans « Trajets & planning ».
-  const listed = trips.filter((trip) => trip.route_detail.active);
+  const now = Date.now();
+  const listed = trips
+    .filter((trip) => trip.route_detail.active && trip.status !== "CANCELLED" && trip.status !== "COMPLETED" && new Date(trip.departure_at).getTime() >= now)
+    .sort((a, b) => a.departure_at.localeCompare(b.departure_at));
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -149,11 +158,11 @@ function DashboardPanel({ data, trips }: { data: Dashboard | null; trips: Trip[]
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.6fr]">
         <section className="card">
-          <SectionHeading eyebrow="Source de vérité" title="Trajets de la période" />
+          <SectionHeading eyebrow="Du plus proche au plus lointain" title="Prochains départs" />
           {listed.length ? (
             <div className="table-scroll">
               <table className="staff-table min-w-[620px]">
-                <thead><tr><th>Trajet</th><th>Date</th><th>Ventes</th><th>Statut</th></tr></thead>
+                <thead><tr><th>Trajet</th><th>Date</th><th>Places prises (vendues ou retenues)</th><th>Statut</th></tr></thead>
                 <tbody>
                   {listed.slice(0, 8).map((trip) => (
                     <tr key={trip.id}>
@@ -378,6 +387,13 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
     }
   }
 
+  // Planning réel : départs à venir d'abord, passés et annulés masqués sauf demande.
+  const [showPast, setShowPast] = useState(false);
+  const nowMs = Date.now();
+  const plannedTrips = [...trips]
+    .filter((trip) => showPast || (trip.status !== "CANCELLED" && new Date(trip.departure_at).getTime() >= nowMs - 12 * 3600 * 1000))
+    .sort((a, b) => (showPast ? b.departure_at.localeCompare(a.departure_at) : a.departure_at.localeCompare(b.departure_at)));
+
   // Tri des jours de semaine dans l'ordre Lundi (0) -> Dimanche (6)
   const sortedWeekly = [...weeklySchedules].sort((a, b) => a.day_of_week - b.day_of_week);
 
@@ -512,8 +528,8 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
       {/* ── Section 2 : Planning réel et Formulaire d'ajustement ── */}
       <div className="grid gap-5 xl:grid-cols-[1.4fr_.6fr]">
         <section className="card">
-          <SectionHeading eyebrow="Trajets opérationnels" title="Planning réel" />
-          {trips.length ? (
+          <SectionHeading eyebrow="Trajets opérationnels" title="Planning réel" action={<label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showPast} onChange={(e) => setShowPast(e.target.checked)} />Afficher les départs passés et annulés</label>} />
+          {plannedTrips.length ? (
             <div className="table-scroll">
               <table className="staff-table min-w-[720px]">
                 <thead>
@@ -529,7 +545,7 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
                   </tr>
                 </thead>
                 <tbody>
-                  {trips.map((trip) => (
+                  {plannedTrips.map((trip) => (
                     <tr key={trip.id} className={editingTripId === trip.id ? "bg-amber-50/60" : undefined}>
                       <td className="strong">{formatDate(trip.departure_at)}</td>
                       <td>{trip.arrival_at ? formatDate(trip.arrival_at) : "—"}</td>
@@ -999,6 +1015,29 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
   const feedback = useActionFeedback();
   const [assignments, setAssignments] = useState<Record<number, string>>({});
   const [proofs, setProofs] = useState<Record<number, string>>({});
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+
+  // Départs qui desservent le départ puis la destination du colis, dans le sens du bus, à venir et non annulés.
+  function tripsFor(parcel: Parcel) {
+    const now = Date.now();
+    return trips
+      .filter((trip) => {
+        if (trip.status === "CANCELLED" || trip.status === "COMPLETED" || new Date(trip.departure_at).getTime() < now - 12 * 3600 * 1000) return false;
+        const ids = (trip.route_detail.stops || []).map((stop) => stop.id);
+        const from = ids.indexOf(parcel.origin);
+        const to = ids.indexOf(parcel.destination);
+        return from !== -1 && to !== -1 && from < to;
+      })
+      .sort((a, b) => a.departure_at.localeCompare(b.departure_at));
+  }
+
+  const term = query.trim().toLowerCase();
+  const shown = parcels.filter((parcel) =>
+    (!statusFilter || parcel.status === statusFilter) &&
+    (!term || [parcel.tracking_number, parcel.sender_name, parcel.recipient_name, parcel.origin_detail.name, parcel.destination_detail.name].some((value) => (value || "").toLowerCase().includes(term))),
+  );
+  const statuses = Array.from(new Map(parcels.map((parcel) => [parcel.status, parcel.status_display])).entries());
 
   async function advance(parcel: Parcel) {
     const next = nextParcelStatus[parcel.status];
@@ -1016,14 +1055,27 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
   return (
     <section className="card">
       <SectionHeading eyebrow="Cycle audité" title="Exploitation des colis" />
-      {parcels.length === 0 ? <EmptyState title="Aucun colis" text="Les colis en ligne et au guichet apparaîtront dans la même liste." /> : (
+      <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+        <input className="field" type="search" placeholder="Rechercher : numéro, expéditeur, destinataire, ville" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <select className="field" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filtrer par statut">
+          <option value="">Tous les statuts</option>
+          {statuses.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+        </select>
+      </div>
+      {shown.length === 0 ? <EmptyState title="Aucun colis" text={parcels.length ? "Aucun colis ne correspond à la recherche." : "Les colis en ligne et au guichet apparaîtront dans la même liste."} /> : (
         <div className="table-scroll">
           <table className="staff-table min-w-[820px]">
-            <thead><tr><th>Référence</th><th>Trajet</th><th>Destinataire</th><th>Statut</th><th>Étape suivante</th></tr></thead>
+            <thead><tr><th>Référence</th><th>Photos</th><th>Trajet</th><th>Destinataire</th><th>Statut</th><th>Étape suivante</th></tr></thead>
             <tbody>
-              {parcels.map((parcel) => (
+              {shown.map((parcel) => (
                 <tr key={parcel.id}>
                   <td className="strong">{parcel.tracking_number}</td>
+                  <td>
+                    <span className="flex gap-1">
+                      {(parcel.photo_urls || []).map((url) => <a key={url} href={url} target="_blank" rel="noreferrer"><img src={url} alt={`Colis ${parcel.tracking_number}`} className="h-10 w-10 rounded object-cover" /></a>)}
+                      {(parcel.photo_urls || []).length === 0 && "—"}
+                    </span>
+                  </td>
                   <td>{parcel.origin_detail.name} → {parcel.destination_detail.name}</td>
                   <td>{parcel.recipient_name}</td>
                   <td><StatusBadge tone={parcel.status === "PICKED_UP" ? "green" : "blue"}>{parcel.status_display}</StatusBadge></td>
@@ -1032,7 +1084,7 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
                       {nextParcelStatus[parcel.status] === "ASSIGNED" && (
                         <select className="field max-w-56" value={assignments[parcel.id] || ""} onChange={(e) => setAssignments({ ...assignments, [parcel.id]: e.target.value })}>
                           <option value="">Affecter un trajet</option>
-                          {trips.filter((t) => t.route === undefined || (t.route_detail.origin === parcel.origin && t.route_detail.destination === parcel.destination)).map((trip) => <option key={trip.id} value={trip.id}>{formatDate(trip.departure_at)}</option>)}
+                          {tripsFor(parcel).map((trip) => <option key={trip.id} value={trip.id}>{formatDate(trip.departure_at)} · {trip.route_detail.label}</option>)}
                         </select>
                       )}
                       {nextParcelStatus[parcel.status] === "PICKED_UP" && <input className="field max-w-56" placeholder="Identité / code de retrait" value={proofs[parcel.id] || ""} onChange={(e) => setProofs({ ...proofs, [parcel.id]: e.target.value })} />}
@@ -1051,16 +1103,22 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
 
 function FleetPanel({ locations, vehicles, onChanged }: { locations: Location[]; vehicles: Vehicle[]; onChanged: () => Promise<void> }) {
   const feedback = useActionFeedback();
-  const [form, setForm] = useState({ category: "BUS", name: "", registration_number: "", capacity: "", base_location: "", rental_daily_rate: "", driver_available: false, state: "ACTIVE", seat_configuration: "" });
+  const emptyVehicle = { category: "BUS", name: "", registration_number: "", capacity: "", base_location: "", rental_daily_rate: "", driver_available: false, state: "ACTIVE", seat_configuration: "" };
+  const [form, setForm] = useState(emptyVehicle);
+  const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (busy) return;
+    setBusy(true);
     try {
       const seatConfiguration = form.seat_configuration.trim() ? JSON.parse(form.seat_configuration) : [];
       await apiFetch("/vehicles/", { method: "POST", body: JSON.stringify({ ...form, seat_configuration: seatConfiguration, capacity: form.capacity ? Number(form.capacity) : null, base_location: form.base_location ? Number(form.base_location) : null, rental_daily_rate: form.rental_daily_rate || null, registration_number: form.registration_number || null }) });
       feedback.success("Véhicule ajouté.");
+      setForm(emptyVehicle);
       await onChanged();
     } catch (reason) { feedback.failure(reason, "Le véhicule n’a pas été ajouté (vérifiez notamment le plan de sièges)."); }
+    finally { setBusy(false); }
   }
 
   return (
@@ -1083,7 +1141,7 @@ function FleetPanel({ locations, vehicles, onChanged }: { locations: Location[];
             </label>
           )}
           {form.category === "RENTAL" && <Input label="Tarif journalier" type="number" value={form.rental_daily_rate} onChange={(value) => setForm({ ...form, rental_daily_rate: value })} required={false} />}
-          <button className="primary-button w-full">Ajouter</button>
+          <button className="primary-button w-full" disabled={busy}>{busy ? "Ajout…" : "Ajouter"}</button>
         </form>
       </section>
     </div>
@@ -1180,6 +1238,7 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
     try {
       await apiFetch("/fare-rules/", { method: "POST", body: JSON.stringify({ ...fare, route: Number(fare.route), amount: fare.amount, advance_days: fare.advance_days ? Number(fare.advance_days) : null, currency: "XOF", active: true }) });
       feedback.success("Règle tarifaire enregistrée.");
+      setFare({ route: "", name: "", rule_type: "STANDARD", amount: "", advance_days: "" });
       await onChanged();
     } catch (reason) { feedback.failure(reason, "La règle tarifaire n’a pas été enregistrée."); }
   }
@@ -1664,6 +1723,8 @@ function SegmentFarePanel() {
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<number | null>(null);
   const [notice, setNotice] = useState<NoticeState>(null);
+  // Tarifs des villes retirées de la ligne (rang au-delà de 100) : gardés, masqués par défaut.
+  const [showRetired, setShowRetired] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -1706,21 +1767,22 @@ function SegmentFarePanel() {
         <SectionHeading eyebrow="Mêmes prix dans les deux sens" title="Tarifs par tronçon" />
         {missing.length > 0 && (
           <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
-            <p className="font-semibold">Tronçons sans tarif : non vendables tant qu’aucun prix n’est enregistré.</p>
+            <p className="font-semibold">Tronçons sans tarif : non vendables (aucun prix décidé pour ces trajets).</p>
             <ul className="mt-1 list-disc pl-5">
               {missing.map((row) => <li key={`${row.origin_id}-${row.destination_id}`}>{row.origin} ↔ {row.destination}</li>)}
             </ul>
           </div>
         )}
         <p className="mb-4 text-sm text-slate-500">Prix en francs CFA. Un billet déjà vendu ou une réservation en cours garde le prix du moment de la vente.</p>
+        <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={showRetired} onChange={(e) => setShowRetired(e.target.checked)} />Afficher les tarifs des villes retirées (Kétou, Porto-Novo…)</label>
         {fares === null ? <Loading /> : fares.length === 0 ? <EmptyState title="Aucun tronçon" text="La grille des prix n’est pas encore chargée." /> : (
           <div className="table-scroll">
             <table className="staff-table min-w-[620px]">
               <thead><tr><th>Tronçon</th><th>Prix actuel</th><th>Nouveau prix</th><th /></tr></thead>
               <tbody>
-                {fares.map((fare) => (
-                  <tr key={fare.id}>
-                    <td className="strong">{fare.label}</td>
+                {fares.filter((fare) => showRetired || (fare.start_position <= 100 && fare.end_position <= 100)).map((fare) => (
+                  <tr key={fare.id} className={fare.start_position > 100 || fare.end_position > 100 ? "opacity-60" : undefined}>
+                    <td className="strong">{fare.label}{(fare.start_position > 100 || fare.end_position > 100) && <span className="ml-2"><StatusBadge tone="grey">Ville retirée</StatusBadge></span>}</td>
                     <td className="whitespace-nowrap">{money(fare.amount, fare.currency)}</td>
                     <td>
                       <input className="field max-w-40" inputMode="numeric" aria-label={`Nouveau prix ${fare.label}`} value={drafts[fare.id] ?? ""} onChange={(e) => setDrafts({ ...drafts, [fare.id]: e.target.value })} />
