@@ -503,6 +503,7 @@ export function ClientPortal() {
               <h2>Billetterie & Réservation</h2>
 
               <p className="sub">Trouvez un départ, choisissez votre siège (facultatif) et recevez votre billet électronique.</p>
+              <p className="sub"><a href="/billet/retrouver" style={{ color: 'var(--blue)', fontWeight: 600 }}>Vous avez déjà un billet ? Retrouvez-le avec sa référence et votre téléphone →</a></p>
               <Tickets user={user} trips={trips} locations={locations} tickets={tickets} bookings={bookings} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} />
 
             </main>

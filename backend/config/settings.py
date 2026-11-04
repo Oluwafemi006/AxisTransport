@@ -138,6 +138,12 @@ REST_FRAMEWORK = {
         "password_reset_email": os.environ.get("AXIS_PASSWORD_RESET_RATE_EMAIL", "3/hour"),
         "password_reset_address": os.environ.get("AXIS_PASSWORD_RESET_RATE_ADDRESS", "20/hour"),
         "password_change": os.environ.get("AXIS_PASSWORD_CHANGE_RATE", "10/hour"),
+        # Réservations en ligne : créations par adresse IP (large : réseaux mobiles partagés) et par téléphone.
+        "booking_address": os.environ.get("AXIS_BOOKING_RATE_ADDRESS", "30/hour"),
+        "booking_phone": os.environ.get("AXIS_BOOKING_RATE_PHONE", "6/hour"),
+        # « Retrouver mon billet » : essais par adresse IP et par référence.
+        "ticket_lookup_address": os.environ.get("AXIS_TICKET_LOOKUP_RATE_ADDRESS", "10/hour"),
+        "ticket_lookup_reference": os.environ.get("AXIS_TICKET_LOOKUP_RATE_REFERENCE", "5/hour"),
         "password_reset_confirm": os.environ.get("AXIS_PASSWORD_RESET_CONFIRM_RATE", "30/hour"),
     },
     # Nombre de proxys de confiance devant l'API (pour lire la vraie adresse IP du client).
@@ -213,3 +219,7 @@ EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "contact@axistransportlogistique.com")
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", PUBLIC_WEB_URL).rstrip("/")
+
+# Réservations en ligne non payées en cours, par téléphone (sans compte) ou par compte client.
+AXIS_BOOKING_MAX_HELD = int(os.environ.get("AXIS_BOOKING_MAX_HELD", "2"))
+AXIS_BOOKING_MAX_HELD_SEATS = int(os.environ.get("AXIS_BOOKING_MAX_HELD_SEATS", "8"))
