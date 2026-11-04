@@ -27,6 +27,7 @@ from .views import (
     TicketViewSet,
     TransactionViewSet,
     TripViewSet,
+    StaffInvitationViewSet,
     UserViewSet,
     VehicleViewSet,
     WeeklyScheduleViewSet,
@@ -46,6 +47,7 @@ router.register("fare-rules", FareRuleViewSet)
 router.register("feature-flags", FeatureFlagViewSet)
 router.register("settings", SystemSettingViewSet)
 router.register("users", UserViewSet)
+router.register("staff-invitations", StaffInvitationViewSet, basename="staff-invitation")
 router.register("tickets", TicketViewSet)
 router.register("bookings", BookingViewSet)
 router.register("parcels", ParcelViewSet)

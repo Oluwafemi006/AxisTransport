@@ -9,6 +9,7 @@ export interface User {
   phone: string;
   role: Role;
   role_display: string;
+  is_active?: boolean;
 }
 
 export interface BoardingPoint {
