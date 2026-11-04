@@ -65,9 +65,10 @@ function ParcelPrices() {
   const [parcels, setParcels] = useState<Parcel[]>([]);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [notice, setNotice] = useState<NoticeState>(null);
+  const [shown, setShown] = useState(30);
 
   const read = useCallback(async () => {
-    try { setParcels((await apiList<Parcel>("/parcels/")).slice(0, 30)); }
+    try { setParcels(await apiList<Parcel>("/parcels/")); }
     catch (reason) { setNotice({ text: actionErrorText(reason, "Les colis n’ont pas pu être chargés."), tone: "error" }); }
   }, []);
   useEffect(() => { void read(); }, [read]);
@@ -124,7 +125,7 @@ function ParcelPrices() {
       <Notice notice={notice} className="mb-3" />
       {parcels.length === 0 ? <p className="text-sm text-slate-500">Aucun colis enregistré.</p> : (
         <ul className="space-y-4">
-          {parcels.map((parcel) => (
+          {parcels.slice(0, shown).map((parcel) => (
             <li key={parcel.id} className="border-b pb-4">
               <p className="font-semibold">{parcel.tracking_number} : {parcel.origin_detail.name} → {parcel.destination_detail.name}</p>
               <p className="text-sm text-slate-500">{parcel.description} · De {parcel.sender_name} à {parcel.recipient_name}</p>
@@ -148,6 +149,11 @@ function ParcelPrices() {
             </li>
           ))}
         </ul>
+      )}
+      {parcels.length > shown && (
+        <button type="button" className="secondary-button mt-4 w-full" onClick={() => setShown(shown + 30)}>
+          Afficher plus ({parcels.length - shown} colis restants)
+        </button>
       )}
     </section>
   );

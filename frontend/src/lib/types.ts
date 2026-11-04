@@ -9,6 +9,7 @@ export interface User {
   phone: string;
   role: Role;
   role_display: string;
+  is_active?: boolean;
 }
 
 export interface BoardingPoint {
@@ -291,6 +292,8 @@ export interface SegmentFare {
   currency: string;
   updated_at: string;
   updated_by_name: string;
+  start_position: number;
+  end_position: number;
 }
 
 export interface BusPosition {

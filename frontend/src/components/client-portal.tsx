@@ -1066,7 +1066,7 @@ function Tickets({
     try {
       const found = await apiFetch<BookingPayload>(`/client/bookings/${ticket.booking}/refresh-payment/`, { method: "POST", body: "{}" });
       const confirmed = found.tickets.some((item) => item.id === ticket.id && item.status === "ISSUED");
-      setPaymentCheck({ ticketId: ticket.id, busy: false, text: confirmed ? "Paiement confirmé : votre billet est prêt." : "Paiement pas encore confirmé par FedaPay. Réessayez dans un instant." });
+      setPaymentCheck({ ticketId: ticket.id, busy: false, text: confirmed ? "Paiement confirmé : votre billet est prêt." : "Paiement pas encore confirmé. Réessayez dans un instant." });
       if (confirmed) await onChanged();
     } catch (reason) {
       setPaymentCheck({ ticketId: ticket.id, busy: false, text: reason instanceof Error ? reason.message : "Vérification impossible. Réessayez." });
@@ -1295,7 +1295,7 @@ function Tickets({
                     .join(" · ")}
                 </div>
                 <div style={{ marginTop: "6px", fontSize: "14px" }}>
-                  Total (sans frais FedaPay ajoutés) : <b>{money(singleQuote.total, singleQuote.currency)}</b>
+                  Total à payer : <b>{money(singleQuote.total, singleQuote.currency)}</b>
                   {passengers.length > 1 && ` (${passengers.length} billets)`}
                 </div>
               </div>
@@ -1346,7 +1346,7 @@ function Tickets({
                 <p style={{ fontSize: '14px', margin: '8px 0 16px' }}>Temps restant : <b>{countdown}</b></p>
                 {heldQuote && (
                   <p style={{ fontSize: '14px', marginBottom: '12px' }}>
-                    Total à régler (sans frais FedaPay ajoutés) : <b>{money(heldQuote.total, heldQuote.currency)}</b>
+                    Total à payer : <b>{money(heldQuote.total, heldQuote.currency)}</b>
                     {pendingTickets.length > 1 && ` (${pendingTickets.length} billets)`}
                   </p>
                 )}
