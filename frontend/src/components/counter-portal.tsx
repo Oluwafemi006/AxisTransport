@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CounterPanel } from "./admin-portal";
+import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
 import { AccessDenied, Loading, Notice, SectionHeading, StaffLogin, StaffShell, StaffTitle } from "./ui";
 import type { NoticeState } from "./ui";
@@ -55,6 +56,7 @@ export function CounterPortal() {
       <StaffTitle eyebrow="Guichet" title="Vente de billets" />
       {message && <Notice notice={{ text: message, tone: "error" }} className="mb-5" />}
       {user ? <CounterPanel trips={trips} payments={payments} onChanged={load} /> : <Loading />}
+      {user && <SoldToday />}
       {user && <ParcelPrices />}
     </StaffShell>
   );

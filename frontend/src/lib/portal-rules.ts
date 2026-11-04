@@ -77,6 +77,14 @@ export function whatsappHref(text: string | null | undefined): string | null {
   return match ? `https://wa.me/${match[1]}` : null;
 }
 
+// Envoi d'un billet par WhatsApp : message et lien du billet préremplis. Numéro du passager seulement s'il est
+// au format international ; sinon WhatsApp demande à l'agent de choisir le contact (aucun indicatif deviné).
+export function soldTicketWhatsappHref(ticket: { reference: string; passenger_name: string; passenger_phone: string }, link: string): string {
+  const text = `Bonjour ${ticket.passenger_name}, voici votre billet AXIS Transport ${ticket.reference} : ${link}`;
+  const base = whatsappHref(ticket.passenger_phone) ?? "https://wa.me/";
+  return `${base}?text=${encodeURIComponent(text)}`;
+}
+
 // ─── Dates à l'heure du Bénin ────────────────────────────────────────────────
 // Le jour « aujourd'hui » est celui du Bénin (Africa/Porto-Novo, UTC+1), jamais celui du navigateur.
 const BENIN_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Porto-Novo", year: "numeric", month: "2-digit", day: "2-digit" });

@@ -70,6 +70,7 @@ from .permissions import (
     IsOperationsStaff,
 )
 from .serializers import (
+    public_ticket_url,
     BoardingPointSerializer,
     PaymentIncidentSerializer,
     ManualTicketChangeSerializer,
@@ -2120,6 +2121,45 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
         except DjangoValidationError as exc:
             raise service_validation_error(exc, staff=True)
         return Response({"stop": arrival.location.name, "confirmed_at": arrival.confirmed_at})
+
+    @action(detail=False, methods=["get"])
+    def today(self, request):
+        """
+        Billets vendus aujourd'hui, en lecture seule : l'agent voit ses propres ventes, l'administrateur toutes.
+        Seuls les billets payés (ou déjà contrôlés) apparaissent ; une réservation non payée n'est pas une vente.
+        """
+        tickets = (
+            Ticket.objects.filter(
+                booking__sold_by__isnull=False,
+                booking__created_at__date=timezone.localdate(),
+                status__in=[Ticket.Status.PAID, Ticket.Status.ISSUED, Ticket.Status.CHECKED, Ticket.Status.COMPLETED],
+            )
+            .select_related("seat", "trip", "origin", "destination", "trip__route__origin", "trip__route__destination", "booking__sold_by")
+            .order_by("-booking__created_at", "-pk")
+        )
+        if request.user.role != User.Role.ADMIN:
+            tickets = tickets.filter(booking__sold_by=request.user)
+        rows = []
+        for ticket in tickets[:300]:
+            origin = ticket.origin or ticket.trip.route.origin
+            destination = ticket.destination or ticket.trip.route.destination
+            seller = ticket.booking.sold_by
+            rows.append({
+                "id": ticket.pk,
+                "reference": ticket.reference,
+                "route": f"{origin.name} → {destination.name}",
+                "departure_at": ticket.trip.departure_at,
+                "seat": ticket.seat.number,
+                "passenger_name": ticket.passenger_name,
+                "passenger_phone": ticket.passenger_phone,
+                "amount_fcfa": int(ticket.amount),
+                "status": ticket.status,
+                "status_display": ticket.get_status_display(),
+                "sold_at": ticket.booking.created_at,
+                "sold_by_name": (seller.get_full_name() or seller.username) if seller else "",
+                "public_url": public_ticket_url(ticket),
+            })
+        return Response(rows)
 
     @action(detail=False, methods=["get"])
     def summary(self, request):

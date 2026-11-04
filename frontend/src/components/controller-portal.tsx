@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
 import { AccessDenied, EmptyState, Loading, Notice, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge } from "./ui";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken } from "@/lib/api";
@@ -98,6 +99,7 @@ export function ControllerPortal() {
             </article>
           )}
           <SeatOverview seats={seats} tickets={tickets} enabled={Boolean(tripId)} />
+          <SoldToday />
         </>
       )}
     </StaffShell>
