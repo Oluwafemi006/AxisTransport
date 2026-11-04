@@ -243,7 +243,7 @@ class WebhookRefusalTests(ReconciliationBase):
         self.assert_refused(self.signed(webhook_body(), fedapay_transaction(self.booking, metadata={})), "Aucune réservation rattachée")
 
     def test_wrong_currency_is_recorded(self):
-        self.assert_refused(self.signed(webhook_body(), fedapay_transaction(self.booking, currency="EUR")), "XOF")
+        self.assert_refused(self.signed(webhook_body(), fedapay_transaction(self.booking, currency="EUR")), "francs CFA")
 
     def test_second_payment_on_an_already_paid_booking_is_recorded(self):
         self.signed(webhook_body("1001"), fedapay_transaction(self.booking, transaction_id="1001"))
