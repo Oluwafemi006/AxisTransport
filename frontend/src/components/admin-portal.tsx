@@ -9,7 +9,7 @@ import { actionErrorText, counterTripLabel, holdMinutesConfigured, upcomingSella
 
 import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, LineState, LineStopRow, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
-type AdminTab = "dashboard" | "planning" | "guichet" | "points" | "colis" | "flotte" | "tarifs" | "villes" | "troncons" | "agence" | "paiements" | "equipe";
+type AdminTab = "dashboard" | "planning" | "guichet" | "billets" | "points" | "colis" | "flotte" | "tarifs" | "villes" | "troncons" | "agence" | "paiements" | "equipe";
 type Dashboard = {
   tickets: { sold: number; online: number; counter: number; checked: number; cancelled_or_refunded: number };
   revenue: { total: number; by_payment_method: Array<{ payment_method__label: string; total: number }> };
@@ -23,7 +23,7 @@ const nextParcelStatus: Record<string, string> = {
 };
 
 const tabs: Array<[AdminTab, string]> = [
-  ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["points", "Points d’embarquement"], ["colis", "Colis"],
+  ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["billets", "Billets"], ["points", "Points d’embarquement"], ["colis", "Colis"],
   ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["villes", "Villes & ligne"], ["troncons", "Tarifs par tronçon"], ["agence", "Agence et taxes"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
 ];
 
@@ -103,6 +103,7 @@ export function AdminPortal() {
           {tab === "dashboard" && <><BusPositions /><DashboardPanel data={dashboard} trips={trips} /></>}
           {tab === "planning" && <PlanningPanel routes={routes} vehicles={vehicles.filter((v) => v.category === "BUS")} trips={trips} weeklySchedules={weeklySchedules} onChanged={load} />}
           {tab === "guichet" && <CounterPanel trips={trips} payments={payments} onChanged={load} />}
+          {tab === "billets" && <TicketsPanel settings={settings} onChanged={load} />}
           {tab === "points" && <BoardingPointsPanel locations={locations} onChanged={load} />}
           {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
           {tab === "flotte" && <FleetPanel locations={locations} vehicles={vehicles} onChanged={load} />}
@@ -1012,6 +1013,89 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
   );
 }
 
+// Billets : recherche (référence, nom, téléphone), annulation avec motif, délai de report des billets non scannés.
+function TicketsPanel({ settings, onChanged }: { settings: SystemSetting[]; onChanged: () => Promise<void> }) {
+  const feedback = useActionFeedback();
+  const [query, setQuery] = useState("");
+  const [rows, setRows] = useState<Ticket[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const report = settings.find((item) => item.key === "ticket_report_days");
+  const [days, setDays] = useState(report ? String(report.value) : "");
+  useEffect(() => { setDays(report ? String(report.value) : ""); }, [report]);
+
+  async function search(event?: FormEvent) {
+    event?.preventDefault();
+    const term = query.trim();
+    if (!term) return;
+    setBusy(true);
+    try { setRows(await apiList<Ticket>(`/tickets/?q=${encodeURIComponent(term)}`)); }
+    catch (reason) { feedback.failure(reason, "La recherche n’a pas abouti."); }
+    finally { setBusy(false); }
+  }
+
+  async function cancel(ticket: Ticket) {
+    const note = window.prompt(`Annuler le billet ${ticket.reference} (${ticket.passenger_name}) ? La place sera libérée. Indiquez le motif :`)?.trim();
+    if (!note) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/tickets/${ticket.id}/transition/`, { method: "POST", body: JSON.stringify({ status: "CANCELLED", note }) });
+      feedback.success(`Billet ${ticket.reference} annulé.`);
+      await search();
+    } catch (reason) { feedback.failure(reason, "Le billet n’a pas été annulé."); }
+    finally { setBusy(false); }
+  }
+
+  async function saveDays() {
+    const value = Number(days);
+    if (!days.trim() || !Number.isInteger(value) || value < 0) {
+      feedback.failure(null, "Délai de report : saisissez un nombre entier de jours (0 = aucun report).");
+      return;
+    }
+    try {
+      await apiFetch(report ? `/settings/${report.id}/` : "/settings/", { method: report ? "PATCH" : "POST", body: JSON.stringify({ key: "ticket_report_days", value, description: "Jours de report d’un billet non scanné" }) });
+      feedback.success("Délai de report enregistré.");
+      await onChanged();
+    } catch (reason) { feedback.failure(reason, "Délai de report : non enregistré."); }
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="card">
+        <SectionHeading eyebrow="Billet non scanné le jour prévu" title="Délai de report" />
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+          <label className="block"><span className="field-label">Nombre de jours après le départ prévu</span>
+            <input className="field" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} placeholder="À renseigner" />
+          </label>
+          <button className="primary-button" onClick={() => void saveDays()}>Enregistrer</button>
+        </div>
+        <p className="mt-2 text-sm text-slate-500">Tant que ce délai n’est pas saisi, un billet ne se scanne que le jour de son départ. Un billet reporté se scanne une seule fois, sur un départ du même parcours.</p>
+      </section>
+      <section className="card">
+        <SectionHeading eyebrow="Référence, nom ou téléphone" title="Rechercher un billet" />
+        <form onSubmit={search} className="mb-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+          <input className="field" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ex. : AX-…, nom du passager, téléphone" />
+          <button className="primary-button" disabled={busy || !query.trim()}>{busy ? "Recherche…" : "Rechercher"}</button>
+        </form>
+        {rows === null ? null : rows.length === 0 ? <EmptyState title="Aucun billet" text="Aucun billet ne correspond à la recherche." /> : (
+          <ul className="space-y-2">
+            {rows.map((ticket) => (
+              <li key={ticket.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">{ticket.reference} · {ticket.passenger_name}</p>
+                  <p className="text-slate-500">{ticket.trip_detail ? `${ticket.trip_detail.route_detail.label} · ${formatDate(ticket.trip_detail.departure_at)}` : ""}{ticket.passenger_phone ? ` · ${ticket.passenger_phone}` : ""}</p>
+                </div>
+                <StatusBadge tone={ticketTone(ticket.status)}>{ticket.status_display}</StatusBadge>
+                <a className="secondary-button" href={`/t/${encodeURIComponent(ticket.reference)}`} target="_blank" rel="noreferrer">Voir</a>
+                {["HELD", "PAID", "ISSUED"].includes(ticket.status) && <button className="secondary-button" disabled={busy} onClick={() => void cancel(ticket)}>Annuler</button>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: Trip[]; onChanged: () => Promise<void> }) {
   const feedback = useActionFeedback();
   const [assignments, setAssignments] = useState<Record<number, string>>({});
@@ -1039,6 +1123,30 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
     (!term || [parcel.tracking_number, parcel.sender_name, parcel.recipient_name, parcel.origin_detail.name, parcel.destination_detail.name].some((value) => (value || "").toLowerCase().includes(term))),
   );
   const statuses = Array.from(new Map(parcels.map((parcel) => [parcel.status, parcel.status_display])).entries());
+
+  async function cancel(parcel: Parcel) {
+    const note = window.prompt(`Annuler le colis ${parcel.tracking_number} ? Indiquez le motif :`)?.trim();
+    if (!note) return;
+    try {
+      await apiFetch(`/parcels/${parcel.id}/transition/`, { method: "POST", body: JSON.stringify({ status: "CANCELLED", note }) });
+      feedback.success(`Colis ${parcel.tracking_number} annulé.`);
+      await onChanged();
+    } catch (reason) { feedback.failure(reason, "Le colis n’a pas été annulé."); }
+  }
+
+  async function edit(parcel: Parcel) {
+    const recipient_name = window.prompt("Nom du destinataire :", parcel.recipient_name)?.trim();
+    if (!recipient_name) return;
+    const recipient_phone = window.prompt("Téléphone du destinataire :", parcel.recipient_phone)?.trim();
+    if (!recipient_phone) return;
+    const description = window.prompt("Description du colis :", parcel.description)?.trim();
+    if (description === undefined) return;
+    try {
+      await apiFetch(`/parcels/${parcel.id}/`, { method: "PATCH", body: JSON.stringify({ recipient_name, recipient_phone, description }) });
+      feedback.success(`Colis ${parcel.tracking_number} modifié.`);
+      await onChanged();
+    } catch (reason) { feedback.failure(reason, "Le colis n’a pas été modifié."); }
+  }
 
   async function advance(parcel: Parcel) {
     const next = nextParcelStatus[parcel.status];
@@ -1079,7 +1187,7 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
                   </td>
                   <td>{parcel.origin_detail.name} → {parcel.destination_detail.name}</td>
                   <td>{parcel.recipient_name}</td>
-                  <td><StatusBadge tone={parcel.status === "PICKED_UP" ? "green" : "blue"}>{parcel.status_display}</StatusBadge></td>
+                  <td><StatusBadge tone={parcel.status === "PICKED_UP" ? "green" : parcel.status === "CANCELLED" ? "grey" : "blue"}>{parcel.status_display}</StatusBadge></td>
                   <td>
                     <span className="flex flex-wrap items-center gap-2">
                       {nextParcelStatus[parcel.status] === "ASSIGNED" && (
@@ -1090,6 +1198,8 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
                       )}
                       {nextParcelStatus[parcel.status] === "PICKED_UP" && <input className="field max-w-56" placeholder="Identité / code de retrait" value={proofs[parcel.id] || ""} onChange={(e) => setProofs({ ...proofs, [parcel.id]: e.target.value })} />}
                       {nextParcelStatus[parcel.status] && <button className="secondary-button" onClick={() => void advance(parcel)}>Valider</button>}
+                      {!["PICKED_UP", "CANCELLED"].includes(parcel.status) && <button className="secondary-button" onClick={() => void edit(parcel)}>Modifier</button>}
+                      {["REGISTERED", "DEPOSITED", "ACCEPTED", "ASSIGNED"].includes(parcel.status) && <button className="secondary-button" onClick={() => void cancel(parcel)}>Annuler</button>}
                     </span>
                   </td>
                 </tr>

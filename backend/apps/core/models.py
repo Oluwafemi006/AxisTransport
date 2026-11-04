@@ -956,6 +956,7 @@ class Parcel(TimeStampedModel):
         ARRIVED = "ARRIVED", "Arrivé"
         READY_FOR_PICKUP = "READY_FOR_PICKUP", "Disponible au retrait"
         PICKED_UP = "PICKED_UP", "Retiré"
+        CANCELLED = "CANCELLED", "Annulé"
 
     tracking_number = models.CharField(max_length=40, unique=True, editable=False)
     customer = models.ForeignKey(User, on_delete=models.PROTECT, related_name="parcels", null=True, blank=True)

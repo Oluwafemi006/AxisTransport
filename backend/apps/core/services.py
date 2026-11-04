@@ -60,15 +60,17 @@ SEAT_JUST_TAKEN_MESSAGE = "Cette place vient d'être prise"
 INACTIVE_PLACE_MESSAGE = "Cette ville n'est plus desservie : choisissez un autre arrêt."
 
 PARCEL_TRANSITIONS = {
-    Parcel.Status.REGISTERED: {Parcel.Status.DEPOSITED},
-    Parcel.Status.DEPOSITED: {Parcel.Status.ACCEPTED},
-    Parcel.Status.ACCEPTED: {Parcel.Status.ASSIGNED},
-    Parcel.Status.ASSIGNED: {Parcel.Status.LOADED},
+    # Annulation possible tant que le colis n'est pas chargé dans le car.
+    Parcel.Status.REGISTERED: {Parcel.Status.DEPOSITED, Parcel.Status.CANCELLED},
+    Parcel.Status.DEPOSITED: {Parcel.Status.ACCEPTED, Parcel.Status.CANCELLED},
+    Parcel.Status.ACCEPTED: {Parcel.Status.ASSIGNED, Parcel.Status.CANCELLED},
+    Parcel.Status.ASSIGNED: {Parcel.Status.LOADED, Parcel.Status.CANCELLED},
     Parcel.Status.LOADED: {Parcel.Status.IN_TRANSIT},
     Parcel.Status.IN_TRANSIT: {Parcel.Status.ARRIVED},
     Parcel.Status.ARRIVED: {Parcel.Status.READY_FOR_PICKUP},
     Parcel.Status.READY_FOR_PICKUP: {Parcel.Status.PICKED_UP},
     Parcel.Status.PICKED_UP: set(),
+    Parcel.Status.CANCELLED: set(),
 }
 
 
@@ -1260,6 +1262,27 @@ def pay_and_issue_ticket(ticket, *, payment_method, receipt, actor=None, externa
     return locked, payment
 
 
+def configured_report_days():
+    """
+    Jours pendant lesquels un billet non scanné reste valable après son départ (« ticket_report_days »).
+    Réglage absent ou invalide : aucun report, le billet ne se scanne que le jour prévu.
+    """
+    try:
+        days = int(SystemSetting.objects.get(key="ticket_report_days").value)
+    except (SystemSetting.DoesNotExist, TypeError, ValueError):
+        return 0
+    return max(days, 0)
+
+
+def _reported(ticket, expected_trip):
+    """Billet d'un départ passé, jamais scanné, encore dans le délai de report, sur le même parcours."""
+    day = timezone.localdate(ticket.trip.departure_at)
+    today = timezone.localdate()
+    if day >= today or (today - day).days > configured_report_days():
+        return False
+    return expected_trip is None or expected_trip.route_id == ticket.trip.route_id
+
+
 def validate_ticket(*, qr_token, controller, expected_trip=None, method=TicketControl.Method.QR):
     with transaction.atomic():
         try:
@@ -1269,9 +1292,17 @@ def validate_ticket(*, qr_token, controller, expected_trip=None, method=TicketCo
 
         result = TicketControl.Result.ACCEPTED
         reason = ""
-        if expected_trip and ticket.trip_id != expected_trip.id:
+        other_day = (
+            ticket.trip_id != expected_trip.id if expected_trip
+            else timezone.localdate(ticket.trip.departure_at) != timezone.localdate()
+        )
+        reported = other_day and _reported(ticket, expected_trip)
+        if reported:
+            # Report : « déjà scanné » et le statut se vérifient ensuite comme pour tout billet.
+            reason = f"Billet reporté du {timezone.localtime(ticket.trip.departure_at):%d/%m/%Y}"
+        if not reported and expected_trip and ticket.trip_id != expected_trip.id:
             result, reason = TicketControl.Result.REJECTED, "Le ticket ne correspond pas au voyage sélectionné."
-        elif not expected_trip and timezone.localdate(ticket.trip.departure_at) != timezone.localdate():
+        elif not reported and not expected_trip and other_day:
             result, reason = TicketControl.Result.REJECTED, "Le ticket n'est pas valable à la date du contrôle."
         elif ticket.status == Ticket.Status.CHECKED or ticket.controls.filter(
             result=TicketControl.Result.ACCEPTED
@@ -1287,7 +1318,8 @@ def validate_ticket(*, qr_token, controller, expected_trip=None, method=TicketCo
             ticket=ticket, controller=controller, method=method, result=result, note=reason
         )
         if result == TicketControl.Result.ACCEPTED:
-            ticket = transition_ticket(ticket, Ticket.Status.CHECKED, actor=controller, note=f"Contrôle {method}")
+            note = f"Contrôle {method}" + (f" — {reason}" if reason else "")
+            ticket = transition_ticket(ticket, Ticket.Status.CHECKED, actor=controller, note=note)
     if result != TicketControl.Result.ACCEPTED:
         raise ValidationError({"detail": reason, "result": result, "control_id": control.pk})
     return ticket, control

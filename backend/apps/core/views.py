@@ -1307,6 +1307,14 @@ class TicketViewSet(viewsets.ModelViewSet):
             return queryset.none()
         if trip:
             queryset = queryset.filter(trip_id=trip)
+        # Recherche de l'admin : référence, nom ou téléphone du passager.
+        search = (self.request.query_params.get("q") or "").strip()
+        if search and self.request.user.role == User.Role.ADMIN:
+            queryset = queryset.filter(
+                Q(reference__icontains=search)
+                | Q(passenger_name__icontains=search)
+                | Q(passenger_phone__icontains=search)
+            )
         return queryset
 
     def get_permissions(self):
@@ -1397,7 +1405,9 @@ class TicketViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], permission_classes=[IsAxisAdmin])
     def transition(self, request, pk=None):
         # Changement de statut forcé à la main : administrateur uniquement, inscrit au journal
-        # (aucun écran ne s'en sert ; la vente passe par « pay » ou /staff/sales/, qui créent un paiement).
+        # (la vente passe par « pay » ou /staff/sales/, qui créent un paiement). Le motif est obligatoire.
+        if not str(request.data.get("note", "")).strip():
+            raise ValidationError({"note": "Indiquez le motif du changement."})
         try:
             ticket = transition_ticket(
                 self.get_object(),
@@ -1661,6 +1671,12 @@ class ParcelViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], permission_classes=[IsCounterOrAdmin])
     def transition(self, request, pk=None):
         parcel = self.get_object()
+        if request.data.get("status") == Parcel.Status.CANCELLED:
+            # Annulation : administrateur seulement, avec motif, inscrite à l'historique du colis.
+            if request.user.role != User.Role.ADMIN:
+                raise PermissionDenied("Seul un administrateur peut annuler un colis.")
+            if not str(request.data.get("note", "")).strip():
+                raise ValidationError({"note": "Indiquez le motif de l'annulation."})
         if "trip" in request.data:
             parcel.trip_id = request.data.get("trip")
             parcel.save(update_fields=["trip", "updated_at"])
