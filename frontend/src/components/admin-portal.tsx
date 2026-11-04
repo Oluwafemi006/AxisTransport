@@ -1279,6 +1279,19 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
     await saveSetting("boarding_lead_minutes", minutes, "Minutes entre l'embarquement et le départ", "Avance sur l’heure de départ");
   }
 
+  const [methodDrafts, setMethodDrafts] = useState<Record<number, { label: string; active: boolean }>>({});
+  async function saveMethod(item: PaymentMethod) {
+    const draft = methodDrafts[item.id];
+    if (!draft) { feedback.info(`« ${item.label} » : rien à enregistrer.`); return; }
+    if (!draft.active && item.active && !window.confirm(`Désactiver « ${item.label} » ? Il ne sera plus proposé aux clients ni au personnel.`)) return;
+    try {
+      await apiFetch(`/payment-methods/${item.id}/`, { method: "PATCH", body: JSON.stringify({ label: draft.label.trim(), active: draft.active }) });
+      feedback.success(`Moyen de paiement « ${draft.label.trim()} » enregistré.`);
+      const next = { ...methodDrafts }; delete next[item.id]; setMethodDrafts(next);
+      await onChanged();
+    } catch (reason) { feedback.failure(reason, `« ${item.label} » n’a pas été modifié.`); }
+  }
+
   async function addMethod() {
     try {
       await apiFetch("/payment-methods/", { method: "POST", body: JSON.stringify({ code: method.toLowerCase().replace(/[^a-z0-9]+/g, "-"), label: method, active: true }) });
@@ -1355,8 +1368,19 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
           </div>
           <div className="card">
             <SectionHeading eyebrow="Canaux administrables" title="Moyens de paiement" />
-            <div className="mb-3 flex flex-wrap gap-2">
-              {payments.map((p) => <StatusBadge key={p.id} tone={p.active ? "green" : "red"}>{p.label}</StatusBadge>)}
+            <p className="mb-3 text-xs text-slate-500">Le libellé est ce que voient clients et personnel (ex. « Mobile Money », « Espèces »). Le code ne se modifie pas.</p>
+            <div className="mb-4 space-y-2">
+              {payments.map((p) => {
+                const draft = methodDrafts[p.id] ?? { label: p.label, active: p.active };
+                return (
+                  <div key={p.id} className="flex flex-wrap items-center gap-2">
+                    <input className="field min-w-0 flex-1" aria-label={`Libellé ${p.code}`} value={draft.label} onChange={(e) => setMethodDrafts({ ...methodDrafts, [p.id]: { ...draft, label: e.target.value } })} />
+                    <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={draft.active} onChange={(e) => setMethodDrafts({ ...methodDrafts, [p.id]: { ...draft, active: e.target.checked } })} />Actif</label>
+                    <span className="text-xs text-slate-400">{p.code}</span>
+                    <button type="button" className="secondary-button" onClick={() => void saveMethod(p)}>Enregistrer</button>
+                  </div>
+                );
+              })}
             </div>
             <div className="flex gap-2">
               <input className="field" placeholder="Ex. Espèces au guichet" value={method} onChange={(e) => setMethod(e.target.value)} />
@@ -2000,6 +2024,26 @@ function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChange
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [resetPassword, setResetPassword] = useState("");
   const [lastLink, setLastLink] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState({ first_name: "", last_name: "", phone: "", email: "" });
+
+  function openEdit(user: User) {
+    setEditTarget(user);
+    setEditForm({ first_name: user.first_name || "", last_name: user.last_name || "", phone: user.phone || "", email: user.email || "" });
+  }
+
+  async function submitEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editTarget || busy) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/users/${editTarget.id}/`, { method: "PATCH", body: JSON.stringify(editForm) });
+      feedback.success(`Coordonnées de ${editTarget.username} enregistrées.`);
+      setEditTarget(null);
+      await reload();
+    } catch (reason) { feedback.failure(reason, "Les coordonnées n’ont pas été modifiées."); }
+    finally { setBusy(false); }
+  }
 
   const reload = useCallback(async (query = search) => {
     try {
@@ -2113,6 +2157,7 @@ function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChange
                     <td>{user.phone || user.email || "—"}</td>
                     <td><StatusBadge tone={user.is_active === false ? "grey" : "green"}>{user.is_active === false ? "Désactivé" : "Actif"}</StatusBadge></td>
                     <td className="whitespace-nowrap">
+                      <button type="button" className="text-button mr-2" onClick={() => openEdit(user)}>Modifier</button>
                       <button type="button" className="text-button mr-2" onClick={() => { setResetTarget(user); setResetPassword(""); }}>Mot de passe</button>
                       <button type="button" className="text-button danger" onClick={() => void toggleActive(user)}>{user.is_active === false ? "Réactiver" : "Désactiver"}</button>
                     </td>
@@ -2164,6 +2209,17 @@ function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChange
         </section>
       </div>
       <div className="min-w-0 space-y-5 self-start">
+        {editTarget && (
+          <form onSubmit={submitEdit} className="card space-y-4">
+            <SectionHeading eyebrow="Coordonnées" title={`Modifier ${editTarget.username}`} />
+            <Input label="Prénom" value={editForm.first_name} onChange={(value) => setEditForm({ ...editForm, first_name: value })} required={false} />
+            <Input label="Nom" value={editForm.last_name} onChange={(value) => setEditForm({ ...editForm, last_name: value })} required={false} />
+            <Input label="Téléphone" type="tel" value={editForm.phone} onChange={(value) => setEditForm({ ...editForm, phone: value })} required={false} />
+            <Input label="E-mail" type="email" value={editForm.email} onChange={(value) => setEditForm({ ...editForm, email: value })} required={false} />
+            <button className="primary-button w-full" disabled={busy}>{busy ? "Enregistrement…" : "Enregistrer"}</button>
+            <button type="button" className="text-button w-full" onClick={() => setEditTarget(null)}>Annuler</button>
+          </form>
+        )}
         {resetTarget && (
           <form onSubmit={submitReset} className="card space-y-4">
             <SectionHeading eyebrow="Mot de passe" title={`Réinitialiser ${resetTarget.username}`} />
