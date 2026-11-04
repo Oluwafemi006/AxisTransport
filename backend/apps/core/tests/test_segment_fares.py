@@ -154,7 +154,8 @@ class SegmentFareAdminApiTests(APITestCase):
     def test_only_the_price_can_change_and_pairs_cannot_be_created_or_deleted(self):
         self.assertEqual(self.client.patch(self.url, {"amount": 5000, "currency": "EUR"}, format="json").status_code, 400)
         self.assertEqual(self.client.put(self.url, {"amount": 5000}, format="json").status_code, 405)
-        self.assertEqual(self.client.post(FARES, {"amount": 1000}, format="json").status_code, 405)
+        # Création possible depuis /admin, mais refusée sans deux villes de la ligne.
+        self.assertEqual(self.client.post(FARES, {"amount": 1000}, format="json").status_code, 400)
         self.assertEqual(self.client.delete(self.url).status_code, 405)
         self.assertEqual(self.client.post(CHANGES, {}, format="json").status_code, 405)
         self.assertEqual(SegmentFare.objects.count(), 8)

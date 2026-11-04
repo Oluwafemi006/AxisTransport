@@ -394,7 +394,7 @@ def resolve_segment_fare(origin, destination):
     Aucun tarif enregistré : le tronçon n'est pas vendable, sans prix de repli.
     """
     bounds = _segment_bounds(origin, destination)
-    fare = SegmentFare.objects.filter(start=bounds[0], end=bounds[1]).first() if bounds else None
+    fare = SegmentFare.objects.filter(start=bounds[0], end=bounds[1], active=True).first() if bounds else None
     if fare is None:
         raise SegmentFareMissing(f"Aucun prix n'est défini entre {origin} et {destination} : tronçon non vendable.")
     return fare
@@ -427,7 +427,7 @@ def segment_catalog(direction, *, online=False):
     Les paires sont déduites des arrêts et de la grille ; `aller` suit l'ordre de la ligne, `retour` l'inverse.
     """
     stops = list(LineStop.objects.filter(location__active=True).select_related("location").order_by("position"))
-    fares = {(fare.start_id, fare.end_id): fare for fare in SegmentFare.objects.all()}
+    fares = {(fare.start_id, fare.end_id): fare for fare in SegmentFare.objects.filter(active=True)}
     ordered = stops if direction == SEGMENT_DIRECTION_FORWARD else stops[::-1]
     # Départs à venir et ordre des arrêts de chaque parcours, pour trouver le prochain bus de chaque tronçon.
     trips = list(

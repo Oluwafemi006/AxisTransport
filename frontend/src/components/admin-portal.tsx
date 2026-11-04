@@ -7,9 +7,9 @@ import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import { actionErrorText, counterTripLabel, holdMinutesConfigured, upcomingSellableTrips } from "@/lib/portal-rules";
 
-import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
+import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, LineState, LineStopRow, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
-type AdminTab = "dashboard" | "planning" | "guichet" | "points" | "colis" | "flotte" | "tarifs" | "troncons" | "agence" | "paiements" | "equipe";
+type AdminTab = "dashboard" | "planning" | "guichet" | "points" | "colis" | "flotte" | "tarifs" | "villes" | "troncons" | "agence" | "paiements" | "equipe";
 type Dashboard = {
   tickets: { sold: number; online: number; counter: number; checked: number; cancelled_or_refunded: number };
   revenue: { total: number; by_payment_method: Array<{ payment_method__label: string; total: number }> };
@@ -24,7 +24,7 @@ const nextParcelStatus: Record<string, string> = {
 
 const tabs: Array<[AdminTab, string]> = [
   ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["points", "Points d’embarquement"], ["colis", "Colis"],
-  ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["troncons", "Tarifs par tronçon"], ["agence", "Agence et taxes"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
+  ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["villes", "Villes & ligne"], ["troncons", "Tarifs par tronçon"], ["agence", "Agence et taxes"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
 ];
 
 // Erreur de chargement affichée dans un panneau (les actions d'écriture passent par useActionFeedback).
@@ -107,6 +107,7 @@ export function AdminPortal() {
           {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
           {tab === "flotte" && <FleetPanel locations={locations} vehicles={vehicles} onChanged={load} />}
           {tab === "tarifs" && <PricingPanel routes={routes} fares={fares} flags={flags} payments={payments} settings={settings} onChanged={load} />}
+          {tab === "villes" && <LinePanel locations={locations} onChanged={load} />}
           {tab === "troncons" && <SegmentFarePanel />}
           {tab === "agence" && <AgencyPanel />}
           {tab === "paiements" && <div className="space-y-5"><RefundDueBookingsPanel /><IncidentPanel incidents={incidents} onChanged={load} /><ManualTicketChangeLog /></div>}
@@ -1739,6 +1740,142 @@ function BoardingPointsPanel({ locations, onChanged }: { locations: Location[]; 
 }
 
 // Prix des tronçons de la ligne (mêmes prix dans les deux sens), relus au serveur à l'ouverture et après chaque modification.
+// Villes (ajout, nom, activation) et ordre des arrêts de la ligne : tout est journalisé côté serveur.
+function LinePanel({ locations, onChanged }: { locations: Location[]; onChanged: () => Promise<void> }) {
+  const feedback = useActionFeedback();
+  const [line, setLine] = useState<LineState | null>(null);
+  const [order, setOrder] = useState<LineStopRow[]>([]);
+  const [names, setNames] = useState<Record<number, string>>({});
+  const [newCity, setNewCity] = useState("");
+  const [toAdd, setToAdd] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const state = await apiFetch<LineState>("/line/");
+      setLine(state);
+      setOrder(state.stops);
+    } catch (reason) { setNotice(failure(reason, "La ligne n’a pas pu être chargée. Réessayez.")); }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { setNames(Object.fromEntries(locations.map((l) => [l.id, l.name]))); }, [locations]);
+
+  const dirty = line !== null && order.map((s) => s.location_id).join(",") !== line.stops.map((s) => s.location_id).join(",");
+
+  function move(index: number, delta: number) {
+    const next = [...order];
+    const [row] = next.splice(index, 1);
+    next.splice(index + delta, 0, row);
+    setOrder(next);
+  }
+
+  async function run(action: () => Promise<unknown>, success: string, fallback: string) {
+    setBusy(true);
+    try {
+      await action();
+      feedback.success(success);
+      await Promise.all([load(), onChanged()]);
+    } catch (reason) {
+      feedback.failure(reason, fallback);
+    } finally { setBusy(false); }
+  }
+
+  function saveOrder() {
+    if (!window.confirm(`Enregistrer l’ordre : ${order.map((s) => s.name).join(" → ")} ? Le retour suit l’ordre inverse.`)) return;
+    void run(() => apiFetch("/line/", { method: "PUT", body: JSON.stringify({ location_ids: order.map((s) => s.location_id) }) }),
+      "Ordre de la ligne enregistré.", "L’ordre de la ligne n’a pas été enregistré.");
+  }
+
+  function addCity(event: FormEvent) {
+    event.preventDefault();
+    const name = newCity.trim();
+    if (!name) return;
+    void run(async () => { await apiFetch("/locations/", { method: "POST", body: JSON.stringify({ name }) }); setNewCity(""); },
+      `Ville ajoutée : ${name}. Ajoutez-la à la ligne pour la desservir.`, "La ville n’a pas été ajoutée.");
+  }
+
+  function rename(location: Location) {
+    const name = (names[location.id] ?? "").trim();
+    if (!name || name === location.name) return;
+    if (!window.confirm(`Renommer ${location.name} en ${name} ? Le nouveau nom apparaîtra partout, y compris sur les billets.`)) return;
+    void run(() => apiFetch(`/locations/${location.id}/`, { method: "PATCH", body: JSON.stringify({ name }) }),
+      `Ville renommée : ${name}.`, "Le nom n’a pas été enregistré.");
+  }
+
+  function toggleCity(location: Location) {
+    if (!window.confirm(location.active ? `Désactiver ${location.name} ? Elle ne sera plus proposée aux clients.` : `Réactiver ${location.name} ?`)) return;
+    void run(() => apiFetch(`/locations/${location.id}/`, { method: "PATCH", body: JSON.stringify({ active: !location.active }) }),
+      location.active ? `${location.name} désactivée.` : `${location.name} réactivée.`, "La modification n’a pas été enregistrée.");
+  }
+
+  const available = (line?.available ?? []).filter((row) => !order.some((s) => s.location_id === row.location_id));
+
+  return (
+    <div className="space-y-5">
+      <section className="card">
+        <SectionHeading eyebrow="Sens aller, le retour suit l’ordre inverse" title="Ordre des arrêts de la ligne" />
+        {line === null ? <Loading /> : (
+          <>
+            <ol className="space-y-2">
+              {order.map((stop, index) => (
+                <li key={stop.location_id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2">
+                  <span className="w-6 text-right font-semibold">{index + 1}.</span>
+                  <span className="min-w-0 flex-1 font-medium">{stop.name}{(index === 0 || index === order.length - 1) && <span className="ml-2"><StatusBadge tone="grey">Terminus</StatusBadge></span>}</span>
+                  <button type="button" className="secondary-button" aria-label={`Monter ${stop.name}`} disabled={busy || index <= 1 || index === order.length - 1} onClick={() => move(index, -1)}>↑</button>
+                  <button type="button" className="secondary-button" aria-label={`Descendre ${stop.name}`} disabled={busy || index === 0 || index >= order.length - 2} onClick={() => move(index, 1)}>↓</button>
+                  <button type="button" className="secondary-button" disabled={busy || index === 0 || index === order.length - 1} onClick={() => setOrder(order.filter((_, i) => i !== index))}>Retirer</button>
+                </li>
+              ))}
+            </ol>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+              <Select label="Ajouter une ville à la ligne (avant le terminus d’arrivée)" value={toAdd} onChange={setToAdd} options={available.map((row) => [String(row.location_id), row.name])} required={false} />
+              <button type="button" className="secondary-button" disabled={busy || !toAdd} onClick={() => {
+                const row = available.find((r) => String(r.location_id) === toAdd);
+                if (!row) return;
+                setOrder([...order.slice(0, -1), row, ...order.slice(-1)]);
+                setToAdd("");
+              }}>Ajouter</button>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button className="primary-button" disabled={busy || !dirty} onClick={saveOrder}>{busy ? "Enregistrement…" : "Enregistrer l’ordre"}</button>
+              {dirty && <button className="secondary-button" disabled={busy} onClick={() => setOrder(line.stops)}>Annuler</button>}
+            </div>
+            <p className="mt-2 text-sm text-slate-500">Les terminus ne changent pas ici. Un arrêt qui a encore des billets à venir ne peut pas être retiré. Un arrêt retiré perd ses tarifs vendables ; pensez aux tarifs d’un nouvel arrêt dans « Tarifs par tronçon ».</p>
+          </>
+        )}
+        <Notice notice={notice} />
+      </section>
+      <section className="card">
+        <SectionHeading eyebrow="Jamais supprimées : billets et tarifs gardent leur historique" title="Villes" />
+        <form onSubmit={addCity} className="mb-4 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+          <label className="block"><span className="field-label">Nouvelle ville</span><input className="field" value={newCity} onChange={(e) => setNewCity(e.target.value)} maxLength={120} /></label>
+          <button className="primary-button" disabled={busy || !newCity.trim()}>Ajouter la ville</button>
+        </form>
+        <ul className="space-y-2">
+          {locations.map((location) => (
+            <li key={location.id} className={`flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2 ${location.active ? "" : "opacity-60"}`}>
+              <input className="field min-w-0 flex-1" aria-label={`Nom de ${location.name}`} value={names[location.id] ?? ""} onChange={(e) => setNames({ ...names, [location.id]: e.target.value })} maxLength={120} />
+              {!location.active && <StatusBadge tone="grey">Inactive</StatusBadge>}
+              <button className="secondary-button" disabled={busy || (names[location.id] ?? "").trim() === location.name} onClick={() => rename(location)}>Renommer</button>
+              <button className="secondary-button" disabled={busy} onClick={() => toggleCity(location)}>{location.active ? "Désactiver" : "Réactiver"}</button>
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section className="card">
+        <SectionHeading eyebrow="Lecture seule" title="Historique des villes et de la ligne" />
+        {!line || line.log.length === 0 ? <EmptyState title="Aucune modification" text="Chaque changement apparaîtra ici." /> : (
+          <ul className="space-y-2 text-sm">
+            {line.log.map((row) => <li key={row.id}><span className="text-slate-500">{formatDate(row.created_at)} · {row.actor_name}</span><br />{row.detail}</li>)}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function SegmentFarePanel() {
   const feedback = useActionFeedback();
   const [fares, setFares] = useState<SegmentFare[] | null>(null);
@@ -1747,16 +1884,20 @@ function SegmentFarePanel() {
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<number | null>(null);
   const [notice, setNotice] = useState<NoticeState>(null);
-  // Tarifs des villes retirées de la ligne (rang au-delà de 100) : gardés, masqués par défaut.
+  // Tarifs des villes retirées de la ligne (rang au-delà de 100) et tarifs retirés : gardés, masqués par défaut.
   const [showRetired, setShowRetired] = useState(false);
+  const [lineStops, setLineStops] = useState<LineStopRow[]>([]);
+  const [newFare, setNewFare] = useState({ origin: "", destination: "", amount: "" });
 
   const load = useCallback(async () => {
     try {
-      const [rows, log, withoutFare] = await Promise.all([
+      const [rows, log, withoutFare, line] = await Promise.all([
         apiList<SegmentFare>("/segment-fares/"),
         apiList<SegmentFareChange>("/segment-fare-changes/"),
         apiFetch<MissingSegmentFare[]>("/segment-fares/missing/"),
+        apiFetch<LineState>("/line/"),
       ]);
+      setLineStops(line.stops);
       setFares(rows);
       setMissing(withoutFare);
       setChanges(log);
@@ -1785,8 +1926,62 @@ function SegmentFarePanel() {
     } finally { setBusy(null); }
   }
 
+  async function create(event: FormEvent) {
+    event.preventDefault();
+    const typed = newFare.amount.replace(/[\s\u202f\u00a0]/g, "");
+    if (!newFare.origin || !newFare.destination || newFare.origin === newFare.destination) {
+      feedback.failure(null, "Choisissez deux villes différentes de la ligne.");
+      return;
+    }
+    if (!/^\d+$/.test(typed) || Number(typed) <= 0) {
+      feedback.failure(null, "Saisissez un prix en nombre entier de francs CFA, supérieur à zéro.");
+      return;
+    }
+    setBusy(-1);
+    try {
+      const fare = await apiFetch<SegmentFare>("/segment-fares/", {
+        method: "POST",
+        body: JSON.stringify({ origin_id: Number(newFare.origin), destination_id: Number(newFare.destination), amount: Number(typed) }),
+      });
+      feedback.success(`Tarif ajouté : ${fare.label} à ${money(fare.amount, fare.currency)}.`);
+      setNewFare({ origin: "", destination: "", amount: "" });
+      await load();
+    } catch (reason) {
+      feedback.failure(reason, "Le tarif n’a pas été ajouté.");
+    } finally { setBusy(null); }
+  }
+
+  async function toggle(fare: SegmentFare) {
+    const retire = fare.active;
+    if (!window.confirm(retire
+      ? `Retirer le tarif ${fare.label} ? Ce trajet ne sera plus vendable. Les billets déjà vendus ne changent pas.`
+      : `Rétablir le tarif ${fare.label} à ${money(fare.amount, fare.currency)} ?`)) return;
+    setBusy(fare.id);
+    try {
+      await apiFetch(`/segment-fares/${fare.id}/${retire ? "retire" : "restore"}/`, { method: "POST" });
+      feedback.success(retire ? `Tarif retiré : ${fare.label}.` : `Tarif rétabli : ${fare.label}.`);
+      await load();
+    } catch (reason) {
+      feedback.failure(reason, "La modification n’a pas été enregistrée.");
+    } finally { setBusy(null); }
+  }
+
+  const stopOptions = lineStops.map((stop): [string, string] => [String(stop.location_id), stop.name]);
+
   return (
     <div className="space-y-5">
+      <section className="card">
+        <SectionHeading eyebrow="Nouveau tronçon" title="Ajouter un tarif" />
+        <form onSubmit={create} className="grid gap-3 sm:grid-cols-4 sm:items-end">
+          <Select label="De" value={newFare.origin} onChange={(value) => setNewFare({ ...newFare, origin: value })} options={stopOptions} />
+          <Select label="À" value={newFare.destination} onChange={(value) => setNewFare({ ...newFare, destination: value })} options={stopOptions} />
+          <label className="block"><span className="field-label">Prix (FCFA)</span>
+            <input className="field" inputMode="numeric" value={newFare.amount} onChange={(e) => setNewFare({ ...newFare, amount: e.target.value })} required />
+          </label>
+          <button className="primary-button" disabled={busy !== null}>{busy === -1 ? "Ajout…" : "Ajouter"}</button>
+        </form>
+        <p className="mt-2 text-sm text-slate-500">Même prix dans les deux sens. Un tarif retiré peut être rétabli ici avec un nouveau prix.</p>
+      </section>
       <section className="card">
         <SectionHeading eyebrow="Mêmes prix dans les deux sens" title="Tarifs par tronçon" />
         {missing.length > 0 && (
@@ -1798,20 +1993,30 @@ function SegmentFarePanel() {
           </div>
         )}
         <p className="mb-4 text-sm text-slate-500">Prix en francs CFA. Un billet déjà vendu ou une réservation en cours garde le prix du moment de la vente.</p>
-        <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={showRetired} onChange={(e) => setShowRetired(e.target.checked)} />Afficher les tarifs des villes retirées (Kétou, Porto-Novo…)</label>
+        <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={showRetired} onChange={(e) => setShowRetired(e.target.checked)} />Afficher les tarifs retirés et ceux des villes retirées de la ligne</label>
         {fares === null ? <Loading /> : fares.length === 0 ? <EmptyState title="Aucun tronçon" text="La grille des prix n’est pas encore chargée." /> : (
           <div className="table-scroll">
             <table className="staff-table min-w-[620px]">
               <thead><tr><th>Tronçon</th><th>Prix actuel</th><th>Nouveau prix</th><th /></tr></thead>
               <tbody>
-                {fares.filter((fare) => showRetired || (fare.start_position <= 100 && fare.end_position <= 100)).map((fare) => (
-                  <tr key={fare.id} className={fare.start_position > 100 || fare.end_position > 100 ? "opacity-60" : undefined}>
-                    <td className="strong">{fare.label}{(fare.start_position > 100 || fare.end_position > 100) && <span className="ml-2"><StatusBadge tone="grey">Ville retirée</StatusBadge></span>}</td>
+                {fares.filter((fare) => showRetired || (fare.active && fare.start_position <= 100 && fare.end_position <= 100)).map((fare) => (
+                  <tr key={fare.id} className={!fare.active || fare.start_position > 100 || fare.end_position > 100 ? "opacity-60" : undefined}>
+                    <td className="strong">{fare.label}
+                      {(fare.start_position > 100 || fare.end_position > 100) && <span className="ml-2"><StatusBadge tone="grey">Ville retirée</StatusBadge></span>}
+                      {!fare.active && <span className="ml-2"><StatusBadge tone="grey">Tarif retiré</StatusBadge></span>}
+                    </td>
                     <td className="whitespace-nowrap">{money(fare.amount, fare.currency)}</td>
                     <td>
                       <input className="field max-w-40" inputMode="numeric" aria-label={`Nouveau prix ${fare.label}`} value={drafts[fare.id] ?? ""} onChange={(e) => setDrafts({ ...drafts, [fare.id]: e.target.value })} />
                     </td>
-                    <td className="text-right"><button className="secondary-button" disabled={busy !== null} onClick={() => void save(fare)}>{busy === fare.id ? "Enregistrement…" : "Enregistrer"}</button></td>
+                    <td className="text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {fare.active && <button className="secondary-button" disabled={busy !== null} onClick={() => void save(fare)}>{busy === fare.id ? "Enregistrement…" : "Enregistrer"}</button>}
+                        {(fare.active || (fare.start_position <= 100 && fare.end_position <= 100)) && (
+                          <button className="secondary-button" disabled={busy !== null} onClick={() => void toggle(fare)}>{fare.active ? "Retirer" : "Rétablir"}</button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1825,7 +2030,7 @@ function SegmentFarePanel() {
         {changes.length === 0 ? <EmptyState title="Aucune modification" text="Chaque changement de prix apparaîtra ici." /> : (
           <div className="table-scroll">
             <table className="staff-table min-w-[620px]">
-              <thead><tr><th>Date</th><th>Tronçon</th><th>Ancien prix</th><th>Nouveau prix</th><th>Par</th></tr></thead>
+              <thead><tr><th>Date</th><th>Tronçon</th><th>Ancien prix</th><th>Nouveau prix</th><th>Action</th><th>Par</th></tr></thead>
               <tbody>
                 {changes.map((change) => (
                   <tr key={change.id}>
@@ -1833,6 +2038,7 @@ function SegmentFarePanel() {
                     <td className="strong">{change.label}</td>
                     <td>{change.old_amount === null ? "—" : money(change.old_amount)}</td>
                     <td>{money(change.new_amount)}</td>
+                    <td>{change.note || "Prix modifié"}</td>
                     <td>{change.changed_by_name}</td>
                   </tr>
                 ))}

@@ -1011,7 +1011,7 @@ class SegmentFareSerializer(serializers.ModelSerializer):
         model = SegmentFare
         fields = [
             "id", "start_name", "end_name", "start_position", "end_position", "label",
-            "amount", "currency", "updated_at", "updated_by_name",
+            "amount", "currency", "active", "updated_at", "updated_by_name",
         ]
         read_only_fields = [field for field in fields if field != "amount"]
 
@@ -1054,7 +1054,7 @@ class SegmentFareChangeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SegmentFareChange
-        fields = ["id", "created_at", "label", "old_amount", "new_amount", "changed_by_name"]
+        fields = ["id", "created_at", "label", "old_amount", "new_amount", "note", "changed_by_name"]
         read_only_fields = fields
 
     def get_changed_by_name(self, obj):

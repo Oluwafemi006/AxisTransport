@@ -21,3 +21,4 @@ Ne rien ajouter sans décision transmise par Eddy.
 | **Heure du Bénin (UTC+1)** pour toutes les dates et heures. | date inconnue | `settings.TIME_ZONE = "Africa/Porto-Novo"` |
 | **Le billet est un titre de transport**, pas une facture (pas de numéro de facture, NIM, code MeCeF/DGI ni QR DGI). | date inconnue | `serializers.ticket_print_info`, DEPLOY.md section 2 quinquies |
 | **Pas de SMS automatique.** | date inconnue | aucun envoi de SMS dans le code |
+| **Tout ce qu'affiche `/admin` y est modifiable**, y compris les villes, l'ordre des arrêts de la ligne et la création ou le retrait des tarifs (journalisés, jamais supprimés). Validé par le boss, transmis par Eddy. | 04/11/2026 | onglet « Villes & ligne », `line_admin.py` |
