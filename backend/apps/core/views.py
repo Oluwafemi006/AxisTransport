@@ -1145,9 +1145,18 @@ class UserViewSet(viewsets.ModelViewSet):
         if user.pk == self.request.user.pk and new_role != old_role:
             raise ValidationError({"role": "Vous ne pouvez pas changer votre propre rôle."})
         password_changed = "password" in serializer.validated_data
+        contact_keys = ("first_name", "last_name", "phone", "email")
+        before = {key: getattr(user, key) for key in contact_keys}
         user = serializer.save()
         if password_changed:
             PasswordAdminReset.objects.create(target=user, actor=self.request.user)
+        changed = [key for key in contact_keys if before[key] != getattr(user, key)]
+        if changed:
+            labels = {"first_name": "prénom", "last_name": "nom", "phone": "téléphone", "email": "e-mail"}
+            AccountChange.objects.create(
+                target=user, actor=self.request.user, action=AccountChange.Action.UPDATED,
+                detail=", ".join(labels[key] for key in changed),
+            )
         if new_role != old_role:
             user.is_staff = user.role != User.Role.CLIENT
             user.save(update_fields=["is_staff"])
@@ -1622,8 +1631,20 @@ class RentalBookingViewSet(viewsets.ModelViewSet):
 
 
 class PaymentMethodViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
+    """Moyens de paiement : libellé, état et frais modifiables par l'admin ; jamais supprimés ; chaque changement journalisé."""
+
     queryset = PaymentMethod.objects.all()
     serializer_class = PaymentMethodSerializer
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def perform_update(self, serializer):
+        before = {key: getattr(serializer.instance, key) for key in ("label", "active", "fee_percentage")}
+        method = serializer.save()
+        changes = [f"{key} : {before[key]} → {getattr(method, key)}" for key in before if before[key] != getattr(method, key)]
+        if changes:
+            AccountChange.objects.create(
+                actor=self.request.user, action=AccountChange.Action.PAYMENT, detail=f"{method.code} · {' ; '.join(changes)}"[:255]
+            )
 
     def get_serializer_class(self):
         if self.action in {"list", "retrieve"} and not (

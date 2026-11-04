@@ -1404,6 +1404,8 @@ class AccountChange(models.Model):
         ROLE = "ROLE", "Rôle changé"
         DEACTIVATED = "DEACTIVATED", "Compte désactivé"
         ACTIVATED = "ACTIVATED", "Compte réactivé"
+        UPDATED = "UPDATED", "Coordonnées modifiées"
+        PAYMENT = "PAYMENT", "Moyen de paiement modifié"
 
     target = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="account_changes")
     actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
