@@ -107,3 +107,35 @@ class InvitationTests(APITestCase):
     def test_invalid_email_or_role_refused(self):
         self.assertEqual(self.invite(email="pas-un-email").status_code, 400)
         self.assertEqual(self.invite(role="CLIENT").status_code, 400)
+
+
+class EditableTests(APITestCase):
+    def setUp(self):
+        from apps.core.models import PaymentMethod
+
+        self.admin = User.objects.create_user(username="test_admin_e", password=PASSWORD, role=User.Role.ADMIN)
+        self.client.force_authenticate(self.admin)
+        self.method = PaymentMethod.objects.create(code="FEDAPAY", label="FedaPay Mobile Money / Carte", active=True)
+
+    def test_payment_method_label_and_state_are_editable_and_logged(self):
+        url = f"/api/v1/payment-methods/{self.method.pk}/"
+        response = self.client.patch(url, {"label": "Mobile Money"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.method.refresh_from_db()
+        self.assertEqual((self.method.label, self.method.code), ("Mobile Money", "FEDAPAY"))
+        self.assertTrue(AccountChange.objects.filter(action="PAYMENT", detail__contains="Mobile Money").exists())
+        self.assertEqual(self.client.patch(url, {"code": "AUTRE"}, format="json").status_code, 400)
+        self.assertEqual(self.client.patch(url, {"label": " "}, format="json").status_code, 400)
+        self.assertEqual(self.client.delete(url).status_code, 405)
+
+    def test_non_admin_cannot_edit_a_payment_method(self):
+        counter = User.objects.create_user(username="test_g_e", password=PASSWORD, role=User.Role.COUNTER)
+        self.client.force_authenticate(counter)
+        self.assertEqual(self.client.patch(f"/api/v1/payment-methods/{self.method.pk}/", {"label": "X"}, format="json").status_code, 403)
+
+    def test_member_contact_details_are_editable_and_logged(self):
+        user = User.objects.create_user(username="test_coord", password=PASSWORD, role=User.Role.COUNTER)
+        response = self.client.patch(f"/api/v1/users/{user.pk}/", {"first_name": "TEST Awa", "phone": "0100000000"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        entry = AccountChange.objects.get(action="UPDATED", target=user)
+        self.assertEqual(entry.detail, "prénom, téléphone")

@@ -8,9 +8,9 @@ import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import { actionErrorText, counterTripLabel, holdMinutesConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref } from "@/lib/portal-rules";
 
-import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
+import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, LineState, LineStopRow, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, RentalBooking, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
-type AdminTab = "dashboard" | "planning" | "guichet" | "points" | "colis" | "flotte" | "tarifs" | "troncons" | "agence" | "paiements" | "equipe";
+type AdminTab = "dashboard" | "planning" | "guichet" | "billets" | "points" | "colis" | "locations" | "flotte" | "tarifs" | "villes" | "troncons" | "agence" | "paiements" | "equipe";
 type Dashboard = {
   tickets: { sold: number; online: number; counter: number; checked: number; cancelled_or_refunded: number };
   revenue: { total: number; by_payment_method: Array<{ payment_method__label: string; total: number }> };
@@ -24,8 +24,8 @@ const nextParcelStatus: Record<string, string> = {
 };
 
 const tabs: Array<[AdminTab, string]> = [
-  ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["points", "Points d’embarquement"], ["colis", "Colis"],
-  ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["troncons", "Tarifs par tronçon"], ["agence", "Agence et taxes"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
+  ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["billets", "Billets"], ["points", "Points d’embarquement"], ["colis", "Colis"], ["locations", "Locations"],
+  ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["villes", "Villes & ligne"], ["troncons", "Tarifs par tronçon"], ["agence", "Agence et taxes"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
 ];
 
 // Erreur de chargement affichée dans un panneau (les actions d'écriture passent par useActionFeedback).
@@ -104,10 +104,13 @@ export function AdminPortal() {
           {tab === "dashboard" && <><BusPositions /><DashboardPanel data={dashboard} trips={trips} /></>}
           {tab === "planning" && <PlanningPanel routes={routes} vehicles={vehicles.filter((v) => v.category === "BUS")} trips={trips} weeklySchedules={weeklySchedules} onChanged={load} />}
           {tab === "guichet" && <><CounterPanel trips={trips} payments={payments} onChanged={load} /><SoldToday /></>}
+          {tab === "billets" && <TicketsPanel settings={settings} onChanged={load} />}
           {tab === "points" && <BoardingPointsPanel locations={locations} onChanged={load} />}
           {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
+          {tab === "locations" && <RentalPanel />}
           {tab === "flotte" && <FleetPanel locations={locations} vehicles={vehicles} onChanged={load} />}
           {tab === "tarifs" && <PricingPanel routes={routes} fares={fares} flags={flags} payments={payments} settings={settings} onChanged={load} />}
+          {tab === "villes" && <LinePanel locations={locations} onChanged={load} />}
           {tab === "troncons" && <SegmentFarePanel />}
           {tab === "agence" && <AgencyPanel />}
           {tab === "paiements" && <div className="space-y-5"><RefundDueBookingsPanel /><IncidentPanel incidents={incidents} onChanged={load} /><ManualTicketChangeLog /></div>}
@@ -1026,6 +1029,89 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
   );
 }
 
+// Billets : recherche (référence, nom, téléphone), annulation avec motif, délai de report des billets non scannés.
+function TicketsPanel({ settings, onChanged }: { settings: SystemSetting[]; onChanged: () => Promise<void> }) {
+  const feedback = useActionFeedback();
+  const [query, setQuery] = useState("");
+  const [rows, setRows] = useState<Ticket[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const report = settings.find((item) => item.key === "ticket_report_days");
+  const [days, setDays] = useState(report ? String(report.value) : "");
+  useEffect(() => { setDays(report ? String(report.value) : ""); }, [report]);
+
+  async function search(event?: FormEvent) {
+    event?.preventDefault();
+    const term = query.trim();
+    if (!term) return;
+    setBusy(true);
+    try { setRows(await apiList<Ticket>(`/tickets/?q=${encodeURIComponent(term)}`)); }
+    catch (reason) { feedback.failure(reason, "La recherche n’a pas abouti."); }
+    finally { setBusy(false); }
+  }
+
+  async function cancel(ticket: Ticket) {
+    const note = window.prompt(`Annuler le billet ${ticket.reference} (${ticket.passenger_name}) ? La place sera libérée. Indiquez le motif :`)?.trim();
+    if (!note) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/tickets/${ticket.id}/transition/`, { method: "POST", body: JSON.stringify({ status: "CANCELLED", note }) });
+      feedback.success(`Billet ${ticket.reference} annulé.`);
+      await search();
+    } catch (reason) { feedback.failure(reason, "Le billet n’a pas été annulé."); }
+    finally { setBusy(false); }
+  }
+
+  async function saveDays() {
+    const value = Number(days);
+    if (!days.trim() || !Number.isInteger(value) || value < 0) {
+      feedback.failure(null, "Délai de report : saisissez un nombre entier de jours (0 = aucun report).");
+      return;
+    }
+    try {
+      await apiFetch(report ? `/settings/${report.id}/` : "/settings/", { method: report ? "PATCH" : "POST", body: JSON.stringify({ key: "ticket_report_days", value, description: "Jours de report d’un billet non scanné" }) });
+      feedback.success("Délai de report enregistré.");
+      await onChanged();
+    } catch (reason) { feedback.failure(reason, "Délai de report : non enregistré."); }
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="card">
+        <SectionHeading eyebrow="Billet non scanné le jour prévu" title="Délai de report" />
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+          <label className="block"><span className="field-label">Nombre de jours après le départ prévu</span>
+            <input className="field" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} placeholder="À renseigner" />
+          </label>
+          <button className="primary-button" onClick={() => void saveDays()}>Enregistrer</button>
+        </div>
+        <p className="mt-2 text-sm text-slate-500">Tant que ce délai n’est pas saisi, un billet ne se scanne que le jour de son départ. Un billet reporté se scanne une seule fois, sur un départ du même parcours.</p>
+      </section>
+      <section className="card">
+        <SectionHeading eyebrow="Référence, nom ou téléphone" title="Rechercher un billet" />
+        <form onSubmit={search} className="mb-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+          <input className="field" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ex. : AX-…, nom du passager, téléphone" />
+          <button className="primary-button" disabled={busy || !query.trim()}>{busy ? "Recherche…" : "Rechercher"}</button>
+        </form>
+        {rows === null ? null : rows.length === 0 ? <EmptyState title="Aucun billet" text="Aucun billet ne correspond à la recherche." /> : (
+          <ul className="space-y-2">
+            {rows.map((ticket) => (
+              <li key={ticket.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">{ticket.reference} · {ticket.passenger_name}</p>
+                  <p className="text-slate-500">{ticket.trip_detail ? `${ticket.trip_detail.route_detail.label} · ${formatDate(ticket.trip_detail.departure_at)}` : ""}{ticket.passenger_phone ? ` · ${ticket.passenger_phone}` : ""}</p>
+                </div>
+                <StatusBadge tone={ticketTone(ticket.status)}>{ticket.status_display}</StatusBadge>
+                <a className="secondary-button" href={`/t/${encodeURIComponent(ticket.reference)}`} target="_blank" rel="noreferrer">Voir</a>
+                {["HELD", "PAID", "ISSUED"].includes(ticket.status) && <button className="secondary-button" disabled={busy} onClick={() => void cancel(ticket)}>Annuler</button>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: Trip[]; onChanged: () => Promise<void> }) {
   const feedback = useActionFeedback();
   const [assignments, setAssignments] = useState<Record<number, string>>({});
@@ -1053,6 +1139,30 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
     (!term || [parcel.tracking_number, parcel.sender_name, parcel.recipient_name, parcel.origin_detail.name, parcel.destination_detail.name].some((value) => (value || "").toLowerCase().includes(term))),
   );
   const statuses = Array.from(new Map(parcels.map((parcel) => [parcel.status, parcel.status_display])).entries());
+
+  async function cancel(parcel: Parcel) {
+    const note = window.prompt(`Annuler le colis ${parcel.tracking_number} ? Indiquez le motif :`)?.trim();
+    if (!note) return;
+    try {
+      await apiFetch(`/parcels/${parcel.id}/transition/`, { method: "POST", body: JSON.stringify({ status: "CANCELLED", note }) });
+      feedback.success(`Colis ${parcel.tracking_number} annulé.`);
+      await onChanged();
+    } catch (reason) { feedback.failure(reason, "Le colis n’a pas été annulé."); }
+  }
+
+  async function edit(parcel: Parcel) {
+    const recipient_name = window.prompt("Nom du destinataire :", parcel.recipient_name)?.trim();
+    if (!recipient_name) return;
+    const recipient_phone = window.prompt("Téléphone du destinataire :", parcel.recipient_phone)?.trim();
+    if (!recipient_phone) return;
+    const description = window.prompt("Description du colis :", parcel.description)?.trim();
+    if (description === undefined) return;
+    try {
+      await apiFetch(`/parcels/${parcel.id}/`, { method: "PATCH", body: JSON.stringify({ recipient_name, recipient_phone, description }) });
+      feedback.success(`Colis ${parcel.tracking_number} modifié.`);
+      await onChanged();
+    } catch (reason) { feedback.failure(reason, "Le colis n’a pas été modifié."); }
+  }
 
   async function advance(parcel: Parcel) {
     const next = nextParcelStatus[parcel.status];
@@ -1093,7 +1203,7 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
                   </td>
                   <td>{parcel.origin_detail.name} → {parcel.destination_detail.name}</td>
                   <td>{parcel.recipient_name}</td>
-                  <td><StatusBadge tone={parcel.status === "PICKED_UP" ? "green" : "blue"}>{parcel.status_display}</StatusBadge></td>
+                  <td><StatusBadge tone={parcel.status === "PICKED_UP" ? "green" : parcel.status === "CANCELLED" ? "grey" : "blue"}>{parcel.status_display}</StatusBadge></td>
                   <td>
                     <span className="flex flex-wrap items-center gap-2">
                       {nextParcelStatus[parcel.status] === "ASSIGNED" && (
@@ -1104,6 +1214,8 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
                       )}
                       {nextParcelStatus[parcel.status] === "PICKED_UP" && <input className="field max-w-56" placeholder="Identité / code de retrait" value={proofs[parcel.id] || ""} onChange={(e) => setProofs({ ...proofs, [parcel.id]: e.target.value })} />}
                       {nextParcelStatus[parcel.status] && <button className="secondary-button" onClick={() => void advance(parcel)}>Valider</button>}
+                      {!["PICKED_UP", "CANCELLED"].includes(parcel.status) && <button className="secondary-button" onClick={() => void edit(parcel)}>Modifier</button>}
+                      {["REGISTERED", "DEPOSITED", "ACCEPTED", "ASSIGNED"].includes(parcel.status) && <button className="secondary-button" onClick={() => void cancel(parcel)}>Annuler</button>}
                     </span>
                   </td>
                 </tr>
@@ -1113,6 +1225,115 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
         </div>
       )}
     </section>
+  );
+}
+
+// Locations : l'admin confirme, démarre, termine ou annule une demande et saisit montant et caution (journalisés).
+const rentalNext: Record<string, Array<[string, string]>> = {
+  REQUESTED: [["CONFIRMED", "Confirmer"], ["CANCELLED", "Annuler"]],
+  CONFIRMED: [["ACTIVE", "Démarrer"], ["CANCELLED", "Annuler"]],
+  ACTIVE: [["COMPLETED", "Terminer"]],
+};
+
+function RentalPanel() {
+  const feedback = useActionFeedback();
+  const [rentals, setRentals] = useState<RentalBooking[] | null>(null);
+  const [log, setLog] = useState<Array<{ id: number; created_at: string; detail: string; actor_name: string }>>([]);
+  const [amounts, setAmounts] = useState<Record<number, { total: string; deposit: string }>>({});
+  const [busy, setBusy] = useState<number | null>(null);
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [rows, changes] = await Promise.all([apiList<RentalBooking>("/rentals/"), apiFetch<typeof log>("/rentals/changes/")]);
+      setRentals(rows);
+      setLog(changes);
+      setAmounts(Object.fromEntries(rows.map((r) => [r.id, { total: r.total_amount ? String(Math.round(Number(r.total_amount))) : "", deposit: r.deposit_amount ? String(Math.round(Number(r.deposit_amount))) : "" }])));
+    } catch (reason) { setNotice(failure(reason, "Les locations n’ont pas pu être chargées. Réessayez.")); }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function manage(rental: RentalBooking, body: Record<string, unknown>, success: string) {
+    setBusy(rental.id);
+    try {
+      await apiFetch(`/rentals/${rental.id}/manage/`, { method: "POST", body: JSON.stringify(body) });
+      feedback.success(success);
+      await load();
+    } catch (reason) { feedback.failure(reason, "La location n’a pas été modifiée."); }
+    finally { setBusy(null); }
+  }
+
+  function changeStatus(rental: RentalBooking, status: string, label: string) {
+    let note = "";
+    if (status === "CANCELLED") {
+      note = window.prompt(`Annuler la location ${rental.reference} ? Indiquez le motif :`)?.trim() || "";
+      if (!note) return;
+    } else if (!window.confirm(`${label} la location ${rental.reference} ?`)) return;
+    void manage(rental, { status, note }, `Location ${rental.reference} : ${label.toLowerCase()} — enregistré.`);
+  }
+
+  function saveAmounts(rental: RentalBooking) {
+    const draft = amounts[rental.id] || { total: "", deposit: "" };
+    const body: Record<string, unknown> = {};
+    for (const [key, value] of [["total_amount", draft.total], ["deposit_amount", draft.deposit]] as const) {
+      const typed = value.replace(/[\s\u202f\u00a0]/g, "");
+      if (!typed) continue;
+      if (!/^\d+$/.test(typed) || Number(typed) <= 0) { feedback.failure(null, "Montants : nombres entiers de francs CFA, supérieurs à zéro."); return; }
+      body[key] = Number(typed);
+    }
+    if (Object.keys(body).length === 0) return;
+    void manage(rental, body, `Montants de ${rental.reference} enregistrés.`);
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="card">
+        <SectionHeading eyebrow="Demandes des clients" title="Locations" />
+        {rentals === null ? <Loading /> : rentals.length === 0 ? <EmptyState title="Aucune location" text="Les demandes de location des clients apparaîtront ici." /> : (
+          <ul className="space-y-3">
+            {rentals.map((rental) => {
+              const draft = amounts[rental.id] || { total: "", deposit: "" };
+              const open = !["COMPLETED", "CANCELLED"].includes(rental.status);
+              return (
+                <li key={rental.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="min-w-0 flex-1 font-semibold">{rental.reference} · {rental.vehicle_detail?.name}</p>
+                    <StatusBadge tone={rental.status === "CANCELLED" ? "grey" : rental.status === "COMPLETED" ? "green" : "blue"}>{rental.status_display}</StatusBadge>
+                  </div>
+                  <p className="mt-1 text-slate-500">
+                    Du {formatDate(rental.starts_at)} au {formatDate(rental.ends_at)}{rental.with_driver ? " · avec chauffeur" : ""}
+                    {rental.customer_detail ? ` · ${[rental.customer_detail.first_name, rental.customer_detail.last_name].filter(Boolean).join(" ") || rental.customer_detail.username}${rental.customer_detail.phone ? ` · ${rental.customer_detail.phone}` : ""}` : ""}
+                  </p>
+                  {open && (
+                    <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                      <label className="block"><span className="field-label">Montant (FCFA)</span><input className="field" inputMode="numeric" value={draft.total} placeholder="À renseigner" onChange={(e) => setAmounts({ ...amounts, [rental.id]: { ...draft, total: e.target.value } })} /></label>
+                      <label className="block"><span className="field-label">Caution (FCFA)</span><input className="field" inputMode="numeric" value={draft.deposit} placeholder="À renseigner" onChange={(e) => setAmounts({ ...amounts, [rental.id]: { ...draft, deposit: e.target.value } })} /></label>
+                      <button className="secondary-button" disabled={busy !== null} onClick={() => saveAmounts(rental)}>Enregistrer</button>
+                    </div>
+                  )}
+                  {!open && <p className="mt-1">Montant : {rental.total_amount ? money(rental.total_amount) : "—"} · Caution : {rental.deposit_amount ? money(rental.deposit_amount) : "—"}</p>}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(rentalNext[rental.status] || []).map(([status, label]) => (
+                      <button key={status} className={status === "CANCELLED" ? "secondary-button" : "primary-button"} disabled={busy !== null} onClick={() => changeStatus(rental, status, label)}>{label}</button>
+                    ))}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <Notice notice={notice} />
+      </section>
+      <section className="card">
+        <SectionHeading eyebrow="Lecture seule" title="Historique des locations" />
+        {log.length === 0 ? <EmptyState title="Aucune modification" text="Chaque changement apparaîtra ici." /> : (
+          <ul className="space-y-2 text-sm">
+            {log.map((row) => <li key={row.id}><span className="text-slate-500">{formatDate(row.created_at)} · {row.actor_name}</span><br />{row.detail}</li>)}
+          </ul>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -1294,6 +1515,19 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
     await saveSetting("boarding_lead_minutes", minutes, "Minutes entre l'embarquement et le départ", "Avance sur l’heure de départ");
   }
 
+  const [methodDrafts, setMethodDrafts] = useState<Record<number, { label: string; active: boolean }>>({});
+  async function saveMethod(item: PaymentMethod) {
+    const draft = methodDrafts[item.id];
+    if (!draft) { feedback.info(`« ${item.label} » : rien à enregistrer.`); return; }
+    if (!draft.active && item.active && !window.confirm(`Désactiver « ${item.label} » ? Il ne sera plus proposé aux clients ni au personnel.`)) return;
+    try {
+      await apiFetch(`/payment-methods/${item.id}/`, { method: "PATCH", body: JSON.stringify({ label: draft.label.trim(), active: draft.active }) });
+      feedback.success(`Moyen de paiement « ${draft.label.trim()} » enregistré.`);
+      const next = { ...methodDrafts }; delete next[item.id]; setMethodDrafts(next);
+      await onChanged();
+    } catch (reason) { feedback.failure(reason, `« ${item.label} » n’a pas été modifié.`); }
+  }
+
   async function addMethod() {
     try {
       await apiFetch("/payment-methods/", { method: "POST", body: JSON.stringify({ code: method.toLowerCase().replace(/[^a-z0-9]+/g, "-"), label: method, active: true }) });
@@ -1370,8 +1604,19 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
           </div>
           <div className="card">
             <SectionHeading eyebrow="Canaux administrables" title="Moyens de paiement" />
-            <div className="mb-3 flex flex-wrap gap-2">
-              {payments.map((p) => <StatusBadge key={p.id} tone={p.active ? "green" : "red"}>{p.label}</StatusBadge>)}
+            <p className="mb-3 text-xs text-slate-500">Le libellé est ce que voient clients et personnel (ex. « Mobile Money », « Espèces »). Le code ne se modifie pas.</p>
+            <div className="mb-4 space-y-2">
+              {payments.map((p) => {
+                const draft = methodDrafts[p.id] ?? { label: p.label, active: p.active };
+                return (
+                  <div key={p.id} className="flex flex-wrap items-center gap-2">
+                    <input className="field min-w-0 flex-1" aria-label={`Libellé ${p.code}`} value={draft.label} onChange={(e) => setMethodDrafts({ ...methodDrafts, [p.id]: { ...draft, label: e.target.value } })} />
+                    <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={draft.active} onChange={(e) => setMethodDrafts({ ...methodDrafts, [p.id]: { ...draft, active: e.target.checked } })} />Actif</label>
+                    <span className="text-xs text-slate-400">{p.code}</span>
+                    <button type="button" className="secondary-button" onClick={() => void saveMethod(p)}>Enregistrer</button>
+                  </div>
+                );
+              })}
             </div>
             <div className="flex gap-2">
               <input className="field" placeholder="Ex. Espèces au guichet" value={method} onChange={(e) => setMethod(e.target.value)} />
@@ -1730,6 +1975,142 @@ function BoardingPointsPanel({ locations, onChanged }: { locations: Location[]; 
 }
 
 // Prix des tronçons de la ligne (mêmes prix dans les deux sens), relus au serveur à l'ouverture et après chaque modification.
+// Villes (ajout, nom, activation) et ordre des arrêts de la ligne : tout est journalisé côté serveur.
+function LinePanel({ locations, onChanged }: { locations: Location[]; onChanged: () => Promise<void> }) {
+  const feedback = useActionFeedback();
+  const [line, setLine] = useState<LineState | null>(null);
+  const [order, setOrder] = useState<LineStopRow[]>([]);
+  const [names, setNames] = useState<Record<number, string>>({});
+  const [newCity, setNewCity] = useState("");
+  const [toAdd, setToAdd] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const state = await apiFetch<LineState>("/line/");
+      setLine(state);
+      setOrder(state.stops);
+    } catch (reason) { setNotice(failure(reason, "La ligne n’a pas pu être chargée. Réessayez.")); }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { setNames(Object.fromEntries(locations.map((l) => [l.id, l.name]))); }, [locations]);
+
+  const dirty = line !== null && order.map((s) => s.location_id).join(",") !== line.stops.map((s) => s.location_id).join(",");
+
+  function move(index: number, delta: number) {
+    const next = [...order];
+    const [row] = next.splice(index, 1);
+    next.splice(index + delta, 0, row);
+    setOrder(next);
+  }
+
+  async function run(action: () => Promise<unknown>, success: string, fallback: string) {
+    setBusy(true);
+    try {
+      await action();
+      feedback.success(success);
+      await Promise.all([load(), onChanged()]);
+    } catch (reason) {
+      feedback.failure(reason, fallback);
+    } finally { setBusy(false); }
+  }
+
+  function saveOrder() {
+    if (!window.confirm(`Enregistrer l’ordre : ${order.map((s) => s.name).join(" → ")} ? Le retour suit l’ordre inverse.`)) return;
+    void run(() => apiFetch("/line/", { method: "PUT", body: JSON.stringify({ location_ids: order.map((s) => s.location_id) }) }),
+      "Ordre de la ligne enregistré.", "L’ordre de la ligne n’a pas été enregistré.");
+  }
+
+  function addCity(event: FormEvent) {
+    event.preventDefault();
+    const name = newCity.trim();
+    if (!name) return;
+    void run(async () => { await apiFetch("/locations/", { method: "POST", body: JSON.stringify({ name }) }); setNewCity(""); },
+      `Ville ajoutée : ${name}. Ajoutez-la à la ligne pour la desservir.`, "La ville n’a pas été ajoutée.");
+  }
+
+  function rename(location: Location) {
+    const name = (names[location.id] ?? "").trim();
+    if (!name || name === location.name) return;
+    if (!window.confirm(`Renommer ${location.name} en ${name} ? Le nouveau nom apparaîtra partout, y compris sur les billets.`)) return;
+    void run(() => apiFetch(`/locations/${location.id}/`, { method: "PATCH", body: JSON.stringify({ name }) }),
+      `Ville renommée : ${name}.`, "Le nom n’a pas été enregistré.");
+  }
+
+  function toggleCity(location: Location) {
+    if (!window.confirm(location.active ? `Désactiver ${location.name} ? Elle ne sera plus proposée aux clients.` : `Réactiver ${location.name} ?`)) return;
+    void run(() => apiFetch(`/locations/${location.id}/`, { method: "PATCH", body: JSON.stringify({ active: !location.active }) }),
+      location.active ? `${location.name} désactivée.` : `${location.name} réactivée.`, "La modification n’a pas été enregistrée.");
+  }
+
+  const available = (line?.available ?? []).filter((row) => !order.some((s) => s.location_id === row.location_id));
+
+  return (
+    <div className="space-y-5">
+      <section className="card">
+        <SectionHeading eyebrow="Sens aller, le retour suit l’ordre inverse" title="Ordre des arrêts de la ligne" />
+        {line === null ? <Loading /> : (
+          <>
+            <ol className="space-y-2">
+              {order.map((stop, index) => (
+                <li key={stop.location_id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2">
+                  <span className="w-6 text-right font-semibold">{index + 1}.</span>
+                  <span className="min-w-0 flex-1 font-medium">{stop.name}{(index === 0 || index === order.length - 1) && <span className="ml-2"><StatusBadge tone="grey">Terminus</StatusBadge></span>}</span>
+                  <button type="button" className="secondary-button" aria-label={`Monter ${stop.name}`} disabled={busy || index <= 1 || index === order.length - 1} onClick={() => move(index, -1)}>↑</button>
+                  <button type="button" className="secondary-button" aria-label={`Descendre ${stop.name}`} disabled={busy || index === 0 || index >= order.length - 2} onClick={() => move(index, 1)}>↓</button>
+                  <button type="button" className="secondary-button" disabled={busy || index === 0 || index === order.length - 1} onClick={() => setOrder(order.filter((_, i) => i !== index))}>Retirer</button>
+                </li>
+              ))}
+            </ol>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+              <Select label="Ajouter une ville à la ligne (avant le terminus d’arrivée)" value={toAdd} onChange={setToAdd} options={available.map((row) => [String(row.location_id), row.name])} required={false} />
+              <button type="button" className="secondary-button" disabled={busy || !toAdd} onClick={() => {
+                const row = available.find((r) => String(r.location_id) === toAdd);
+                if (!row) return;
+                setOrder([...order.slice(0, -1), row, ...order.slice(-1)]);
+                setToAdd("");
+              }}>Ajouter</button>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button className="primary-button" disabled={busy || !dirty} onClick={saveOrder}>{busy ? "Enregistrement…" : "Enregistrer l’ordre"}</button>
+              {dirty && <button className="secondary-button" disabled={busy} onClick={() => setOrder(line.stops)}>Annuler</button>}
+            </div>
+            <p className="mt-2 text-sm text-slate-500">Les terminus ne changent pas ici. Un arrêt qui a encore des billets à venir ne peut pas être retiré. Un arrêt retiré perd ses tarifs vendables ; pensez aux tarifs d’un nouvel arrêt dans « Tarifs par tronçon ».</p>
+          </>
+        )}
+        <Notice notice={notice} />
+      </section>
+      <section className="card">
+        <SectionHeading eyebrow="Jamais supprimées : billets et tarifs gardent leur historique" title="Villes" />
+        <form onSubmit={addCity} className="mb-4 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+          <label className="block"><span className="field-label">Nouvelle ville</span><input className="field" value={newCity} onChange={(e) => setNewCity(e.target.value)} maxLength={120} /></label>
+          <button className="primary-button" disabled={busy || !newCity.trim()}>Ajouter la ville</button>
+        </form>
+        <ul className="space-y-2">
+          {locations.map((location) => (
+            <li key={location.id} className={`flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-2 ${location.active ? "" : "opacity-60"}`}>
+              <input className="field min-w-0 flex-1" aria-label={`Nom de ${location.name}`} value={names[location.id] ?? ""} onChange={(e) => setNames({ ...names, [location.id]: e.target.value })} maxLength={120} />
+              {!location.active && <StatusBadge tone="grey">Inactive</StatusBadge>}
+              <button className="secondary-button" disabled={busy || (names[location.id] ?? "").trim() === location.name} onClick={() => rename(location)}>Renommer</button>
+              <button className="secondary-button" disabled={busy} onClick={() => toggleCity(location)}>{location.active ? "Désactiver" : "Réactiver"}</button>
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section className="card">
+        <SectionHeading eyebrow="Lecture seule" title="Historique des villes et de la ligne" />
+        {!line || line.log.length === 0 ? <EmptyState title="Aucune modification" text="Chaque changement apparaîtra ici." /> : (
+          <ul className="space-y-2 text-sm">
+            {line.log.map((row) => <li key={row.id}><span className="text-slate-500">{formatDate(row.created_at)} · {row.actor_name}</span><br />{row.detail}</li>)}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function SegmentFarePanel() {
   const feedback = useActionFeedback();
   const [fares, setFares] = useState<SegmentFare[] | null>(null);
@@ -1738,16 +2119,20 @@ function SegmentFarePanel() {
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<number | null>(null);
   const [notice, setNotice] = useState<NoticeState>(null);
-  // Tarifs des villes retirées de la ligne (rang au-delà de 100) : gardés, masqués par défaut.
+  // Tarifs des villes retirées de la ligne (rang au-delà de 100) et tarifs retirés : gardés, masqués par défaut.
   const [showRetired, setShowRetired] = useState(false);
+  const [lineStops, setLineStops] = useState<LineStopRow[]>([]);
+  const [newFare, setNewFare] = useState({ origin: "", destination: "", amount: "" });
 
   const load = useCallback(async () => {
     try {
-      const [rows, log, withoutFare] = await Promise.all([
+      const [rows, log, withoutFare, line] = await Promise.all([
         apiList<SegmentFare>("/segment-fares/"),
         apiList<SegmentFareChange>("/segment-fare-changes/"),
         apiFetch<MissingSegmentFare[]>("/segment-fares/missing/"),
+        apiFetch<LineState>("/line/"),
       ]);
+      setLineStops(line.stops);
       setFares(rows);
       setMissing(withoutFare);
       setChanges(log);
@@ -1776,8 +2161,62 @@ function SegmentFarePanel() {
     } finally { setBusy(null); }
   }
 
+  async function create(event: FormEvent) {
+    event.preventDefault();
+    const typed = newFare.amount.replace(/[\s\u202f\u00a0]/g, "");
+    if (!newFare.origin || !newFare.destination || newFare.origin === newFare.destination) {
+      feedback.failure(null, "Choisissez deux villes différentes de la ligne.");
+      return;
+    }
+    if (!/^\d+$/.test(typed) || Number(typed) <= 0) {
+      feedback.failure(null, "Saisissez un prix en nombre entier de francs CFA, supérieur à zéro.");
+      return;
+    }
+    setBusy(-1);
+    try {
+      const fare = await apiFetch<SegmentFare>("/segment-fares/", {
+        method: "POST",
+        body: JSON.stringify({ origin_id: Number(newFare.origin), destination_id: Number(newFare.destination), amount: Number(typed) }),
+      });
+      feedback.success(`Tarif ajouté : ${fare.label} à ${money(fare.amount, fare.currency)}.`);
+      setNewFare({ origin: "", destination: "", amount: "" });
+      await load();
+    } catch (reason) {
+      feedback.failure(reason, "Le tarif n’a pas été ajouté.");
+    } finally { setBusy(null); }
+  }
+
+  async function toggle(fare: SegmentFare) {
+    const retire = fare.active;
+    if (!window.confirm(retire
+      ? `Retirer le tarif ${fare.label} ? Ce trajet ne sera plus vendable. Les billets déjà vendus ne changent pas.`
+      : `Rétablir le tarif ${fare.label} à ${money(fare.amount, fare.currency)} ?`)) return;
+    setBusy(fare.id);
+    try {
+      await apiFetch(`/segment-fares/${fare.id}/${retire ? "retire" : "restore"}/`, { method: "POST" });
+      feedback.success(retire ? `Tarif retiré : ${fare.label}.` : `Tarif rétabli : ${fare.label}.`);
+      await load();
+    } catch (reason) {
+      feedback.failure(reason, "La modification n’a pas été enregistrée.");
+    } finally { setBusy(null); }
+  }
+
+  const stopOptions = lineStops.map((stop): [string, string] => [String(stop.location_id), stop.name]);
+
   return (
     <div className="space-y-5">
+      <section className="card">
+        <SectionHeading eyebrow="Nouveau tronçon" title="Ajouter un tarif" />
+        <form onSubmit={create} className="grid gap-3 sm:grid-cols-4 sm:items-end">
+          <Select label="De" value={newFare.origin} onChange={(value) => setNewFare({ ...newFare, origin: value })} options={stopOptions} />
+          <Select label="À" value={newFare.destination} onChange={(value) => setNewFare({ ...newFare, destination: value })} options={stopOptions} />
+          <label className="block"><span className="field-label">Prix (FCFA)</span>
+            <input className="field" inputMode="numeric" value={newFare.amount} onChange={(e) => setNewFare({ ...newFare, amount: e.target.value })} required />
+          </label>
+          <button className="primary-button" disabled={busy !== null}>{busy === -1 ? "Ajout…" : "Ajouter"}</button>
+        </form>
+        <p className="mt-2 text-sm text-slate-500">Même prix dans les deux sens. Un tarif retiré peut être rétabli ici avec un nouveau prix.</p>
+      </section>
       <section className="card">
         <SectionHeading eyebrow="Mêmes prix dans les deux sens" title="Tarifs par tronçon" />
         {missing.length > 0 && (
@@ -1789,20 +2228,30 @@ function SegmentFarePanel() {
           </div>
         )}
         <p className="mb-4 text-sm text-slate-500">Prix en francs CFA. Un billet déjà vendu ou une réservation en cours garde le prix du moment de la vente.</p>
-        <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={showRetired} onChange={(e) => setShowRetired(e.target.checked)} />Afficher les tarifs des villes retirées (Kétou, Porto-Novo…)</label>
+        <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={showRetired} onChange={(e) => setShowRetired(e.target.checked)} />Afficher les tarifs retirés et ceux des villes retirées de la ligne</label>
         {fares === null ? <Loading /> : fares.length === 0 ? <EmptyState title="Aucun tronçon" text="La grille des prix n’est pas encore chargée." /> : (
           <div className="table-scroll">
             <table className="staff-table min-w-[620px]">
               <thead><tr><th>Tronçon</th><th>Prix actuel</th><th>Nouveau prix</th><th /></tr></thead>
               <tbody>
-                {fares.filter((fare) => showRetired || (fare.start_position <= 100 && fare.end_position <= 100)).map((fare) => (
-                  <tr key={fare.id} className={fare.start_position > 100 || fare.end_position > 100 ? "opacity-60" : undefined}>
-                    <td className="strong">{fare.label}{(fare.start_position > 100 || fare.end_position > 100) && <span className="ml-2"><StatusBadge tone="grey">Ville retirée</StatusBadge></span>}</td>
+                {fares.filter((fare) => showRetired || (fare.active && fare.start_position <= 100 && fare.end_position <= 100)).map((fare) => (
+                  <tr key={fare.id} className={!fare.active || fare.start_position > 100 || fare.end_position > 100 ? "opacity-60" : undefined}>
+                    <td className="strong">{fare.label}
+                      {(fare.start_position > 100 || fare.end_position > 100) && <span className="ml-2"><StatusBadge tone="grey">Ville retirée</StatusBadge></span>}
+                      {!fare.active && <span className="ml-2"><StatusBadge tone="grey">Tarif retiré</StatusBadge></span>}
+                    </td>
                     <td className="whitespace-nowrap">{money(fare.amount, fare.currency)}</td>
                     <td>
                       <input className="field max-w-40" inputMode="numeric" aria-label={`Nouveau prix ${fare.label}`} value={drafts[fare.id] ?? ""} onChange={(e) => setDrafts({ ...drafts, [fare.id]: e.target.value })} />
                     </td>
-                    <td className="text-right"><button className="secondary-button" disabled={busy !== null} onClick={() => void save(fare)}>{busy === fare.id ? "Enregistrement…" : "Enregistrer"}</button></td>
+                    <td className="text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {fare.active && <button className="secondary-button" disabled={busy !== null} onClick={() => void save(fare)}>{busy === fare.id ? "Enregistrement…" : "Enregistrer"}</button>}
+                        {(fare.active || (fare.start_position <= 100 && fare.end_position <= 100)) && (
+                          <button className="secondary-button" disabled={busy !== null} onClick={() => void toggle(fare)}>{fare.active ? "Retirer" : "Rétablir"}</button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1816,7 +2265,7 @@ function SegmentFarePanel() {
         {changes.length === 0 ? <EmptyState title="Aucune modification" text="Chaque changement de prix apparaîtra ici." /> : (
           <div className="table-scroll">
             <table className="staff-table min-w-[620px]">
-              <thead><tr><th>Date</th><th>Tronçon</th><th>Ancien prix</th><th>Nouveau prix</th><th>Par</th></tr></thead>
+              <thead><tr><th>Date</th><th>Tronçon</th><th>Ancien prix</th><th>Nouveau prix</th><th>Action</th><th>Par</th></tr></thead>
               <tbody>
                 {changes.map((change) => (
                   <tr key={change.id}>
@@ -1824,6 +2273,7 @@ function SegmentFarePanel() {
                     <td className="strong">{change.label}</td>
                     <td>{change.old_amount === null ? "—" : money(change.old_amount)}</td>
                     <td>{money(change.new_amount)}</td>
+                    <td>{change.note || "Prix modifié"}</td>
                     <td>{change.changed_by_name}</td>
                   </tr>
                 ))}
@@ -2015,6 +2465,26 @@ function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChange
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [resetPassword, setResetPassword] = useState("");
   const [lastLink, setLastLink] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState({ first_name: "", last_name: "", phone: "", email: "" });
+
+  function openEdit(user: User) {
+    setEditTarget(user);
+    setEditForm({ first_name: user.first_name || "", last_name: user.last_name || "", phone: user.phone || "", email: user.email || "" });
+  }
+
+  async function submitEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editTarget || busy) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/users/${editTarget.id}/`, { method: "PATCH", body: JSON.stringify(editForm) });
+      feedback.success(`Coordonnées de ${editTarget.username} enregistrées.`);
+      setEditTarget(null);
+      await reload();
+    } catch (reason) { feedback.failure(reason, "Les coordonnées n’ont pas été modifiées."); }
+    finally { setBusy(false); }
+  }
 
   const reload = useCallback(async (query = search) => {
     try {
@@ -2128,6 +2598,7 @@ function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChange
                     <td>{user.phone || user.email || "—"}</td>
                     <td><StatusBadge tone={user.is_active === false ? "grey" : "green"}>{user.is_active === false ? "Désactivé" : "Actif"}</StatusBadge></td>
                     <td className="whitespace-nowrap">
+                      <button type="button" className="text-button mr-2" onClick={() => openEdit(user)}>Modifier</button>
                       <button type="button" className="text-button mr-2" onClick={() => { setResetTarget(user); setResetPassword(""); }}>Mot de passe</button>
                       <button type="button" className="text-button danger" onClick={() => void toggleActive(user)}>{user.is_active === false ? "Réactiver" : "Désactiver"}</button>
                     </td>
@@ -2179,6 +2650,17 @@ function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChange
         </section>
       </div>
       <div className="min-w-0 space-y-5 self-start">
+        {editTarget && (
+          <form onSubmit={submitEdit} className="card space-y-4">
+            <SectionHeading eyebrow="Coordonnées" title={`Modifier ${editTarget.username}`} />
+            <Input label="Prénom" value={editForm.first_name} onChange={(value) => setEditForm({ ...editForm, first_name: value })} required={false} />
+            <Input label="Nom" value={editForm.last_name} onChange={(value) => setEditForm({ ...editForm, last_name: value })} required={false} />
+            <Input label="Téléphone" type="tel" value={editForm.phone} onChange={(value) => setEditForm({ ...editForm, phone: value })} required={false} />
+            <Input label="E-mail" type="email" value={editForm.email} onChange={(value) => setEditForm({ ...editForm, email: value })} required={false} />
+            <button className="primary-button w-full" disabled={busy}>{busy ? "Enregistrement…" : "Enregistrer"}</button>
+            <button type="button" className="text-button w-full" onClick={() => setEditTarget(null)}>Annuler</button>
+          </form>
+        )}
         {resetTarget && (
           <form onSubmit={submitReset} className="card space-y-4">
             <SectionHeading eyebrow="Mot de passe" title={`Réinitialiser ${resetTarget.username}`} />

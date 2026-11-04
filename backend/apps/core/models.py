@@ -456,6 +456,8 @@ class SegmentFare(TimeStampedModel):
     amount = models.PositiveIntegerField(help_text="Prix du billet en francs CFA, nombre entier.")
     currency = models.CharField(max_length=3, default="XOF")
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    # Tarif retiré par l'admin : gardé pour l'historique, le tronçon n'est plus vendable.
+    active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["start__position", "end__position"]
@@ -486,12 +488,28 @@ class SegmentFareChange(TimeStampedModel):
     # Vide pour le chargement initial de la grille.
     old_amount = models.PositiveIntegerField(null=True, blank=True)
     new_amount = models.PositiveIntegerField()
+    # Création, retrait ou rétablissement du tarif ; vide pour un changement de prix.
+    note = models.CharField(max_length=80, blank=True)
 
     class Meta:
         ordering = ["-created_at", "-id"]
 
     def __str__(self):
         return f"{self.fare.label} : {self.old_amount} → {self.new_amount}"
+
+
+class LineChange(models.Model):
+    """Journal des villes et de l'ordre des arrêts, modifiés depuis /admin. Jamais modifié ni effacé."""
+
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
+    detail = models.CharField(max_length=500)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return self.detail
 
 
 class FeatureFlag(TimeStampedModel):
@@ -938,6 +956,7 @@ class Parcel(TimeStampedModel):
         ARRIVED = "ARRIVED", "Arrivé"
         READY_FOR_PICKUP = "READY_FOR_PICKUP", "Disponible au retrait"
         PICKED_UP = "PICKED_UP", "Retiré"
+        CANCELLED = "CANCELLED", "Annulé"
 
     tracking_number = models.CharField(max_length=40, unique=True, editable=False)
     customer = models.ForeignKey(User, on_delete=models.PROTECT, related_name="parcels", null=True, blank=True)
@@ -1404,6 +1423,8 @@ class AccountChange(models.Model):
         ROLE = "ROLE", "Rôle changé"
         DEACTIVATED = "DEACTIVATED", "Compte désactivé"
         ACTIVATED = "ACTIVATED", "Compte réactivé"
+        UPDATED = "UPDATED", "Coordonnées modifiées"
+        PAYMENT = "PAYMENT", "Moyen de paiement modifié"
 
     target = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name="account_changes")
     actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
@@ -1413,3 +1434,18 @@ class AccountChange(models.Model):
 
     class Meta:
         ordering = ["-created_at", "-id"]
+
+
+class RentalChange(models.Model):
+    """Journal des locations gérées par l'admin : statut, montants, motif. Jamais modifié ni effacé."""
+
+    rental = models.ForeignKey(RentalBooking, on_delete=models.PROTECT, related_name="changes")
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
+    detail = models.CharField(max_length=500)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return self.detail

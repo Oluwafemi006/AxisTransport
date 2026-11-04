@@ -238,6 +238,10 @@ export interface RentalBooking {
   with_driver: boolean;
   status: string;
   status_display: string;
+  total_amount?: string | null;
+  deposit_amount?: string | null;
+  customer_detail?: User;
+  created_at?: string;
 }
 
 export interface PaymentMethod {
@@ -294,6 +298,20 @@ export interface SegmentFare {
   updated_by_name: string;
   start_position: number;
   end_position: number;
+  active: boolean;
+}
+
+export interface LineStopRow {
+  location_id: number;
+  name: string;
+  position?: number;
+  active?: boolean;
+}
+
+export interface LineState {
+  stops: LineStopRow[];
+  available: LineStopRow[];
+  log: Array<{ id: number; created_at: string; detail: string; actor_name: string }>;
 }
 
 export interface BusPosition {
@@ -318,6 +336,7 @@ export interface SegmentFareChange {
   label: string;
   old_amount: number | null;
   new_amount: number;
+  note: string;
   changed_by_name: string;
 }
 

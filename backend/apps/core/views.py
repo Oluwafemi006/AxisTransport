@@ -28,6 +28,8 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 from . import password_reset
 from .models import (
+    RentalChange,
+    LineChange,
     BoardingPoint,
     Booking,
     FareRule,
@@ -118,6 +120,8 @@ from .payments import (
     verify_fedapay_signature,
 )
 from .photo_storage import upload_parcel_photo
+from .rental_admin import manage_rental
+from .line_admin import create_segment_fare, line_payload, log_line_change, save_line, set_segment_fare_active
 from .services import (
     ReservationsClosed,
     SEGMENT_DIRECTION_FORWARD,
@@ -703,8 +707,28 @@ class PublicReadAdminWriteMixin:
 
 
 class LocationViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
+    """Villes : créées, renommées, désactivées par l'admin, journalisées ; jamais supprimées (billets et tarifs)."""
+
     queryset = Location.objects.prefetch_related("boarding_points")
     serializer_class = LocationSerializer
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def perform_create(self, serializer):
+        place = serializer.save()
+        log_line_change(self.request.user, f"Ville ajoutée : {place.name}")
+
+    def perform_update(self, serializer):
+        before = Location.objects.get(pk=serializer.instance.pk)
+        place = serializer.save()
+        changes = []
+        if before.name != place.name:
+            changes.append(f"nom {before.name} → {place.name}")
+        if before.address != place.address:
+            changes.append("adresse modifiée")
+        if before.active != place.active:
+            changes.append("réactivée" if place.active else "désactivée")
+        if changes:
+            log_line_change(self.request.user, f"Ville {place.name} : {', '.join(changes)}")
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -959,15 +983,39 @@ class SystemSettingViewSet(viewsets.ModelViewSet):
 
 class SegmentFareViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     """
-    Grille des prix par tronçon : lecture et modification du prix, administrateur uniquement.
-    Ni création ni suppression ici : les tronçons sont chargés par « load_segment_fares ».
+    Grille des prix par tronçon, administrateur uniquement : création, prix, retrait et rétablissement,
+    tous journalisés. Jamais de suppression : un tarif retiré reste dans l'historique.
     """
 
     queryset = SegmentFare.objects.select_related("start__location", "end__location", "updated_by")
     serializer_class = SegmentFareSerializer
     permission_classes = [IsAxisAdmin]
-    http_method_names = ["get", "patch", "head", "options"]
+    http_method_names = ["get", "post", "patch", "head", "options"]
     pagination_class = None
+
+    def create(self, request, *args, **kwargs):
+        try:
+            fare = create_segment_fare(
+                request.data.get("origin_id"), request.data.get("destination_id"), request.data.get("amount"),
+                actor=request.user,
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"detail": exc.messages})
+        data = self.get_serializer(self.get_queryset().get(pk=fare.pk)).data
+        return Response(data, status=status.HTTP_201_CREATED)
+
+    def _toggle(self, active):
+        fare, changed = set_segment_fare_active(self.get_object(), active, actor=self.request.user)
+        data = self.get_serializer(self.get_queryset().get(pk=fare.pk)).data
+        return Response({**data, "changed": changed})
+
+    @action(detail=True, methods=["post"])
+    def retire(self, request, pk=None):
+        return self._toggle(False)
+
+    @action(detail=True, methods=["post"])
+    def restore(self, request, pk=None):
+        return self._toggle(True)
 
     @action(detail=False, methods=["get"], url_path="missing")
     def missing(self, request):
@@ -990,6 +1038,30 @@ class SegmentFareViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, viewset
         if not kwargs.get("partial"):
             raise ValidationError({"detail": "Utilisez une modification partielle du prix."})
         return super().update(request, *args, **kwargs)
+
+
+class LineView(APIView):
+    """Ordre des arrêts de la ligne (sens aller) : lecture et enregistrement, administrateur, journalisé."""
+
+    permission_classes = [IsAxisAdmin]
+
+    def get(self, request):
+        return Response({**line_payload(), "log": _line_log()})
+
+    def put(self, request):
+        try:
+            payload, changed = save_line(request.data.get("location_ids"), actor=request.user)
+        except DjangoValidationError as exc:
+            raise ValidationError({"detail": exc.messages})
+        return Response({**payload, "log": _line_log(), "changed": changed})
+
+
+def _line_log():
+    return [
+        {"id": row.id, "created_at": row.created_at, "detail": row.detail,
+         "actor_name": (row.actor.get_full_name() or row.actor.username) if row.actor else "—"}
+        for row in LineChange.objects.select_related("actor")[:50]
+    ]
 
 
 class SegmentFareChangeViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
@@ -1146,9 +1218,18 @@ class UserViewSet(viewsets.ModelViewSet):
         if user.pk == self.request.user.pk and new_role != old_role:
             raise ValidationError({"role": "Vous ne pouvez pas changer votre propre rôle."})
         password_changed = "password" in serializer.validated_data
+        contact_keys = ("first_name", "last_name", "phone", "email")
+        before = {key: getattr(user, key) for key in contact_keys}
         user = serializer.save()
         if password_changed:
             PasswordAdminReset.objects.create(target=user, actor=self.request.user)
+        changed = [key for key in contact_keys if before[key] != getattr(user, key)]
+        if changed:
+            labels = {"first_name": "prénom", "last_name": "nom", "phone": "téléphone", "email": "e-mail"}
+            AccountChange.objects.create(
+                target=user, actor=self.request.user, action=AccountChange.Action.UPDATED,
+                detail=", ".join(labels[key] for key in changed),
+            )
         if new_role != old_role:
             user.is_staff = user.role != User.Role.CLIENT
             user.save(update_fields=["is_staff"])
@@ -1229,6 +1310,14 @@ class TicketViewSet(viewsets.ModelViewSet):
             return queryset.none()
         if trip:
             queryset = queryset.filter(trip_id=trip)
+        # Recherche de l'admin : référence, nom ou téléphone du passager.
+        search = (self.request.query_params.get("q") or "").strip()
+        if search and self.request.user.role == User.Role.ADMIN:
+            queryset = queryset.filter(
+                Q(reference__icontains=search)
+                | Q(passenger_name__icontains=search)
+                | Q(passenger_phone__icontains=search)
+            )
         return queryset
 
     def get_permissions(self):
@@ -1319,7 +1408,9 @@ class TicketViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], permission_classes=[IsAxisAdmin])
     def transition(self, request, pk=None):
         # Changement de statut forcé à la main : administrateur uniquement, inscrit au journal
-        # (aucun écran ne s'en sert ; la vente passe par « pay » ou /staff/sales/, qui créent un paiement).
+        # (la vente passe par « pay » ou /staff/sales/, qui créent un paiement). Le motif est obligatoire.
+        if not str(request.data.get("note", "")).strip():
+            raise ValidationError({"note": "Indiquez le motif du changement."})
         try:
             ticket = transition_ticket(
                 self.get_object(),
@@ -1583,6 +1674,12 @@ class ParcelViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], permission_classes=[IsCounterOrAdmin])
     def transition(self, request, pk=None):
         parcel = self.get_object()
+        if request.data.get("status") == Parcel.Status.CANCELLED:
+            # Annulation : administrateur seulement, avec motif, inscrite à l'historique du colis.
+            if request.user.role != User.Role.ADMIN:
+                raise PermissionDenied("Seul un administrateur peut annuler un colis.")
+            if not str(request.data.get("note", "")).strip():
+                raise ValidationError({"note": "Indiquez le motif de l'annulation."})
         if "trip" in request.data:
             parcel.trip_id = request.data.get("trip")
             parcel.save(update_fields=["trip", "updated_at"])
@@ -1599,9 +1696,33 @@ class ParcelViewSet(viewsets.ModelViewSet):
 
 
 class RentalBookingViewSet(viewsets.ModelViewSet):
+    """Demandes de location : le client demande, l'admin gère (« manage », journalisé) ; jamais de suppression."""
+
     queryset = RentalBooking.objects.select_related("vehicle__base_location", "customer")
     serializer_class = RentalBookingSerializer
     permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAxisAdmin])
+    def manage(self, request, pk=None):
+        try:
+            rental, changed = manage_rental(
+                self.get_object(), actor=request.user, status=request.data.get("status") or None,
+                total_amount=request.data.get("total_amount"), deposit_amount=request.data.get("deposit_amount"),
+                note=str(request.data.get("note", "")),
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"detail": exc.messages})
+        return Response({**RentalBookingSerializer(rental, context={"request": request}).data, "changed": changed})
+
+    @action(detail=False, methods=["get"], permission_classes=[IsAxisAdmin])
+    def changes(self, request):
+        rows = RentalChange.objects.select_related("actor")[:100]
+        return Response([
+            {"id": row.id, "created_at": row.created_at, "detail": row.detail,
+             "actor_name": (row.actor.get_full_name() or row.actor.username) if row.actor else "—"}
+            for row in rows
+        ])
 
     def get_permissions(self):
         if self.action == "create":
@@ -1623,8 +1744,20 @@ class RentalBookingViewSet(viewsets.ModelViewSet):
 
 
 class PaymentMethodViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
+    """Moyens de paiement : libellé, état et frais modifiables par l'admin ; jamais supprimés ; chaque changement journalisé."""
+
     queryset = PaymentMethod.objects.all()
     serializer_class = PaymentMethodSerializer
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def perform_update(self, serializer):
+        before = {key: getattr(serializer.instance, key) for key in ("label", "active", "fee_percentage")}
+        method = serializer.save()
+        changes = [f"{key} : {before[key]} → {getattr(method, key)}" for key in before if before[key] != getattr(method, key)]
+        if changes:
+            AccountChange.objects.create(
+                actor=self.request.user, action=AccountChange.Action.PAYMENT, detail=f"{method.code} · {' ; '.join(changes)}"[:255]
+            )
 
     def get_serializer_class(self):
         if self.action in {"list", "retrieve"} and not (

@@ -858,6 +858,17 @@ class PaymentMethodSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ["created_at", "updated_at"]
 
+    def validate_code(self, value):
+        # Le code relie le moyen au prestataire (FEDAPAY…) : il ne change jamais après la création.
+        if self.instance is not None and value != self.instance.code:
+            raise serializers.ValidationError("Le code d'un moyen de paiement ne se modifie pas.")
+        return value
+
+    def validate_label(self, value):
+        if not str(value or "").strip():
+            raise serializers.ValidationError("Le libellé est obligatoire.")
+        return str(value).strip()
+
 
 class PublicPaymentMethodSerializer(serializers.ModelSerializer):
     # Vrai si le moyen se paie en ligne ; faux s'il n'est encaissable qu'au guichet.
@@ -1000,7 +1011,7 @@ class SegmentFareSerializer(serializers.ModelSerializer):
         model = SegmentFare
         fields = [
             "id", "start_name", "end_name", "start_position", "end_position", "label",
-            "amount", "currency", "updated_at", "updated_by_name",
+            "amount", "currency", "active", "updated_at", "updated_by_name",
         ]
         read_only_fields = [field for field in fields if field != "amount"]
 
@@ -1043,7 +1054,7 @@ class SegmentFareChangeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SegmentFareChange
-        fields = ["id", "created_at", "label", "old_amount", "new_amount", "changed_by_name"]
+        fields = ["id", "created_at", "label", "old_amount", "new_amount", "note", "changed_by_name"]
         read_only_fields = fields
 
     def get_changed_by_name(self, obj):
