@@ -595,6 +595,11 @@ class ApiClient {
     );
   }
 
+  /// Billets vendus aujourd'hui (lecture seule) : ses ventes pour un agent, toutes pour l'administrateur.
+  Future<List<dynamic>> soldToday() {
+    return _request<List<dynamic>>('/staff/sales/today/', auth: true);
+  }
+
   Future<List<dynamic>> myParcels() {
     return _request<List<dynamic>>('/staff/sales/parcels/', auth: true);
   }

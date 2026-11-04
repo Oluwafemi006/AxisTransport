@@ -434,14 +434,18 @@ class _ControllerScannerScreenState
                   ),
 
                 // Zone de visée centrale (QrScanFrame)
-                const Expanded(
+                // Barre animée pendant que la caméra cherche un billet ; arrêtée sur un résultat
+                // (et sans caméra, dans les tests, où une animation sans fin bloquerait l'attente).
+                Expanded(
                   child: Center(
                     child: SingleChildScrollView(
-                      physics: ClampingScrollPhysics(),
+                      physics: const ClampingScrollPhysics(),
                       child: QrScanFrame(
                         boxSize: 196,
                         instruction: 'Placez le QR code du billet dans le cadre',
-                        animateLaser: false,
+                        animateLaser: widget.enableCamera &&
+                            _resultData == null &&
+                            !_isProcessing,
                       ),
                     ),
                   ),

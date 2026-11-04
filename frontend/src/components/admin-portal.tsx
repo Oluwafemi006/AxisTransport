@@ -2,10 +2,11 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone, useActionFeedback } from "./ui";
+import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
 import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import { actionErrorText, counterTripLabel, holdMinutesConfigured, upcomingSellableTrips } from "@/lib/portal-rules";
+import { actionErrorText, counterTripLabel, holdMinutesConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref } from "@/lib/portal-rules";
 
 import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, LineState, LineStopRow, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, RentalBooking, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
@@ -102,7 +103,7 @@ export function AdminPortal() {
         <>
           {tab === "dashboard" && <><BusPositions /><DashboardPanel data={dashboard} trips={trips} /></>}
           {tab === "planning" && <PlanningPanel routes={routes} vehicles={vehicles.filter((v) => v.category === "BUS")} trips={trips} weeklySchedules={weeklySchedules} onChanged={load} />}
-          {tab === "guichet" && <CounterPanel trips={trips} payments={payments} onChanged={load} />}
+          {tab === "guichet" && <><CounterPanel trips={trips} payments={payments} onChanged={load} /><SoldToday /></>}
           {tab === "billets" && <TicketsPanel settings={settings} onChanged={load} />}
           {tab === "points" && <BoardingPointsPanel locations={locations} onChanged={load} />}
           {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
@@ -737,6 +738,8 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
   const [seat, setSeat] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  // Numéro WhatsApp du client, facultatif : sert seulement à lui envoyer le lien de son billet.
+  const [whatsapp, setWhatsapp] = useState("");
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [notice, setNotice] = useState<NoticeState>(null);
   const [busy, setBusy] = useState(false);
@@ -1002,8 +1005,20 @@ export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; pa
             )}
             {!held && (
               <div className="mt-5 flex flex-wrap gap-2">
-                {ticket.status === "ISSUED" && <a className="primary-button" href={`/t/${encodeURIComponent(ticket.reference)}`} target="_blank" rel="noreferrer">Afficher le billet</a>}
-                <button className="secondary-button" onClick={reset}>Nouvelle vente</button>
+                {ticket.status === "ISSUED" && <a className="primary-button" href={`/t/${encodeURIComponent(ticket.reference)}`} target="_blank" rel="noreferrer">Afficher / imprimer le billet</a>}
+                <button className="secondary-button" onClick={() => { setWhatsapp(""); reset(); }}>Nouvelle vente</button>
+              </div>
+            )}
+            {!held && ticket.status === "ISSUED" && (
+              <div className="mt-4 rounded-lg border border-slate-200 p-3">
+                <label className="block"><span className="field-label">WhatsApp du client (facultatif)</span>
+                  <input className="field" inputMode="tel" value={whatsapp || phone} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Format international, ex. : +229 …" />
+                </label>
+                {(whatsapp || phone) && !whatsappHref(whatsapp || phone) && <p className="mt-1 text-xs text-amber-700">Numéro au format international (+ et indicatif) pour l’ouvrir directement ; sinon WhatsApp vous laissera choisir le contact.</p>}
+                <a className="primary-button mt-2 inline-flex" target="_blank" rel="noopener noreferrer"
+                  href={soldTicketWhatsappHref({ reference: ticket.reference, passenger_name: ticket.passenger_name, passenger_phone: whatsapp || phone }, `${window.location.origin}/t/${encodeURIComponent(ticket.reference)}`)}>
+                  Envoyer le billet par WhatsApp
+                </a>
               </div>
             )}
           </div>

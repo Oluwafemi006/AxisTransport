@@ -480,3 +480,19 @@ export interface ParcelReceipt {
   created_at: string;
   status_display: string;
 }
+
+export interface SoldTicket {
+  id: number;
+  reference: string;
+  route: string;
+  departure_at: string;
+  seat: string;
+  passenger_name: string;
+  passenger_phone: string;
+  amount_fcfa: number;
+  status: string;
+  status_display: string;
+  sold_at: string;
+  sold_by_name: string;
+  public_url: string;
+}

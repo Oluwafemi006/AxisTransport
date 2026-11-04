@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../sold/sold_ticket.dart';
 
 import '../../core/formatters.dart';
 import '../../core/session.dart';
@@ -20,7 +23,6 @@ import '../../core/widgets/segmented_toggle.dart';
 import '../../core/widgets/skeleton_box.dart';
 import '../../shared/payment_link.dart';
 import '../staff/presentation/staff_home_screen.dart';
-import '../tickets/ticket_document.dart';
 import 'sale_controller.dart';
 import 'sale_models.dart';
 
@@ -186,21 +188,35 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
     await _sale.reset();
   }
 
+  // Envoi du billet en texte (message + lien du billet), jamais en fichier : le partage d'un PDF
+  // échouait vers WhatsApp et l'écran de vente se perdait au retour.
+  SoldTicket _sold(SaleTicket ticket) => SoldTicket(
+    reference: ticket.reference,
+    route: ticket.routeLabel,
+    seat: ticket.seatNumber,
+    passengerName: ticket.passengerName,
+    passengerPhone: _phone.text.trim(),
+    amountFcfa: ticket.amount.round(),
+    statusDisplay: ticket.statusDisplay,
+    soldAt: null,
+    soldByName: '',
+    publicUrl: ticket.publicUrl,
+  );
+
   Future<void> _share(SaleTicket ticket) async {
-    final bytes = await buildSaleTicketPdf(ticket);
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [
-          XFile.fromData(
-            bytes,
-            name: saleTicketFileName(ticket),
-            mimeType: 'application/pdf',
-          ),
-        ],
-        fileNameOverrides: [saleTicketFileName(ticket)],
-        subject: 'Billet AXIS Transport ${ticket.reference}',
-      ),
-    );
+    await SharePlus.instance.share(ShareParams(text: _sold(ticket).message));
+  }
+
+  Future<void> _sendWhatsapp(SaleTicket ticket) async {
+    var opened = false;
+    try {
+      opened = await launchUrl(whatsappTicketUri(_sold(ticket)), mode: LaunchMode.externalApplication);
+    } catch (_) {}
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('WhatsApp n’a pas pu s’ouvrir. Utilisez « Partager le lien ».')),
+      );
+    }
   }
 
   void _showQrModal(SaleTicket ticket) {
@@ -861,14 +877,34 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
                 ),
                 const SizedBox(height: AxisSpacing.xs),
 
-                // 1. Partager le PDF / billet
+                // 1. WhatsApp : message et lien du billet préremplis
+                _DeliveryOptionTile(
+                  key: const Key('sale-whatsapp'),
+                  icon: Icons.chat_outlined,
+                  title: 'Envoyer par WhatsApp',
+                  subtitle: 'Message et lien du billet',
+                  isPrimary: true,
+                  onTap: () => _sendWhatsapp(ticket),
+                ),
+                const SizedBox(height: AxisSpacing.xs),
+
+                // 2. Partage système du texte (SMS, autre messagerie)
                 _DeliveryOptionTile(
                   key: const Key('sale-share'),
                   icon: Icons.share_outlined,
-                  title: 'Partager le PDF',
-                  subtitle: 'WhatsApp, Bluetooth, impression',
-                  isPrimary: true,
+                  title: 'Partager le lien',
+                  subtitle: 'SMS ou autre application',
                   onTap: () => _share(ticket),
+                ),
+                const SizedBox(height: AxisSpacing.xs),
+
+                // Retrouver le billet plus tard (même après fermeture de l'application)
+                _DeliveryOptionTile(
+                  key: const Key('sale-sold-today'),
+                  icon: Icons.receipt_long_outlined,
+                  title: 'Billets vendus aujourd’hui',
+                  subtitle: 'Retrouver ce billet à tout moment',
+                  onTap: () => context.go('/vendus/${Uri.encodeComponent(ticket.reference)}'),
                 ),
                 const SizedBox(height: AxisSpacing.xs),
 

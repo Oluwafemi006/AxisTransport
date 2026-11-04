@@ -15,6 +15,7 @@ import 'features/passengers/presentation/passengers_screen.dart';
 import 'features/profile/profile_screen.dart';
 import 'features/rentals/rentals_screen.dart';
 import 'features/sales/sell_ticket_screen.dart';
+import 'features/sold/sold_today_screen.dart';
 import 'features/seats/presentation/seat_selection_screen.dart';
 import 'features/staff/presentation/controller_parcel_screen.dart';
 import 'features/staff/presentation/controller_scanner_screen.dart';
@@ -269,6 +270,21 @@ GoRouter buildAxisRouter() => GoRouter(
             GoRoute(
               path: '/vendre',
               builder: (context, state) => const SellTicketScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/vendus',
+              builder: (context, state) => const SoldTodayScreen(),
+              routes: [
+                GoRoute(
+                  path: ':reference',
+                  builder: (context, state) =>
+                      SoldTicketScreen(reference: state.pathParameters['reference'] ?? ''),
+                ),
+              ],
             ),
           ],
         ),

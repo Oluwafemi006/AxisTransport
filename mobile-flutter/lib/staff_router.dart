@@ -4,12 +4,13 @@ import 'package:go_router/go_router.dart';
 import 'core/theme/axis_spacing.dart';
 import 'core/theme/axis_tokens.dart';
 import 'features/sales/sell_ticket_screen.dart';
+import 'features/sold/sold_today_screen.dart';
 import 'features/staff/presentation/controller_parcel_screen.dart';
 import 'features/staff/presentation/controller_scanner_screen.dart';
 import 'features/staff/presentation/staff_home_screen.dart';
 import 'features/staff/presentation/staff_profile_screen.dart';
 
-/// Navigation du personnel (COUNTER, CONTROLLER, ADMIN) : Accueil, Scanner, Vendre, Profil.
+/// Navigation du personnel (COUNTER, CONTROLLER, ADMIN) : Accueil, Scanner, Vendre, Vendus, Profil.
 /// Elle n'est construite que pour un compte du personnel ; un client n'y a jamais accès.
 GoRouter buildStaffRouter() => GoRouter(
   initialLocation: '/',
@@ -45,6 +46,21 @@ GoRouter buildStaffRouter() => GoRouter(
             GoRoute(
               path: '/vendre',
               builder: (context, state) => const SellTicketScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/vendus',
+              builder: (context, state) => const SoldTodayScreen(),
+              routes: [
+                GoRoute(
+                  path: ':reference',
+                  builder: (context, state) =>
+                      SoldTicketScreen(reference: state.pathParameters['reference'] ?? ''),
+                ),
+              ],
             ),
           ],
         ),
@@ -97,6 +113,11 @@ class StaffShell extends StatelessWidget {
             icon: Icon(Icons.confirmation_number_outlined),
             selectedIcon: Icon(Icons.confirmation_number),
             label: 'Vendre',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: 'Vendus',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
