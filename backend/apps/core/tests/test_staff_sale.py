@@ -180,11 +180,12 @@ class StaffSaleTests(APITestCase):
         self.assertEqual(Ticket.objects.filter(status=Ticket.Status.ISSUED).count(), 0)
 
     def test_payment_start_failure_keeps_the_seat_and_retry_reuses_the_sale(self):
-        with mock.patch(CREATE, side_effect=payments.ProviderUnavailable("Impossible de contacter FedaPay.")):
+        with mock.patch(CREATE, side_effect=payments.ProviderUnavailable("Le service Mobile Money est momentanément injoignable. Réessayez dans un instant.")):
             failed = self.sell(key="vente-mm-02", method=self.fedapay)
         self.assertEqual(failed.status_code, 201, failed.data)
         self.assertIsNone(failed.data["checkout"])
-        self.assertIn("FedaPay", failed.data["payment_error"])
+        self.assertIn("Mobile Money", failed.data["payment_error"])
+        self.assertNotIn("FedaPay", failed.data["payment_error"])
         self.assertEqual(Booking.objects.get().status, Booking.Status.HELD)
 
         retry = self.sell_mobile_money(key="vente-mm-02")

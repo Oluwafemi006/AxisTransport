@@ -104,18 +104,18 @@ def _fedapay_request(method, path, *, payload=None):
             timeout=15,
         )
     except requests.RequestException as exc:
-        raise ProviderUnavailable("Impossible de contacter FedaPay.") from exc
+        raise ProviderUnavailable("Le service Mobile Money est momentanément injoignable. Réessayez dans un instant.") from exc
     if response.status_code == 429 or response.status_code >= 500:
-        raise ProviderUnavailable(f"FedaPay momentanément indisponible (HTTP {response.status_code}).")
+        raise ProviderUnavailable("Le service Mobile Money est momentanément indisponible. Réessayez dans un instant.")
     if response.status_code != 200:
-        raise ValidationError(f"Requête FedaPay refusée (HTTP {response.status_code}).")
+        raise ValidationError("Le paiement Mobile Money a été refusé par le service de paiement.")
     try:
         data = response.json()
     except ValueError as exc:
-        raise ValidationError("Réponse FedaPay illisible.") from exc
+        raise ValidationError("Réponse du service Mobile Money illisible. Réessayez dans un instant.") from exc
     transaction_data = data.get("v1/transaction") if isinstance(data, dict) else None
     if not isinstance(transaction_data, dict):
-        raise ValidationError("Réponse FedaPay inattendue.")
+        raise ValidationError("Réponse du service Mobile Money inattendue. Réessayez dans un instant.")
     return transaction_data
 
 
@@ -132,24 +132,24 @@ def _fedapay_create_transaction(payload):
 def verify_fedapay_transaction(transaction_id):
     transaction_id = str(transaction_id or "").strip()
     if not settings.FEDAPAY_SECRET_KEY:
-        raise ValidationError("Paiement FedaPay indisponible : la clé secrète n'est pas configurée.")
+        raise ValidationError("Le paiement Mobile Money n'est pas disponible pour le moment.")
     if not _REFERENCE_PATTERN.match(transaction_id):
-        raise ValidationError("Référence de transaction FedaPay invalide.")
+        raise ValidationError("Référence de paiement invalide.")
     data = _fedapay_fetch_transaction(transaction_id)
     if data.get("status") != "approved":
         raise PaymentNotApproved(
-            f"Transaction FedaPay non approuvée (statut : {data.get('status')}).", data.get("status")
+            "Paiement Mobile Money non confirmé pour le moment.", data.get("status")
         )
     if str(data.get("id", "")) != transaction_id:
-        raise ValidationError("La transaction renvoyée par FedaPay ne correspond pas à la référence fournie.")
+        raise ValidationError("Le paiement reçu ne correspond pas à cette réservation.")
     try:
         amount = Decimal(str(data.get("amount")))
     except (InvalidOperation, TypeError) as exc:
-        raise ValidationError("Montant FedaPay illisible.") from exc
+        raise ValidationError("Montant du paiement illisible.") from exc
     currency = data.get("currency")
     currency_iso = str(currency.get("iso", "")) if isinstance(currency, dict) else ""
     if currency_iso != "XOF":
-        raise ValidationError("La transaction FedaPay n'est pas libellée en XOF.")
+        raise ValidationError("Le paiement n'est pas libellé en francs CFA.")
     metadata = data.get("custom_metadata")
     return VerifiedPayment(
         provider=FEDAPAY,
@@ -299,9 +299,9 @@ def create_checkout(target, *, payment_method):
     if provider == KKIAPAY:
         verify_kkiapay_transaction(None)
     if not settings.FEDAPAY_SECRET_KEY:
-        raise ValidationError("Paiement FedaPay indisponible : la clé secrète n'est pas configurée.")
+        raise ValidationError("Le paiement Mobile Money n'est pas disponible pour le moment.")
     if target.currency != "XOF":
-        raise ValidationError("FedaPay n'est configuré que pour les paiements en XOF.")
+        raise ValidationError("Le paiement Mobile Money n'accepte que les francs CFA.")
     # Les frais FedaPay sont intégralement à la charge de l'agence (marchand) :
     # le montant envoyé à FedaPay est exactement le montant net de la réservation ou du billet,
     # sans pourcentage ni frais de passerelle supplémentaires.
@@ -315,7 +315,7 @@ def create_checkout(target, *, payment_method):
         payload["callback_url"] = settings.FEDAPAY_CALLBACK_URL
     data = _fedapay_create_transaction(payload)
     if not data.get("id") or not data.get("payment_url"):
-        raise ValidationError("FedaPay n'a pas renvoyé de lien de paiement.")
+        raise ValidationError("Le service Mobile Money n'a pas ouvert de page de paiement. Réessayez.")
     # Trace de la transaction créée : permet au serveur de rattraper un paiement jamais confirmé.
     PaymentAttempt.objects.get_or_create(
         provider=FEDAPAY,
@@ -511,7 +511,7 @@ def settle_fedapay_transaction(transaction_id, *, source):
             raise ValidationError("Aucune réservation rattachée à cette transaction.")
         payment_method = PaymentMethod.objects.filter(code__iexact=FEDAPAY, active=True).first()
         if payment_method is None:
-            raise ValidationError("Le moyen de paiement FedaPay n'est pas actif.")
+            raise ValidationError("Le paiement Mobile Money n'est pas actif.")
         return _settle(
             booking,
             payment_method=payment_method,
