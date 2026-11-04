@@ -80,13 +80,19 @@ def request_code(email):
         threading.Thread(target=_send, args=(user, code), daemon=True).start()
 
 
+def close_sessions(user):
+    """Ferme toutes les sessions du compte, y compris les jetons d'accès en cours."""
+    user.password_changed_at = timezone.now()
+    user.save(update_fields=["password_changed_at"])
+    for token in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=token)
+
+
 def change_password(user, password):
     """Change le mot de passe et ferme toutes les sessions, y compris les jetons d'accès en cours."""
     user.set_password(password)
-    user.password_changed_at = timezone.now()
-    user.save(update_fields=["password", "password_changed_at"])
-    for token in OutstandingToken.objects.filter(user=user):
-        BlacklistedToken.objects.get_or_create(token=token)
+    user.save(update_fields=["password"])
+    close_sessions(user)
 
 
 def confirm_code(email, code, password):

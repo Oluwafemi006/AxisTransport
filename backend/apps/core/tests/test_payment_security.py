@@ -329,7 +329,7 @@ class FedaPayWebhookTests(APITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["status"], "REFUSED")
         self.assert_held()
-        self.assertIn("non approuvée", PaymentIncident.objects.get().reason)
+        self.assertIn("non confirmé", PaymentIncident.objects.get().reason)
 
     def test_non_approved_event_is_ignored(self):
         body = webhook_body(status="declined")

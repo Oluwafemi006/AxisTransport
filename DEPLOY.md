@@ -849,4 +849,16 @@ Valeurs proposées, réglables (ce ne sont pas des règles de la direction) :
 - Le personnel (guichet, contrôleur, admin) n'est jamais limité.
 - **À vérifier avant la mise en ligne :** `AXIS_NUM_PROXIES` doit correspondre au nombre de proxys devant l'API (Caddy). Sinon tous les clients semblent venir de la même adresse et la limite par IP les bloque ensemble.
 - Page `/billet/retrouver` : référence + téléphone de l'achat (passager ou contact) ; seule la référence est renvoyée, puis la page du billet s'ouvre.
+## Équipe et invitations (lot cc/admin-equipe)
+
+- Migration `0024_account_admin` : noms sur l'invitation et journal des comptes (`AccountChange`). À appliquer au déploiement (`migrate`, lancé au démarrage du backend).
+- `/admin`, onglet « Équipe & rôles » : recherche, changement de rôle (sessions fermées), désactivation et réactivation (sessions fermées, historique conservé), journal des comptes.
+- « Inviter un membre » : l'e-mail part par le SMTP (`EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL`). Sans messagerie configurée, l'invitation est créée et l'écran le dit ; pour un guichetier ou un contrôleur, « Copier le lien » permet de transmettre le lien d'activation à la main. Une invitation d'administrateur ne propose pas de lien copiable.
+
+## Colis : départ et destination (lot cc/colis-depart-destination)
+
+- Ordre de déploiement : **serveur d'abord**, puis la nouvelle version de l'app.
+- Serveur : `/staff/sales/parcel/` accepte un `trip` facultatif. Avec un départ, le départ et la destination du colis doivent être sur son trajet, dans le sens du bus, et le colis est rattaché à ce départ. Sans départ (app publiée), le colis reste accepté s'il relie deux villes actives distinctes.
+- App : l'écran colis affiche le bus, le départ (par défaut l'arrêt où se trouve le bus) et la destination (arrêts suivants), puis un récapitulatif avant l'envoi.
+
 

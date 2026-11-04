@@ -54,6 +54,10 @@ android {
     }
 
     buildTypes {
+        // Le debug s'installe à côté de la version du Play Store.
+        debug {
+            applicationIdSuffix = ".debug"
+        }
         release {
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")

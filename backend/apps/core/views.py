@@ -56,6 +56,7 @@ from .models import (
     PaymentReceipt,
     SegmentFare,
     SegmentFareChange,
+    AccountChange,
     PasswordAdminReset,
     StaffInvitation,
     WeeklySchedule,
@@ -610,6 +611,8 @@ class AcceptStaffInvitationView(FrenchThrottleMixin, APIView):
         return Response({
             "valid": True,
             "email": invitation.email,
+            "first_name": invitation.first_name,
+            "last_name": invitation.last_name,
             "group": invitation.group.name,
         })
 
@@ -648,6 +651,7 @@ class AcceptStaffInvitationView(FrenchThrottleMixin, APIView):
         role = role_mapping.get(group_name, User.Role.COUNTER)
 
         username = invitation.email
+        names = {key: value for key, value in (("first_name", invitation.first_name), ("last_name", invitation.last_name)) if value}
         # Si un utilisateur existe déjà avec cet email ou username
         user = User.objects.filter(Q(username=username) | Q(email=invitation.email)).first()
         if user:
@@ -656,6 +660,8 @@ class AcceptStaffInvitationView(FrenchThrottleMixin, APIView):
             user.role = role
             user.is_staff = True
             user.is_active = True
+            for key, value in names.items():
+                setattr(user, key, value)
             user.save()
         else:
             user = User.objects.create_user(
@@ -665,6 +671,7 @@ class AcceptStaffInvitationView(FrenchThrottleMixin, APIView):
                 role=role,
                 is_staff=True,
                 is_active=True,
+                **names,
             )
 
         # Ajout au groupe Django prévu
@@ -1106,15 +1113,88 @@ class PaymentIncidentViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin, vie
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.all().order_by("role", "first_name", "last_name", "username")
+    """Équipe & rôles : personnel d'abord, puis clients ; recherche par nom ou identifiant ; journal des comptes."""
+
+    queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAxisAdmin]
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def get_queryset(self):
+        from django.db.models import Case, IntegerField, Value, When
+
+        queryset = User.objects.annotate(
+            staff_rank=Case(When(role=User.Role.CLIENT, then=Value(1)), default=Value(0), output_field=IntegerField())
+        ).order_by("staff_rank", "-is_active", "role", "first_name", "last_name", "username")
+        query = (self.request.query_params.get("search") or "").strip()
+        if query:
+            queryset = queryset.filter(
+                Q(username__icontains=query) | Q(first_name__icontains=query) | Q(last_name__icontains=query)
+                | Q(email__icontains=query) | Q(phone__icontains=query)
+            )
+        return queryset
+
+    def perform_create(self, serializer):
+        user = serializer.save()
+        AccountChange.objects.create(target=user, actor=self.request.user, action=AccountChange.Action.CREATED, detail=user.get_role_display())
 
     def perform_update(self, serializer):
+        user = serializer.instance
+        old_role = user.role
+        new_role = serializer.validated_data.get("role", old_role)
+        if user.pk == self.request.user.pk and new_role != old_role:
+            raise ValidationError({"role": "Vous ne pouvez pas changer votre propre rôle."})
         password_changed = "password" in serializer.validated_data
         user = serializer.save()
         if password_changed:
             PasswordAdminReset.objects.create(target=user, actor=self.request.user)
+        if new_role != old_role:
+            user.is_staff = user.role != User.Role.CLIENT
+            user.save(update_fields=["is_staff"])
+            # Nouveau rôle : les sessions ouvertes sont fermées, la prochaine connexion ouvre les bons écrans.
+            password_reset.close_sessions(user)
+            AccountChange.objects.create(
+                target=user, actor=self.request.user, action=AccountChange.Action.ROLE,
+                detail=f"{User.Role(old_role).label} → {user.get_role_display()}",
+            )
+
+    @action(detail=True, methods=["post"])
+    def deactivate(self, request, pk=None):
+        """Le compte ne peut plus se connecter ; ses sessions sont fermées ; son historique est gardé."""
+        user = self.get_object()
+        if user.pk == request.user.pk:
+            raise ValidationError({"detail": "Vous ne pouvez pas désactiver votre propre compte."})
+        if user.is_active:
+            user.is_active = False
+            user.save(update_fields=["is_active"])
+            password_reset.close_sessions(user)
+            AccountChange.objects.create(target=user, actor=request.user, action=AccountChange.Action.DEACTIVATED)
+        return Response(UserSerializer(user).data)
+
+    @action(detail=True, methods=["post"])
+    def activate(self, request, pk=None):
+        user = self.get_object()
+        if not user.is_active:
+            user.is_active = True
+            user.save(update_fields=["is_active"])
+            AccountChange.objects.create(target=user, actor=request.user, action=AccountChange.Action.ACTIVATED)
+        return Response(UserSerializer(user).data)
+
+    @action(detail=False, methods=["get"])
+    def changes(self, request):
+        rows = AccountChange.objects.select_related("target", "actor")[:200]
+        return Response([
+            {
+                "id": row.id,
+                "created_at": row.created_at,
+                "action": row.action,
+                "action_display": row.get_action_display(),
+                "detail": row.detail,
+                "target": row.target.username if row.target else "",
+                "actor": row.actor.username if row.actor else "",
+            }
+            for row in rows
+        ])
 
     @action(detail=True, methods=["post"], url_path="reset-password")
     def reset_password(self, request, pk=None):
@@ -1932,6 +2012,28 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
             ]
         )
 
+    def _parcel_trip(self, request, origin, destination):
+        """
+        Départ et destination du colis. Avec un départ (`trip`, app 1.0.2) : les deux arrêts sont sur son trajet,
+        le départ avant la destination dans le sens du bus. Sans départ (app publiée) : deux villes actives distinctes.
+        """
+        if origin.pk == destination.pk:
+            raise ValidationError({"destination": "Le départ et la destination du colis doivent être différents."})
+        if not origin.active or not destination.active:
+            raise ValidationError({"destination": "Cette ville n'est plus desservie : choisissez un autre arrêt."})
+        trip_id = request.data.get("trip")
+        if trip_id in (None, ""):
+            return None
+        trip = self._sellable_trips().filter(pk=trip_id).first() if str(trip_id).isdigit() else None
+        if trip is None:
+            raise ValidationError({"trip": "Ce départ n'est pas disponible pour cet agent."})
+        sequence = [location.pk for location in trip.route.get_stops_sequence()]
+        if origin.pk not in sequence or destination.pk not in sequence:
+            raise ValidationError({"destination": f"Le trajet {trip.route.label} ne dessert pas ces deux arrêts."})
+        if sequence.index(origin.pk) >= sequence.index(destination.pk):
+            raise ValidationError({"destination": "Le départ du colis doit précéder sa destination sur le trajet du bus."})
+        return trip
+
     @action(detail=False, methods=["post"], url_path="parcel")
     def parcel(self, request):
         """Colis enregistré par un agent, avec 1 à 3 photos obligatoires."""
@@ -1944,6 +2046,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
             )}
         )
         serializer.is_valid(raise_exception=True)
+        trip = self._parcel_trip(request, serializer.validated_data["origin"], serializer.validated_data["destination"])
         # Envoi avant la transaction : une base ne doit pas rester verrouillée pendant un appel réseau.
         try:
             stored = [upload_parcel_photo(photo) for photo in photos]
@@ -1952,7 +2055,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
         with transaction.atomic():
             # Prix de base réglé par l'admin ; sans réglage, l'agence le fixe ensuite.
             base = SystemSetting.objects.filter(key="parcel_base_price_fcfa").first()
-            parcel = serializer.save(channel=Ticket.Channel.COUNTER, amount=base.value if base else None)
+            parcel = serializer.save(channel=Ticket.Channel.COUNTER, amount=base.value if base else None, trip=trip)
             ParcelPhoto.objects.bulk_create(
                 ParcelPhoto(parcel=parcel, url=url, public_id=public_id) for url, public_id in stored
             )
@@ -2180,3 +2283,102 @@ class TicketLookupView(FrenchThrottleMixin, APIView):
         if not phone or phone not in phones:
             return Response({"detail": self.NOT_FOUND}, status=status.HTTP_404_NOT_FOUND)
         return Response({"reference": ticket.reference})
+
+
+INVITATION_GROUPS = {User.Role.COUNTER: "Guichetier", User.Role.CONTROLLER: "Contrôleur", User.Role.ADMIN: "Superviseur"}
+# Lien d'activation copiable seulement pour ces rôles ; un administrateur passe toujours par l'e-mail.
+COPYABLE_INVITATION_ROLES = {User.Role.COUNTER, User.Role.CONTROLLER}
+
+
+def _invitation_role(invitation):
+    for role, name in INVITATION_GROUPS.items():
+        if name == invitation.group.name:
+            return role
+    return User.Role.COUNTER
+
+
+def _invitation_payload(invitation, *, email_sent=None, email_error=""):
+    role = _invitation_role(invitation)
+    if invitation.is_used:
+        state, state_display = "USED", "Utilisée"
+    elif invitation.expires_at <= timezone.now():
+        state, state_display = "EXPIRED", "Expirée"
+    else:
+        state, state_display = "PENDING", "En attente"
+    payload = {
+        "id": invitation.id,
+        "email": invitation.email,
+        "first_name": invitation.first_name,
+        "last_name": invitation.last_name,
+        "role": role,
+        "role_display": User.Role(role).label,
+        "state": state,
+        "state_display": state_display,
+        "expires_at": invitation.expires_at,
+        "created_at": invitation.created_at,
+        "activation_url": invitation.activation_url() if role in COPYABLE_INVITATION_ROLES and state == "PENDING" else None,
+    }
+    if email_sent is not None:
+        payload["email_sent"] = email_sent
+        payload["email_error"] = email_error
+    return payload
+
+
+def _send_invitation(invitation):
+    """Envoi de l'e-mail : un échec (SMTP absent) est renvoyé clairement, l'invitation reste valable."""
+    try:
+        invitation.send_invitation_email()
+    except Exception:  # SMTP non configuré, refus du serveur d'e-mail, réseau…
+        return False, "L’e-mail n’a pas pu être envoyé (messagerie non configurée ou indisponible)."
+    return True, ""
+
+
+class StaffInvitationViewSet(viewsets.GenericViewSet):
+    """Invitations du personnel depuis /admin : création, liste et renvoi."""
+
+    permission_classes = [IsAxisAdmin]
+    queryset = StaffInvitation.objects.select_related("group")
+
+    def list(self, request):
+        return Response([_invitation_payload(item) for item in self.get_queryset()[:100]])
+
+    def create(self, request):
+        from datetime import timedelta
+
+        from django.contrib.auth.models import Group
+        from django.core.validators import validate_email
+
+        email = str(request.data.get("email") or "").strip().lower()
+        try:
+            validate_email(email)
+        except DjangoValidationError:
+            raise ValidationError({"email": "Adresse e-mail invalide."})
+        role = str(request.data.get("role") or "")
+        if role not in INVITATION_GROUPS:
+            raise ValidationError({"role": "Rôle attendu : guichetier, contrôleur ou administrateur."})
+        if User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email), is_active=True).exclude(role=User.Role.CLIENT).exists():
+            raise ValidationError({"email": "Un membre du personnel utilise déjà cette adresse."})
+        group, _ = Group.objects.get_or_create(name=INVITATION_GROUPS[role])
+        invitation = StaffInvitation.objects.create(
+            email=email,
+            first_name=str(request.data.get("first_name") or "").strip(),
+            last_name=str(request.data.get("last_name") or "").strip(),
+            group=group,
+            invited_by=request.user,
+            expires_at=timezone.now() + timedelta(hours=48),
+        )
+        sent, error = _send_invitation(invitation)
+        AccountChange.objects.create(actor=request.user, action=AccountChange.Action.INVITED, detail=f"{email} ({User.Role(role).label})")
+        return Response(_invitation_payload(invitation, email_sent=sent, email_error=error), status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def resend(self, request, pk=None):
+        from datetime import timedelta
+
+        invitation = self.get_object()
+        if invitation.is_used:
+            raise ValidationError({"detail": "Cette invitation a déjà été utilisée."})
+        invitation.expires_at = timezone.now() + timedelta(hours=48)
+        invitation.save(update_fields=["expires_at"])
+        sent, error = _send_invitation(invitation)
+        return Response(_invitation_payload(invitation, email_sent=sent, email_error=error))

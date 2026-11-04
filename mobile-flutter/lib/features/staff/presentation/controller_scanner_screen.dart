@@ -195,11 +195,15 @@ class _ControllerScannerScreenState
           );
         });
       } else {
+        // Raison exacte du serveur (autre date, autre départ, non payé…) ; « introuvable » seulement s'il le dit.
+        final reason = error.message.split('\n[debug]').first.trim();
+        final unknown = reason.isEmpty || reason.toLowerCase().contains('introuvable');
         setState(() {
           _scannedCode = code;
           _resultData = ScanResultData(
-            type: ScanResultType.notFound,
+            type: unknown ? ScanResultType.notFound : ScanResultType.rejected,
             ticketNumber: code,
+            reason: unknown ? null : reason,
           );
         });
       }
@@ -455,6 +459,7 @@ class _ControllerScannerScreenState
                         onPrimaryAction: switch (_resultData!.type) {
                           ScanResultType.valid => _confirmBoardingAndContinue,
                           ScanResultType.alreadyUsed => _resetScan,
+                          ScanResultType.rejected => _resetScan,
                           ScanResultType.notFound => () {
                             _resetScan();
                             context.go('/vendre');
