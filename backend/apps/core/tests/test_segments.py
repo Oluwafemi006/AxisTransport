@@ -444,3 +444,48 @@ class OnlineBoardingTests(SegmentsTestCase):
         fare.save()
         rows = self.client.get(SEGMENTS, {"direction": "aller", "scope": "all"}).json()["segments"]
         self.assertEqual(rows[0]["price_fcfa"], 3600)
+
+
+class ParcelOriginDestinationTests(StaffSaleSegmentTests):
+    """Colis : départ et destination sur le trajet du bus, dans son sens ; l'app publiée (sans trip) reste acceptée."""
+
+    def parcel(self, origin, destination, trip=None):
+        data = {
+            "sender_name": "TEST exp", "sender_phone": "90000000", "recipient_name": "TEST dest",
+            "recipient_phone": "90000001", "origin": self.places[origin].pk, "destination": self.places[destination].pk,
+            "description": "TEST colis", "photos": [SimpleUploadedFile("t.jpg", b"TEST", content_type="image/jpeg")],
+        }
+        if trip is not None:
+            data["trip"] = trip
+        with mock.patch("apps.core.views.upload_parcel_photo", return_value=("https://test.invalid/a.jpg", "TEST")):
+            return self.client.post("/api/v1/staff/sales/parcel/", data, format="multipart")
+
+    def test_intermediate_origin_on_the_trip_is_saved_with_its_departure(self):
+        response = self.parcel("Savè", "Cotonou", trip=self.trip.pk)
+        self.assertEqual(response.status_code, 201, response.data)
+        parcel = Parcel.objects.get()
+        self.assertEqual((parcel.origin.name, parcel.destination.name, parcel.trip_id), ("Savè", "Cotonou", self.trip.pk))
+        rows = self.client.get("/api/v1/staff/sales/parcels/").json()
+        self.assertEqual(rows[0]["route"], "Savè → Cotonou")
+
+    def test_wrong_direction_is_refused(self):
+        response = self.parcel("Cotonou", "Savè", trip=self.trip.pk)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("précéder", str(response.data))
+        self.assertFalse(Parcel.objects.exists())
+
+    def test_city_off_the_trip_or_unknown_trip_is_refused(self):
+        other = Location.objects.create(name="TEST Ville hors ligne", active=True)
+        self.places["TEST Ville hors ligne"] = other
+        self.assertEqual(self.parcel("Parakou", "TEST Ville hors ligne", trip=self.trip.pk).status_code, 400)
+        self.assertEqual(self.parcel("Parakou", "Savè", trip=999999).status_code, 400)
+
+    def test_same_or_inactive_city_is_refused(self):
+        self.assertEqual(self.parcel("Savè", "Savè").status_code, 400)
+        Location.objects.filter(name="Dassa").update(active=False)
+        self.assertEqual(self.parcel("Parakou", "Dassa").status_code, 400)
+
+    def test_published_app_without_trip_still_works(self):
+        response = self.parcel("Parakou", "Bohicon")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertIsNone(Parcel.objects.get().trip_id)

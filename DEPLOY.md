@@ -833,9 +833,17 @@ Solution proposée (non faite) : une vue Django protégée, par exemple `/api/v1
 - **Supprimer les routes en double avant l'ouverture au public.** Les mêmes points d'accès répondent sous `/api/` et sous `/api/v1/` (`backend/config/urls.py`). Vérifier qu'aucun écran ni aucune app n'utilise plus `/api/` seul, puis retirer ce préfixe : une seule adresse par point d'accès, une seule surface à surveiller.
 - **Réservations client ouvertes, protégées dans le code.** `/api/v1/client/bookings/` accepte toute demande (`AllowAny`, pour l'achat sans compte sur le web) ; l'accès à une réservation existante n'est protégé que par une vérification écrite dans la vue (propriétaire connecté ou jeton invité, `_assert_can_access` dans `backend/apps/core/urls_client.py`). Cette protection fonctionne et elle est testée, mais elle est fragile : une nouvelle action ajoutée sans cette vérification serait ouverte à tous. Garder les tests existants et en ajouter un pour chaque nouvelle action.
 
+
 ## Équipe et invitations (lot cc/admin-equipe)
 
 - Migration `0024_account_admin` : noms sur l'invitation et journal des comptes (`AccountChange`). À appliquer au déploiement (`migrate`, lancé au démarrage du backend).
 - `/admin`, onglet « Équipe & rôles » : recherche, changement de rôle (sessions fermées), désactivation et réactivation (sessions fermées, historique conservé), journal des comptes.
 - « Inviter un membre » : l'e-mail part par le SMTP (`EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL`). Sans messagerie configurée, l'invitation est créée et l'écran le dit ; pour un guichetier ou un contrôleur, « Copier le lien » permet de transmettre le lien d'activation à la main. Une invitation d'administrateur ne propose pas de lien copiable.
+
+## Colis : départ et destination (lot cc/colis-depart-destination)
+
+- Ordre de déploiement : **serveur d'abord**, puis la nouvelle version de l'app.
+- Serveur : `/staff/sales/parcel/` accepte un `trip` facultatif. Avec un départ, le départ et la destination du colis doivent être sur son trajet, dans le sens du bus, et le colis est rattaché à ce départ. Sans départ (app publiée), le colis reste accepté s'il relie deux villes actives distinctes.
+- App : l'écran colis affiche le bus, le départ (par défaut l'arrêt où se trouve le bus) et la destination (arrêts suivants), puis un récapitulatif avant l'envoi.
+
 
