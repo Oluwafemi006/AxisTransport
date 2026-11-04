@@ -97,6 +97,10 @@ class _ControllerParcelScreenState
 
   List<Place> _locations = const [];
   int? _selectedDestinationId;
+  // Départs de l'agent (renvoyés par le serveur) : départ et destination se choisissent sur le trajet du bus.
+  List<SaleTrip> _trips = const [];
+  int? _tripId;
+  int? _originId;
   int _paymentIndex = 0; // 0 = Espèces, 1 = Mobile Money
   String? _formError;
   bool _sending = false;
@@ -120,10 +124,62 @@ class _ControllerParcelScreenState
   Future<void> _loadFare() async {
     try {
       final options = await ref.read(apiClientProvider).saleOptions();
-      if (mounted) setState(() => _serverFare = options['parcel_base_fcfa'] as num?);
+      final trips = <SaleTrip>[
+        for (final raw in (options['trips'] as List? ?? const []))
+          if (raw is Map) SaleTrip.fromJson(Map<String, dynamic>.from(raw)),
+      ].where((trip) => trip.stops.length >= 2).toList();
+      if (!mounted) return;
+      setState(() {
+        _serverFare = options['parcel_base_fcfa'] as num?;
+        _trips = trips;
+        if (trips.isNotEmpty) _chooseTrip(trips.first.id);
+      });
     } catch (_) {
-      // Sans réponse, aucun prix n'est affiché : rien n'est estimé ici.
+      // Sans réponse, aucun prix ni départ n'est affiché : rien n'est estimé ici.
     }
+  }
+
+  SaleTrip? get _trip {
+    for (final trip in _trips) {
+      if (trip.id == _tripId) return trip;
+    }
+    return null;
+  }
+
+  /// Arrêt actuel par défaut : la dernière arrivée confirmée, sinon le premier arrêt du trajet.
+  void _chooseTrip(int id) {
+    _tripId = id;
+    final trip = _trip;
+    if (trip == null) return;
+    var origin = trip.stops.first;
+    for (final stop in trip.stops.take(trip.stops.length - 1)) {
+      if (trip.arrivedStopIds.contains(stop.id)) origin = stop;
+    }
+    _chooseOrigin(origin.id);
+  }
+
+  void _chooseOrigin(int id) {
+    _originId = id;
+    final after = _stopsAfter(id);
+    if (!after.any((stop) => stop.id == _selectedDestinationId)) {
+      _selectedDestinationId = after.isEmpty ? null : after.last.id;
+    }
+  }
+
+  List<RouteStopInfo> _stopsAfter(int? originId) {
+    final stops = _trip?.stops ?? const <RouteStopInfo>[];
+    final index = stops.indexWhere((stop) => stop.id == originId);
+    return index < 0 ? const [] : stops.sublist(index + 1);
+  }
+
+  String _nameOf(int? id) {
+    for (final stop in _trip?.stops ?? const <RouteStopInfo>[]) {
+      if (stop.id == id) return stop.name;
+    }
+    for (final place in _locations) {
+      if (place.id == id) return place.name;
+    }
+    return '';
   }
 
   @override
@@ -219,19 +275,37 @@ class _ControllerParcelScreenState
       return;
     }
 
-    _send();
+    _confirmAndSend();
+  }
+
+  /// Récapitulatif avant l'envoi : départ, destination et départ du bus.
+  Future<void> _confirmAndSend() async {
+    final trip = _trip;
+    if (trip == null || _originId == null || _selectedDestinationId == null) {
+      setState(() => _formError = 'Choisissez le départ du bus, le départ et la destination du colis.');
+      return;
+    }
+    final when = trip.departureAt == null ? '' : ', départ du ${formatFullDateTime(trip.departureAt!.toLocal())}';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmer le colis'),
+        content: Text('Colis ${_nameOf(_originId)} → ${_nameOf(_selectedDestinationId)}$when (bus ${trip.label}).'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Corriger')),
+          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Enregistrer')),
+        ],
+      ),
+    );
+    if (ok == true) await _send();
   }
 
   Future<void> _send() async {
     final api = ref.read(apiClientProvider);
     setState(() => _sending = true);
     try {
-      final options = await api.saleOptions();
-      final trips = options['trips'] as List? ?? const [];
-      final stops = trips.isEmpty
-          ? const <RouteStopInfo>[]
-          : SaleTrip.fromJson(Map<String, dynamic>.from(trips.first as Map)).stops;
-      if (stops.isEmpty) {
+      final trip = _trip;
+      if (trip == null || _originId == null) {
         setState(() => _formError = 'Aucun départ en cours pour ce colis.');
         return;
       }
@@ -240,7 +314,8 @@ class _ControllerParcelScreenState
         'sender_phone': _senderPhone.text.trim(),
         'recipient_name': _recipientName.text.trim(),
         'recipient_phone': _recipientPhone.text.trim(),
-        'origin': stops.first.id,
+        'trip': trip.id,
+        'origin': _originId,
         'destination': _selectedDestinationId,
         'description': _description.text.trim(),
       }, await compute(compressParcelPhotos, [for (final photo in _photos) ?photo.imageBytes]));
@@ -525,47 +600,65 @@ class _ControllerParcelScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'ARRÊT DE DESTINATION *',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: axis.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: AxisSpacing.xs),
-                      if (_locations.isNotEmpty)
+                      if (_trips.isEmpty)
+                        Text(
+                          'Aucun départ disponible : le colis ne peut pas être enregistré.',
+                          style: theme.textTheme.bodyMedium?.copyWith(color: axis.textSecondary),
+                        )
+                      else ...[
+                        Text('BUS *', style: theme.textTheme.labelSmall?.copyWith(color: axis.textSecondary)),
+                        const SizedBox(height: AxisSpacing.xs),
                         DropdownButtonFormField<int>(
+                          key: ValueKey('trip-$_tripId'),
+                          initialValue: _tripId,
+                          isExpanded: true,
+                          items: [
+                            for (final trip in _trips)
+                              DropdownMenuItem<int>(
+                                value: trip.id,
+                                child: Text(
+                                  trip.departureAt == null
+                                      ? trip.label
+                                      : '${trip.label} · ${formatDateTime(trip.departureAt!.toLocal())}',
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) setState(() => _chooseTrip(val));
+                          },
+                        ),
+                        const SizedBox(height: AxisSpacing.sm),
+                        Text('DÉPART DU COLIS *', style: theme.textTheme.labelSmall?.copyWith(color: axis.textSecondary)),
+                        const SizedBox(height: AxisSpacing.xs),
+                        DropdownButtonFormField<int>(
+                          key: ValueKey('origin-$_tripId-$_originId'),
+                          initialValue: _originId,
+                          isExpanded: true,
+                          items: [
+                            for (final stop in (_trip?.stops ?? const <RouteStopInfo>[]).take(((_trip?.stops.length ?? 1) - 1).clamp(0, 99)))
+                              DropdownMenuItem<int>(value: stop.id, child: Text(stop.name)),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) setState(() => _chooseOrigin(val));
+                          },
+                        ),
+                        const SizedBox(height: AxisSpacing.sm),
+                        Text('DESTINATION DU COLIS *', style: theme.textTheme.labelSmall?.copyWith(color: axis.textSecondary)),
+                        const SizedBox(height: AxisSpacing.xs),
+                        DropdownButtonFormField<int>(
+                          key: ValueKey('destination-$_tripId-$_originId'),
                           initialValue: _selectedDestinationId,
                           isExpanded: true,
-                          items: _locations
-                              .map(
-                                (loc) => DropdownMenuItem<int>(
-                                  value: loc.id,
-                                  child: Text(loc.name),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (val) =>
-                              setState(() => _selectedDestinationId = val),
-                        )
-                      else
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AxisSpacing.md,
-                            vertical: AxisSpacing.sm,
-                          ),
-                          decoration: BoxDecoration(
-                            color: axis.surfaceSoft,
-                            borderRadius: BorderRadius.circular(AxisRadius.md),
-                            border: Border.all(color: axis.border),
-                          ),
-                          child: Text(
-                            'Aucun arrêt chargé depuis l’API',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: axis.textSecondary,
-                            ),
-                          ),
+                          items: [
+                            for (final stop in _stopsAfter(_originId))
+                              DropdownMenuItem<int>(value: stop.id, child: Text(stop.name)),
+                          ],
+                          onChanged: (val) => setState(() => _selectedDestinationId = val),
                         ),
+                      ],
                       const SizedBox(height: AxisSpacing.sm),
                       AxisTextField(
                         label: 'Description & poids estimé *',
@@ -576,10 +669,12 @@ class _ControllerParcelScreenState
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'TARIF COLIS (FCFA)',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: axis.textSecondary,
+                          Expanded(
+                            child: Text(
+                              'TARIF COLIS (FCFA)',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: axis.textSecondary,
+                              ),
                             ),
                           ),
                           Text(

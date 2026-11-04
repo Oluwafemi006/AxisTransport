@@ -1890,6 +1890,28 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
             ]
         )
 
+    def _parcel_trip(self, request, origin, destination):
+        """
+        Départ et destination du colis. Avec un départ (`trip`, app 1.0.2) : les deux arrêts sont sur son trajet,
+        le départ avant la destination dans le sens du bus. Sans départ (app publiée) : deux villes actives distinctes.
+        """
+        if origin.pk == destination.pk:
+            raise ValidationError({"destination": "Le départ et la destination du colis doivent être différents."})
+        if not origin.active or not destination.active:
+            raise ValidationError({"destination": "Cette ville n'est plus desservie : choisissez un autre arrêt."})
+        trip_id = request.data.get("trip")
+        if trip_id in (None, ""):
+            return None
+        trip = self._sellable_trips().filter(pk=trip_id).first() if str(trip_id).isdigit() else None
+        if trip is None:
+            raise ValidationError({"trip": "Ce départ n'est pas disponible pour cet agent."})
+        sequence = [location.pk for location in trip.route.get_stops_sequence()]
+        if origin.pk not in sequence or destination.pk not in sequence:
+            raise ValidationError({"destination": f"Le trajet {trip.route.label} ne dessert pas ces deux arrêts."})
+        if sequence.index(origin.pk) >= sequence.index(destination.pk):
+            raise ValidationError({"destination": "Le départ du colis doit précéder sa destination sur le trajet du bus."})
+        return trip
+
     @action(detail=False, methods=["post"], url_path="parcel")
     def parcel(self, request):
         """Colis enregistré par un agent, avec 1 à 3 photos obligatoires."""
@@ -1902,6 +1924,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
             )}
         )
         serializer.is_valid(raise_exception=True)
+        trip = self._parcel_trip(request, serializer.validated_data["origin"], serializer.validated_data["destination"])
         # Envoi avant la transaction : une base ne doit pas rester verrouillée pendant un appel réseau.
         try:
             stored = [upload_parcel_photo(photo) for photo in photos]
@@ -1910,7 +1933,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
         with transaction.atomic():
             # Prix de base réglé par l'admin ; sans réglage, l'agence le fixe ensuite.
             base = SystemSetting.objects.filter(key="parcel_base_price_fcfa").first()
-            parcel = serializer.save(channel=Ticket.Channel.COUNTER, amount=base.value if base else None)
+            parcel = serializer.save(channel=Ticket.Channel.COUNTER, amount=base.value if base else None, trip=trip)
             ParcelPhoto.objects.bulk_create(
                 ParcelPhoto(parcel=parcel, url=url, public_id=public_id) for url, public_id in stored
             )
