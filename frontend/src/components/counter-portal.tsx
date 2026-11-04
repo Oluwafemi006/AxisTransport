@@ -80,7 +80,8 @@ function ParcelPrices() {
   // Encaissement : espèces (confirmation), ou Mobile Money (page de paiement ouverte, puis vérification).
   async function collect(parcel: Parcel, method: PaymentMethod) {
     if (busyId) return;
-    const online = method.online === true;
+    // La liste du personnel ne porte pas « online » : le code du moyen de paiement suffit.
+    const online = method.online === true || ["FEDAPAY", "KKIAPAY"].includes(method.code.toUpperCase());
     if (!online && !window.confirm(`Espèces reçues ? Confirmez avoir reçu ${money(parcel.amount, "XOF")} de l’expéditeur.`)) return;
     setBusyId(parcel.id);
     try {
