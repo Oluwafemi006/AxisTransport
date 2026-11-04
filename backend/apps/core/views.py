@@ -350,6 +350,42 @@ class PasswordResetEmailThrottle(_LiveRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": ident} if email else None
 
 
+class BookingAddressThrottle(_AddressThrottle):
+    scope = "booking_address"
+
+
+class BookingPhoneThrottle(_LiveRateThrottle):
+    """Créations de réservation par compte client, sinon par téléphone de contact normalisé."""
+
+    scope = "booking_phone"
+
+    def get_cache_key(self, request, view):
+        from .booking_limits import normalize_phone
+
+        if request.user.is_authenticated:
+            ident = f"user-{request.user.pk}"
+        else:
+            phone = normalize_phone(request.data.get("contact_phone") if hasattr(request, "data") else "")
+            if not phone:
+                return None
+            ident = hashlib.sha256(phone.encode()).hexdigest()
+        return self.cache_format % {"scope": self.scope, "ident": ident}
+
+
+class TicketLookupAddressThrottle(_AddressThrottle):
+    scope = "ticket_lookup_address"
+
+
+class TicketLookupReferenceThrottle(_LiveRateThrottle):
+    scope = "ticket_lookup_reference"
+
+    def get_cache_key(self, request, view):
+        reference = str(request.data.get("reference") or "").strip().upper() if hasattr(request, "data") else ""
+        if not reference:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": hashlib.sha256(reference.encode()).hexdigest()}
+
+
 class LoginAccountThrottle(_LiveRateThrottle):
     """
     Échecs de connexion par identifiant saisi, comptés de deux façons :
@@ -1324,6 +1360,12 @@ class BookingViewSet(viewsets.ModelViewSet):
             a_point = data.get("alighting_point_id")
             if a_point is None:
                 a_point = data.get("alighting_point")
+            if not (request.user.is_authenticated and request.user.is_axis_staff):
+                from .booking_limits import check_online_booking_limits
+
+                check_online_booking_limits(
+                    customer=customer, contact_phone=data.get("contact_phone", ""), seats=len(data["passengers"])
+                )
             booking, guest_token = reserve_booking(
                 trip=data["trip"],
                 passengers=data["passengers"],
@@ -2110,3 +2152,31 @@ class PublicTicketDetailView(APIView):
         serializer = PublicTicketDetailSerializer(ticket, context={"request": request})
         return Response(serializer.data)
 
+
+
+class TicketLookupView(FrenchThrottleMixin, APIView):
+    """
+    « Retrouver mon billet » : référence + téléphone utilisé à l'achat (passager ou contact).
+    Renvoie seulement la référence ; même refus que la référence existe ou non.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [TicketLookupAddressThrottle, TicketLookupReferenceThrottle]
+    NOT_FOUND = "Aucun billet ne correspond à cette référence et à ce numéro."
+
+    def post(self, request):
+        from .booking_limits import normalize_phone
+
+        reference = str(request.data.get("reference") or "").strip()
+        phone = normalize_phone(request.data.get("phone"))
+        ticket = Ticket.objects.select_related("booking").filter(reference__iexact=reference).first() if reference else None
+        phones = set()
+        if ticket is not None:
+            phones = {normalize_phone(ticket.passenger_phone)}
+            if ticket.booking_id:
+                phones.add(normalize_phone(ticket.booking.contact_phone))
+            phones.discard("")
+        if not phone or phone not in phones:
+            return Response({"detail": self.NOT_FOUND}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"reference": ticket.reference})

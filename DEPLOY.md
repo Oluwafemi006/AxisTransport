@@ -832,3 +832,21 @@ Solution proposée (non faite) : une vue Django protégée, par exemple `/api/v1
 - **Bouton « Débloquer un compte » dans le portail `/admin`.** Aujourd'hui, débloquer un identifiant bloqué après trop de connexions échouées demande une commande sur le serveur : `python manage.py unblock_login <identifiant>` (voir section 2). Le bouton appellerait le même code, réservé à l'administrateur, et resterait journalisé.
 - **Supprimer les routes en double avant l'ouverture au public.** Les mêmes points d'accès répondent sous `/api/` et sous `/api/v1/` (`backend/config/urls.py`). Vérifier qu'aucun écran ni aucune app n'utilise plus `/api/` seul, puis retirer ce préfixe : une seule adresse par point d'accès, une seule surface à surveiller.
 - **Réservations client ouvertes, protégées dans le code.** `/api/v1/client/bookings/` accepte toute demande (`AllowAny`, pour l'achat sans compte sur le web) ; l'accès à une réservation existante n'est protégé que par une vérification écrite dans la vue (propriétaire connecté ou jeton invité, `_assert_can_access` dans `backend/apps/core/urls_client.py`). Cette protection fonctionne et elle est testée, mais elle est fragile : une nouvelle action ajoutée sans cette vérification serait ouverte à tous. Garder les tests existants et en ajouter un pour chaque nouvelle action.
+
+## Réservations en ligne : limites et « Retrouver mon billet » (lot cc/anti-abus-reservation)
+
+Valeurs proposées, réglables (ce ne sont pas des règles de la direction) :
+
+| Variable | Rôle | Valeur proposée |
+|---|---|---|
+| `AXIS_BOOKING_MAX_HELD` | Réservations non payées en même temps, par téléphone (sans compte) ou par compte | `2` |
+| `AXIS_BOOKING_MAX_HELD_SEATS` | Places retenues non payées en même temps, par téléphone ou par compte | `8` |
+| `AXIS_BOOKING_RATE_ADDRESS` | Créations de réservation en ligne par adresse IP (large : réseaux mobiles partagés) | `30/hour` |
+| `AXIS_BOOKING_RATE_PHONE` | Créations de réservation en ligne par téléphone ou par compte | `6/hour` |
+| `AXIS_TICKET_LOOKUP_RATE_ADDRESS` | « Retrouver mon billet » : essais par adresse IP | `10/hour` |
+| `AXIS_TICKET_LOOKUP_RATE_REFERENCE` | « Retrouver mon billet » : essais par référence | `5/hour` |
+
+- Le personnel (guichet, contrôleur, admin) n'est jamais limité.
+- **À vérifier avant la mise en ligne :** `AXIS_NUM_PROXIES` doit correspondre au nombre de proxys devant l'API (Caddy). Sinon tous les clients semblent venir de la même adresse et la limite par IP les bloque ensemble.
+- Page `/billet/retrouver` : référence + téléphone de l'achat (passager ou contact) ; seule la référence est renvoyée, puis la page du billet s'ouvre.
+
