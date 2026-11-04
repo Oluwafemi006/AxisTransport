@@ -238,6 +238,10 @@ export interface RentalBooking {
   with_driver: boolean;
   status: string;
   status_display: string;
+  total_amount?: string | null;
+  deposit_amount?: string | null;
+  customer_detail?: User;
+  created_at?: string;
 }
 
 export interface PaymentMethod {

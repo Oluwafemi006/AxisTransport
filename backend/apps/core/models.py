@@ -1434,3 +1434,18 @@ class AccountChange(models.Model):
 
     class Meta:
         ordering = ["-created_at", "-id"]
+
+
+class RentalChange(models.Model):
+    """Journal des locations gérées par l'admin : statut, montants, motif. Jamais modifié ni effacé."""
+
+    rental = models.ForeignKey(RentalBooking, on_delete=models.PROTECT, related_name="changes")
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
+    detail = models.CharField(max_length=500)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return self.detail

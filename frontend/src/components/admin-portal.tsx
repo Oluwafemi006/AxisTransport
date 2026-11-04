@@ -7,9 +7,9 @@ import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import { actionErrorText, counterTripLabel, holdMinutesConfigured, upcomingSellableTrips } from "@/lib/portal-rules";
 
-import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, LineState, LineStopRow, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
+import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, LineState, LineStopRow, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, RentalBooking, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
-type AdminTab = "dashboard" | "planning" | "guichet" | "billets" | "points" | "colis" | "flotte" | "tarifs" | "villes" | "troncons" | "agence" | "paiements" | "equipe";
+type AdminTab = "dashboard" | "planning" | "guichet" | "billets" | "points" | "colis" | "locations" | "flotte" | "tarifs" | "villes" | "troncons" | "agence" | "paiements" | "equipe";
 type Dashboard = {
   tickets: { sold: number; online: number; counter: number; checked: number; cancelled_or_refunded: number };
   revenue: { total: number; by_payment_method: Array<{ payment_method__label: string; total: number }> };
@@ -23,7 +23,7 @@ const nextParcelStatus: Record<string, string> = {
 };
 
 const tabs: Array<[AdminTab, string]> = [
-  ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["billets", "Billets"], ["points", "Points d’embarquement"], ["colis", "Colis"],
+  ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["billets", "Billets"], ["points", "Points d’embarquement"], ["colis", "Colis"], ["locations", "Locations"],
   ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["villes", "Villes & ligne"], ["troncons", "Tarifs par tronçon"], ["agence", "Agence et taxes"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
 ];
 
@@ -106,6 +106,7 @@ export function AdminPortal() {
           {tab === "billets" && <TicketsPanel settings={settings} onChanged={load} />}
           {tab === "points" && <BoardingPointsPanel locations={locations} onChanged={load} />}
           {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
+          {tab === "locations" && <RentalPanel />}
           {tab === "flotte" && <FleetPanel locations={locations} vehicles={vehicles} onChanged={load} />}
           {tab === "tarifs" && <PricingPanel routes={routes} fares={fares} flags={flags} payments={payments} settings={settings} onChanged={load} />}
           {tab === "villes" && <LinePanel locations={locations} onChanged={load} />}
@@ -1209,6 +1210,115 @@ function ParcelPanel({ parcels, trips, onChanged }: { parcels: Parcel[]; trips: 
         </div>
       )}
     </section>
+  );
+}
+
+// Locations : l'admin confirme, démarre, termine ou annule une demande et saisit montant et caution (journalisés).
+const rentalNext: Record<string, Array<[string, string]>> = {
+  REQUESTED: [["CONFIRMED", "Confirmer"], ["CANCELLED", "Annuler"]],
+  CONFIRMED: [["ACTIVE", "Démarrer"], ["CANCELLED", "Annuler"]],
+  ACTIVE: [["COMPLETED", "Terminer"]],
+};
+
+function RentalPanel() {
+  const feedback = useActionFeedback();
+  const [rentals, setRentals] = useState<RentalBooking[] | null>(null);
+  const [log, setLog] = useState<Array<{ id: number; created_at: string; detail: string; actor_name: string }>>([]);
+  const [amounts, setAmounts] = useState<Record<number, { total: string; deposit: string }>>({});
+  const [busy, setBusy] = useState<number | null>(null);
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [rows, changes] = await Promise.all([apiList<RentalBooking>("/rentals/"), apiFetch<typeof log>("/rentals/changes/")]);
+      setRentals(rows);
+      setLog(changes);
+      setAmounts(Object.fromEntries(rows.map((r) => [r.id, { total: r.total_amount ? String(Math.round(Number(r.total_amount))) : "", deposit: r.deposit_amount ? String(Math.round(Number(r.deposit_amount))) : "" }])));
+    } catch (reason) { setNotice(failure(reason, "Les locations n’ont pas pu être chargées. Réessayez.")); }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function manage(rental: RentalBooking, body: Record<string, unknown>, success: string) {
+    setBusy(rental.id);
+    try {
+      await apiFetch(`/rentals/${rental.id}/manage/`, { method: "POST", body: JSON.stringify(body) });
+      feedback.success(success);
+      await load();
+    } catch (reason) { feedback.failure(reason, "La location n’a pas été modifiée."); }
+    finally { setBusy(null); }
+  }
+
+  function changeStatus(rental: RentalBooking, status: string, label: string) {
+    let note = "";
+    if (status === "CANCELLED") {
+      note = window.prompt(`Annuler la location ${rental.reference} ? Indiquez le motif :`)?.trim() || "";
+      if (!note) return;
+    } else if (!window.confirm(`${label} la location ${rental.reference} ?`)) return;
+    void manage(rental, { status, note }, `Location ${rental.reference} : ${label.toLowerCase()} — enregistré.`);
+  }
+
+  function saveAmounts(rental: RentalBooking) {
+    const draft = amounts[rental.id] || { total: "", deposit: "" };
+    const body: Record<string, unknown> = {};
+    for (const [key, value] of [["total_amount", draft.total], ["deposit_amount", draft.deposit]] as const) {
+      const typed = value.replace(/[\s\u202f\u00a0]/g, "");
+      if (!typed) continue;
+      if (!/^\d+$/.test(typed) || Number(typed) <= 0) { feedback.failure(null, "Montants : nombres entiers de francs CFA, supérieurs à zéro."); return; }
+      body[key] = Number(typed);
+    }
+    if (Object.keys(body).length === 0) return;
+    void manage(rental, body, `Montants de ${rental.reference} enregistrés.`);
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="card">
+        <SectionHeading eyebrow="Demandes des clients" title="Locations" />
+        {rentals === null ? <Loading /> : rentals.length === 0 ? <EmptyState title="Aucune location" text="Les demandes de location des clients apparaîtront ici." /> : (
+          <ul className="space-y-3">
+            {rentals.map((rental) => {
+              const draft = amounts[rental.id] || { total: "", deposit: "" };
+              const open = !["COMPLETED", "CANCELLED"].includes(rental.status);
+              return (
+                <li key={rental.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="min-w-0 flex-1 font-semibold">{rental.reference} · {rental.vehicle_detail?.name}</p>
+                    <StatusBadge tone={rental.status === "CANCELLED" ? "grey" : rental.status === "COMPLETED" ? "green" : "blue"}>{rental.status_display}</StatusBadge>
+                  </div>
+                  <p className="mt-1 text-slate-500">
+                    Du {formatDate(rental.starts_at)} au {formatDate(rental.ends_at)}{rental.with_driver ? " · avec chauffeur" : ""}
+                    {rental.customer_detail ? ` · ${[rental.customer_detail.first_name, rental.customer_detail.last_name].filter(Boolean).join(" ") || rental.customer_detail.username}${rental.customer_detail.phone ? ` · ${rental.customer_detail.phone}` : ""}` : ""}
+                  </p>
+                  {open && (
+                    <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                      <label className="block"><span className="field-label">Montant (FCFA)</span><input className="field" inputMode="numeric" value={draft.total} placeholder="À renseigner" onChange={(e) => setAmounts({ ...amounts, [rental.id]: { ...draft, total: e.target.value } })} /></label>
+                      <label className="block"><span className="field-label">Caution (FCFA)</span><input className="field" inputMode="numeric" value={draft.deposit} placeholder="À renseigner" onChange={(e) => setAmounts({ ...amounts, [rental.id]: { ...draft, deposit: e.target.value } })} /></label>
+                      <button className="secondary-button" disabled={busy !== null} onClick={() => saveAmounts(rental)}>Enregistrer</button>
+                    </div>
+                  )}
+                  {!open && <p className="mt-1">Montant : {rental.total_amount ? money(rental.total_amount) : "—"} · Caution : {rental.deposit_amount ? money(rental.deposit_amount) : "—"}</p>}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(rentalNext[rental.status] || []).map(([status, label]) => (
+                      <button key={status} className={status === "CANCELLED" ? "secondary-button" : "primary-button"} disabled={busy !== null} onClick={() => changeStatus(rental, status, label)}>{label}</button>
+                    ))}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <Notice notice={notice} />
+      </section>
+      <section className="card">
+        <SectionHeading eyebrow="Lecture seule" title="Historique des locations" />
+        {log.length === 0 ? <EmptyState title="Aucune modification" text="Chaque changement apparaîtra ici." /> : (
+          <ul className="space-y-2 text-sm">
+            {log.map((row) => <li key={row.id}><span className="text-slate-500">{formatDate(row.created_at)} · {row.actor_name}</span><br />{row.detail}</li>)}
+          </ul>
+        )}
+      </section>
+    </div>
   );
 }
 

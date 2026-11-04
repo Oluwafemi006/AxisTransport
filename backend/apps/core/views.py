@@ -28,6 +28,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 from . import password_reset
 from .models import (
+    RentalChange,
     LineChange,
     BoardingPoint,
     Booking,
@@ -118,6 +119,7 @@ from .payments import (
     verify_fedapay_signature,
 )
 from .photo_storage import upload_parcel_photo
+from .rental_admin import manage_rental
 from .line_admin import create_segment_fare, line_payload, log_line_change, save_line, set_segment_fare_active
 from .services import (
     ReservationsClosed,
@@ -1693,9 +1695,33 @@ class ParcelViewSet(viewsets.ModelViewSet):
 
 
 class RentalBookingViewSet(viewsets.ModelViewSet):
+    """Demandes de location : le client demande, l'admin gère (« manage », journalisé) ; jamais de suppression."""
+
     queryset = RentalBooking.objects.select_related("vehicle__base_location", "customer")
     serializer_class = RentalBookingSerializer
     permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAxisAdmin])
+    def manage(self, request, pk=None):
+        try:
+            rental, changed = manage_rental(
+                self.get_object(), actor=request.user, status=request.data.get("status") or None,
+                total_amount=request.data.get("total_amount"), deposit_amount=request.data.get("deposit_amount"),
+                note=str(request.data.get("note", "")),
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"detail": exc.messages})
+        return Response({**RentalBookingSerializer(rental, context={"request": request}).data, "changed": changed})
+
+    @action(detail=False, methods=["get"], permission_classes=[IsAxisAdmin])
+    def changes(self, request):
+        rows = RentalChange.objects.select_related("actor")[:100]
+        return Response([
+            {"id": row.id, "created_at": row.created_at, "detail": row.detail,
+             "actor_name": (row.actor.get_full_name() or row.actor.username) if row.actor else "—"}
+            for row in rows
+        ])
 
     def get_permissions(self):
         if self.action == "create":
