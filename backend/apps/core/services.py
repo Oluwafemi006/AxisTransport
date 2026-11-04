@@ -480,6 +480,9 @@ def segment_catalog(direction, *, online=False):
 
 def confirm_trip_arrival(trip, location_id, *, actor):
     """Arrêts intermédiaires facultatifs ; l'arrivée au terminus termine le départ."""
+    # Seulement le jour du départ (heure du Bénin) : un essai ne peut pas terminer un voyage à l'avance.
+    if timezone.localdate(trip.departure_at) != timezone.localdate():
+        raise ValidationError("L'arrivée ne se confirme que le jour du départ.")
     stops = [location.pk for location in trip.route.get_stops_sequence()]
     if location_id not in stops[1:]:
         raise ValidationError("Cet arrêt n'est pas une arrivée de ce départ.")

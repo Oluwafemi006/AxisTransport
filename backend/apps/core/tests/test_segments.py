@@ -319,6 +319,19 @@ class StaffSaleSegmentTests(SegmentsTestCase):
         self.trip.refresh_from_db()
         self.assertEqual(self.trip.status, Trip.Status.COMPLETED)
 
+    def test_an_admin_cannot_end_a_future_trip(self):
+        """Essai depuis un compte admin (qui voit les départs à venir) : le voyage de demain reste vendable."""
+        admin = User.objects.create_user(username="test-admin-arr", password="secret", role=User.Role.ADMIN)
+        self.client.force_authenticate(admin)
+        tomorrow = self.departure(self.forward, days=1)
+        response = self.client.post(
+            "/api/v1/staff/sales/arrival/", {"trip": tomorrow.pk, "stop": self.places["Cotonou"].pk}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("jour du départ", str(response.data))
+        tomorrow.refresh_from_db()
+        self.assertEqual(tomorrow.status, Trip.Status.SCHEDULED)
+
     def test_first_stop_is_not_an_arrival(self):
         self.assertEqual(self.arrive("Parakou").status_code, 400)
 
