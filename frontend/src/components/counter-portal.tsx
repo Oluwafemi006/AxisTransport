@@ -73,6 +73,44 @@ function ParcelPrices() {
   }, []);
   useEffect(() => { void read(); }, [read]);
 
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [checkouts, setCheckouts] = useState<Record<number, string>>({});
+  useEffect(() => { apiList<PaymentMethod>("/payment-methods/").then((rows) => setMethods(rows.filter((row) => row.active))).catch(() => undefined); }, []);
+
+  // Encaissement : espèces (confirmation), ou Mobile Money (page de paiement ouverte, puis vérification).
+  async function collect(parcel: Parcel, method: PaymentMethod) {
+    if (busyId) return;
+    // La liste du personnel ne porte pas « online » : le code du moyen de paiement suffit.
+    const online = method.online === true || ["FEDAPAY", "KKIAPAY"].includes(method.code.toUpperCase());
+    if (!online && !window.confirm(`Espèces reçues ? Confirmez avoir reçu ${money(parcel.amount, "XOF")} de l’expéditeur.`)) return;
+    setBusyId(parcel.id);
+    try {
+      const result = await apiFetch<{ checkout: { payment_url: string } | null }>(`/parcels/${parcel.id}/pay/`, { method: "POST", body: JSON.stringify({ payment_method: method.id }) });
+      if (result.checkout?.payment_url) {
+        setCheckouts({ ...checkouts, [parcel.id]: result.checkout.payment_url });
+        window.open(result.checkout.payment_url, "_blank", "noopener");
+        setNotice({ text: `Page de paiement ouverte pour le colis ${parcel.tracking_number}. Cliquez sur « Vérifier le paiement » une fois payé.`, tone: "info" });
+      } else {
+        setNotice({ text: `Colis ${parcel.tracking_number} payé.`, tone: "ok" });
+        window.open(`/guichet/colis/${parcel.id}`, "_blank", "noopener");
+      }
+      await read();
+    } catch (reason) { setNotice({ text: actionErrorText(reason, "L’encaissement n’a pas été enregistré."), tone: "error" }); }
+    finally { setBusyId(null); }
+  }
+
+  async function verify(parcel: Parcel) {
+    setBusyId(parcel.id);
+    try {
+      await apiFetch(`/parcels/${parcel.id}/verify/`, { method: "POST", body: "{}" });
+      setNotice({ text: `Paiement reçu : colis ${parcel.tracking_number} payé.`, tone: "ok" });
+      window.open(`/guichet/colis/${parcel.id}`, "_blank", "noopener");
+      await read();
+    } catch (reason) { setNotice({ text: actionErrorText(reason, "Paiement pas encore reçu."), tone: "error" }); }
+    finally { setBusyId(null); }
+  }
+
   async function save(parcel: Parcel) {
     try {
       await apiFetch(`/parcels/${parcel.id}/price/`, { method: "POST", body: JSON.stringify({ amount: (drafts[parcel.id] ?? "").trim() }) });
@@ -100,6 +138,13 @@ function ParcelPrices() {
                 <span className="text-sm">{parcel.amount ? money(parcel.amount, "XOF") : "Prix à fixer"}</span>
                 <input className="field max-w-32" inputMode="numeric" aria-label={`Nouveau prix ${parcel.tracking_number}`} value={drafts[parcel.id] ?? ""} onChange={(event) => setDrafts({ ...drafts, [parcel.id]: event.target.value })} />
                 <button className="secondary-button" onClick={() => void save(parcel)}>Enregistrer</button>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {parcel.paid ? <span className="badge badge-green">Payé</span> : parcel.amount ? methods.map((method) => (
+                  <button key={method.id} type="button" className="secondary-button" disabled={busyId === parcel.id} onClick={() => void collect(parcel, method)}>Encaisser · {method.label}</button>
+                )) : <span className="text-sm text-slate-500">Fixez le prix avant d’encaisser.</span>}
+                {!parcel.paid && checkouts[parcel.id] && <button type="button" className="primary-button" disabled={busyId === parcel.id} onClick={() => void verify(parcel)}>Vérifier le paiement</button>}
+                <a className="text-button" href={`/guichet/colis/${parcel.id}`} target="_blank" rel="noreferrer">Ticket colis</a>
               </div>
             </li>
           ))}

@@ -218,6 +218,7 @@ export interface Parcel {
   destination_detail: Location;
   trip: number | null;
   description: string;
+  paid?: boolean;
   photo_urls: string[];
   amount: string | null;
   weight_kg: string | null;
@@ -439,4 +440,24 @@ export interface NextAvailable {
   formatted_date: string;
   formatted_time: string;
   route_label?: string;
+}
+
+export interface ParcelReceipt {
+  title: string;
+  tracking_number: string;
+  origin: string;
+  destination: string;
+  sender_name: string;
+  sender_phone: string;
+  recipient_name: string;
+  recipient_phone: string;
+  description: string;
+  amount: number | null;
+  currency: string;
+  paid: boolean;
+  payment_mode: string;
+  paid_at: string | null;
+  departure_at: string | null;
+  created_at: string;
+  status_display: string;
 }

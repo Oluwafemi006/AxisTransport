@@ -787,6 +787,7 @@ class ParcelSerializer(serializers.ModelSerializer):
     customer_detail = UserSerializer(source="customer", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     status_history = ParcelStatusHistorySerializer(many=True, read_only=True)
+    paid = serializers.SerializerMethodField()
     photo_urls = serializers.SerializerMethodField()
 
     class Meta:
@@ -804,6 +805,9 @@ class ParcelSerializer(serializers.ModelSerializer):
 
     def get_photo_urls(self, obj):
         return [photo.url for photo in obj.photos.all()]
+
+    def get_paid(self, obj):
+        return obj.transactions.filter(status="SUCCEEDED").exists()
 
     def validate(self, attrs):
         instance = self.instance or Parcel()

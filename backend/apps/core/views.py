@@ -1505,6 +1505,9 @@ class ParcelViewSet(viewsets.ModelViewSet):
         # Le client ne crée jamais de colis : l'agence (guichet ou admin) l'enregistre.
         if self.action in {"create", "update", "partial_update", "destroy", "transition"}:
             return [IsCounterOrAdmin()]
+        # Encaissement et ticket : personnel (agence ou embarquement) seulement, jamais le client.
+        if self.action in {"pay", "verify", "parcel_receipt"}:
+            return [IsOperationsStaff()]
         return [IsClientCounterOrAdmin()]
 
     def get_queryset(self):
@@ -1523,6 +1526,42 @@ class ParcelViewSet(viewsets.ModelViewSet):
         ParcelStatusHistory.objects.create(
             parcel=parcel, to_status=Parcel.Status.REGISTERED, changed_by=self.request.user
         )
+
+    @action(detail=True, methods=["post"], permission_classes=[IsOperationsStaff])
+    def pay(self, request, pk=None):
+        """Encaisse le colis : espèces (attestées par l'agent) ou Mobile Money (page de paiement ouverte)."""
+        from . import parcel_payments
+
+        parcel = self.get_object()
+        method = PaymentMethod.objects.filter(pk=request.data.get("payment_method"), active=True).first()
+        if not method:
+            raise ValidationError({"payment_method": "Moyen de paiement introuvable ou inactif."})
+        try:
+            if method.code.upper() in ONLINE_PROVIDERS:
+                checkout = parcel_payments.start_mobile_money(parcel, payment_method=method, actor=request.user)
+                return Response({"checkout": checkout, "receipt": parcel_payments.receipt(parcel)})
+            parcel_payments.pay_in_cash(parcel, payment_method=method, actor=request.user)
+        except DjangoValidationError as exc:
+            raise service_validation_error(exc, staff=True)
+        parcel.refresh_from_db()
+        return Response({"checkout": None, "receipt": parcel_payments.receipt(parcel)})
+
+    @action(detail=True, methods=["post"], permission_classes=[IsOperationsStaff])
+    def verify(self, request, pk=None):
+        from . import parcel_payments
+
+        parcel = self.get_object()
+        try:
+            parcel_payments.verify_mobile_money(parcel, actor=request.user)
+        except DjangoValidationError as exc:
+            raise service_validation_error(exc, staff=True)
+        return Response({"receipt": parcel_payments.receipt(parcel)})
+
+    @action(detail=True, methods=["get"], url_path="receipt", permission_classes=[IsOperationsStaff])
+    def parcel_receipt(self, request, pk=None):
+        from . import parcel_payments
+
+        return Response(parcel_payments.receipt(self.get_object()))
 
     @action(detail=True, methods=["post"], permission_classes=[IsCounterOrAdmin])
     def price(self, request, pk=None):

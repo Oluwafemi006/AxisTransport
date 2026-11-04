@@ -833,7 +833,15 @@ Solution proposée (non faite) : une vue Django protégée, par exemple `/api/v1
 - **Supprimer les routes en double avant l'ouverture au public.** Les mêmes points d'accès répondent sous `/api/` et sous `/api/v1/` (`backend/config/urls.py`). Vérifier qu'aucun écran ni aucune app n'utilise plus `/api/` seul, puis retirer ce préfixe : une seule adresse par point d'accès, une seule surface à surveiller.
 - **Réservations client ouvertes, protégées dans le code.** `/api/v1/client/bookings/` accepte toute demande (`AllowAny`, pour l'achat sans compte sur le web) ; l'accès à une réservation existante n'est protégé que par une vérification écrite dans la vue (propriétaire connecté ou jeton invité, `_assert_can_access` dans `backend/apps/core/urls_client.py`). Cette protection fonctionne et elle est testée, mais elle est fragile : une nouvelle action ajoutée sans cette vérification serait ouverte à tous. Garder les tests existants et en ajouter un pour chaque nouvelle action.
 
+
+## Colis : encaissement et ticket (lot cc/colis-paiement-ticket)
+
+- Un colis se paie une fois son prix fixé : espèces (confirmation « Espèces reçues ? ») ou Mobile Money (page de paiement, puis « Vérifier le paiement »). Il est payé quand il a une transaction réussie ; aucune migration.
+- `/guichet` : boutons « Encaisser » et « Ticket colis » ; le ticket (`/guichet/colis/<id>`, personnel connecté) s'imprime ou s'enregistre en PDF depuis la fenêtre d'impression.
+- Limite : le paiement Mobile Money d'un colis n'est confirmé que par « Vérifier le paiement » (pas encore par le webhook ni le rattrapage automatique).
+=======
 ## Réservations en ligne : limites et « Retrouver mon billet » (lot cc/anti-abus-reservation)
+
 
 Valeurs proposées, réglables (ce ne sont pas des règles de la direction) :
 
