@@ -1,12 +1,19 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Scanner des billets (personnel). Demandée à l'ouverture du scanner, jamais au lancement. -->
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- La caméra ne sert qu'au personnel : elle ne doit pas exclure du Play Store les clients sans caméra. -->
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" tools:node="replace"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false" tools:node="replace"/>
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" tools:node="replace"/>
+    <!-- RECORD_AUDIO (plugin camera) rendrait le micro requis implicitement. -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" tools:node="replace"/>
     <application
         android:label="Axis Transport"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

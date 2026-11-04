@@ -263,6 +263,10 @@ void main() {
 
       expect(find.text('Départ de Parakou à 08:00'), findsOneWidget);
       expect(find.textContaining('Embarquement 07:30'), findsNothing);
+      // Montée intermédiaire : vendue à bord, pas de réservation en ligne.
+      expect(find.text('Montée à bord, auprès du contrôleur : cette montée ne s’achète pas en ligne.'), findsOneWidget);
+      expect(find.text('Choisir ce trajet'), findsNothing);
+      expect(find.text('Montée à bord'), findsOneWidget);
     });
 
     testWidgets('2b. Résultats (Resultats.html) : erreur réseau affiche EmptyState et bouton Réessayer', (

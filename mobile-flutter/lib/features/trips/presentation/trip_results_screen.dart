@@ -454,7 +454,10 @@ class _TripResultCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final axis = context.axis;
     final fare = trip.currentFare;
-    final bookable = fare != null && trip.availableSeats >= passengers;
+    // Montée ailleurs qu'au départ du bus : vendue à bord par le contrôleur, pas en ligne (validé par le boss).
+    final originId = search?.originId;
+    final onboardOnly = originId != null && trip.route.origin != null && trip.route.origin!.id != originId;
+    final bookable = fare != null && trip.availableSeats >= passengers && !onboardOnly;
     final departure = DateFormat.Hm('fr_FR').format(trip.departureAt);
     // Heure d'embarquement = champ boardingAt du serveur ou départ − 30 min à l'affichage.
     final boardingAt =
@@ -573,6 +576,16 @@ class _TripResultCard extends ConsumerWidget {
             ],
           ),
 
+          if (onboardOnly) ...[
+            const SizedBox(height: AxisSpacing.s12),
+            Text(
+              'Montée à bord, auprès du contrôleur : cette montée ne s’achète pas en ligne.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: context.axis.warningText,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ],
           const SizedBox(height: AxisSpacing.s12),
           AxisButton(
             variant: AxisButtonVariant.secondary,
@@ -589,7 +602,9 @@ class _TripResultCard extends ConsumerWidget {
                     );
                   }
                 : null,
-            label: trip.availableSeats < passengers
+            label: onboardOnly
+                ? 'Montée à bord'
+                : trip.availableSeats < passengers
                 ? 'Complet'
                 : fare == null
                 ? 'Tarif à renseigner'

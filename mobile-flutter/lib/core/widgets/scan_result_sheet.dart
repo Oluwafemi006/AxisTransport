@@ -14,6 +14,9 @@ enum ScanResultType {
 
   /// Billet inconnu ou introuvable.
   notFound,
+
+  /// Billet refusé par le serveur (autre date, autre départ, non payé…) : la raison exacte est affichée.
+  rejected,
 }
 
 /// Données contextuelles pour l'affichage de la feuille de résultat de scan.
@@ -26,8 +29,11 @@ class ScanResultData {
     this.tripRoute,
     this.usedTimestamp,
     this.scannedBy,
+    this.reason,
   });
 
+  /// Raison du refus, telle que le serveur l’envoie.
+  final String? reason;
   final ScanResultType type;
   final String? ticketNumber;
   final String? passengerName;
@@ -78,6 +84,7 @@ class ScanResultSheet extends StatelessWidget {
             ScanResultType.valid => _buildValid(context),
             ScanResultType.alreadyUsed => _buildAlreadyUsed(context),
             ScanResultType.notFound => _buildNotFound(context),
+            ScanResultType.rejected => _buildRejected(context),
           },
           if (onManualInput != null) ...[
             const SizedBox(height: AxisSpacing.xs),
@@ -252,6 +259,49 @@ class ScanResultSheet extends StatelessWidget {
           label: 'Scanner un autre billet',
           onPressed: onPrimaryAction,
           variant: AxisButtonVariant.outline,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRejected(BuildContext context) {
+    final tokens = context.axis;
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(color: tokens.danger, shape: BoxShape.circle),
+              alignment: Alignment.center,
+              child: Icon(Icons.block_rounded, size: 26, color: tokens.onDark),
+            ),
+            const SizedBox(width: AxisSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Billet refusé',
+                    style: theme.textTheme.titleLarge?.copyWith(color: tokens.danger, fontWeight: FontWeight.w800),
+                  ),
+                  Text(
+                    data.reason ?? 'Le serveur a refusé ce billet.',
+                    style: theme.textTheme.labelMedium?.copyWith(color: tokens.textSecondary, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AxisSpacing.md),
+        AxisButton(
+          label: 'Scanner un autre billet',
+          onPressed: onPrimaryAction,
+          variant: AxisButtonVariant.primary,
         ),
       ],
     );
