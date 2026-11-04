@@ -2543,16 +2543,6 @@ function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChange
     catch { window.prompt("Copiez ce lien :", url); }
   }
 
-  async function changeRole(user: User, role: string) {
-    if (role === user.role) return;
-    if (!window.confirm(`Changer le rôle de ${user.username} en « ${[...staffRoles, ["CLIENT", "Client"]].find(([key]) => key === role)?.[1]} » ? Ses sessions ouvertes seront fermées.`)) return;
-    try {
-      await apiFetch(`/users/${user.id}/`, { method: "PATCH", body: JSON.stringify({ role }) });
-      feedback.success(`Rôle de ${user.username} modifié.`);
-      await reload();
-    } catch (reason) { feedback.failure(reason, "Le rôle n’a pas été modifié."); }
-  }
-
   async function toggleActive(user: User) {
     const active = user.is_active !== false;
     if (active && !window.confirm(`Désactiver ${user.username} ? Il ne pourra plus se connecter et ses sessions seront fermées. Son historique est conservé.`)) return;
@@ -2590,11 +2580,8 @@ function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChange
                   <tr key={user.id} className={user.is_active === false ? "opacity-60" : undefined}>
                     <td className="strong">{[user.first_name, user.last_name].filter(Boolean).join(" ") || "—"}</td>
                     <td>{user.username}</td>
-                    <td>
-                      <select className="field max-w-40" aria-label={`Rôle de ${user.username}`} value={user.role} onChange={(e) => void changeRole(user, e.target.value)}>
-                        {[...staffRoles, ["CLIENT", "Client"]].map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-                      </select>
-                    </td>
+                    {/* Rôle en lecture seule : fixé à la création du compte, jamais changé depuis cette liste. */}
+                    <td><StatusBadge tone={user.role === "ADMIN" ? "amber" : user.role === "CLIENT" ? "grey" : "blue"}>{user.role_display}</StatusBadge></td>
                     <td>{user.phone || user.email || "—"}</td>
                     <td><StatusBadge tone={user.is_active === false ? "grey" : "green"}>{user.is_active === false ? "Désactivé" : "Actif"}</StatusBadge></td>
                     <td className="whitespace-nowrap">
