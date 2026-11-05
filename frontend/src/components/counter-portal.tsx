@@ -91,11 +91,10 @@ function ParcelPrices() {
       const result = await apiFetch<{ checkout: { payment_url: string } | null }>(`/parcels/${parcel.id}/pay/`, { method: "POST", body: JSON.stringify({ payment_method: method.id }) });
       if (result.checkout?.payment_url) {
         setCheckouts({ ...checkouts, [parcel.id]: result.checkout.payment_url });
-        window.open(result.checkout.payment_url, "_blank", "noopener");
-        setNotice({ text: `Page de paiement ouverte pour le colis ${parcel.tracking_number}. Cliquez sur « Vérifier le paiement » une fois payé.`, tone: "info" });
+        // Pas d'ouverture automatique après un appel au serveur (bloquée sur mobile) : lien « Ouvrir la page de paiement ».
+        setNotice({ text: `Paiement demandé pour le colis ${parcel.tracking_number} : cliquez sur « Ouvrir la page de paiement », puis sur « Vérifier le paiement ».`, tone: "info" });
       } else {
-        setNotice({ text: `Colis ${parcel.tracking_number} payé.`, tone: "ok" });
-        window.open(`/guichet/colis/${parcel.id}`, "_blank", "noopener");
+        setNotice({ text: `Colis ${parcel.tracking_number} payé. Imprimez-le avec « Ticket colis ».`, tone: "ok" });
       }
       await read();
     } catch (reason) { setNotice({ text: actionErrorText(reason, "L’encaissement n’a pas été enregistré."), tone: "error" }); }
@@ -106,8 +105,7 @@ function ParcelPrices() {
     setBusyId(parcel.id);
     try {
       await apiFetch(`/parcels/${parcel.id}/verify/`, { method: "POST", body: "{}" });
-      setNotice({ text: `Paiement reçu : colis ${parcel.tracking_number} payé.`, tone: "ok" });
-      window.open(`/guichet/colis/${parcel.id}`, "_blank", "noopener");
+      setNotice({ text: `Paiement reçu : colis ${parcel.tracking_number} payé. Imprimez-le avec « Ticket colis ».`, tone: "ok" });
       await read();
     } catch (reason) { setNotice({ text: actionErrorText(reason, "Paiement pas encore reçu."), tone: "error" }); }
     finally { setBusyId(null); }
@@ -145,6 +143,7 @@ function ParcelPrices() {
                 {parcel.paid ? <span className="badge badge-green">Payé</span> : parcel.amount ? methods.map((method) => (
                   <button key={method.id} type="button" className="secondary-button" disabled={busyId === parcel.id} onClick={() => void collect(parcel, method)}>Encaisser · {method.label}</button>
                 )) : <span className="text-sm text-slate-500">Fixez le prix avant d’encaisser.</span>}
+                {!parcel.paid && checkouts[parcel.id] && <a className="secondary-button" href={checkouts[parcel.id]} target="_blank" rel="noreferrer">Ouvrir la page de paiement</a>}
                 {!parcel.paid && checkouts[parcel.id] && <button type="button" className="primary-button" disabled={busyId === parcel.id} onClick={() => void verify(parcel)}>Vérifier le paiement</button>}
                 <a className="text-button" href={`/guichet/colis/${parcel.id}`} target="_blank" rel="noreferrer">Ticket colis</a>
               </div>

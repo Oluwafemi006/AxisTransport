@@ -143,7 +143,7 @@ export function StaffShell<Key extends string>({ user, tabs, current, onTab, chi
               {user.role_display}
             </p>
           )}
-          <button className="btn s" onClick={logout}>Déconnexion</button>
+          <button className="btn s staff-logout" onClick={logout}>Déconnexion</button>
         </div>
         {tabs && (
           <nav className="wrap staff-tabs" aria-label="Sections">
@@ -196,7 +196,7 @@ export function AccessDenied({ area }: { area: string }) {
         <div className="wrap nav">
           <Brand />
           <div className="sp" />
-          <button className="btn s" onClick={logout}>Déconnexion</button>
+          <button className="btn s staff-logout" onClick={logout}>Déconnexion</button>
         </div>
       </header>
       <main className="wrap staff-login">
@@ -204,7 +204,11 @@ export function AccessDenied({ area }: { area: string }) {
           <p className="eyebrow text-red-700">Accès refusé</p>
           <h1 className="mt-2 text-2xl font-extrabold text-axis-900">Espace réservé à {area}</h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">Votre compte est connecté, mais son rôle ne permet pas d’ouvrir cette interface.</p>
-          <a className="primary-button mt-6" href="/">Retour à l’espace client</a>
+          <div className="mt-6 grid gap-3">
+            {/* Session d'un autre compte (souvent le compte client) : on la ferme pour revenir à la connexion. */}
+            <button type="button" className="primary-button" onClick={logout}>Se connecter avec un autre compte</button>
+            <a className="secondary-button" href="/">Retour à l’espace client</a>
+          </div>
         </section>
       </main>
     </div>
