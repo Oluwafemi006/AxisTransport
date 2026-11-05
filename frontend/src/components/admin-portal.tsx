@@ -6,7 +6,7 @@ import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
 import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import { actionErrorText, counterTripLabel, holdMinutesConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref } from "@/lib/portal-rules";
+import { actionErrorText, holdMinutesConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref, type SegmentDirection, type SegmentOffer } from "@/lib/portal-rules";
 
 import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, LineState, LineStopRow, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, RentalBooking, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
@@ -727,303 +727,281 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
   );
 }
 
-export function CounterPanel({ trips, payments, onChanged }: { trips: Trip[]; payments: PaymentMethod[]; onChanged: () => Promise<void> }) {
+// Vente au guichet (/guichet et onglet admin) : même chemin serveur que l'app du personnel (/staff/sales/).
+// Le serveur décide de tout : départs vendables, tronçons avec tarif, prix, place tenue, paiement et émission.
+type SaleQuote = { payment_method: number; label: string; total: number | string; currency: string; online: boolean };
+type SaleSegment = { origin_id: number; origin: string; destination_id: number; destination: string; quotes: SaleQuote[] };
+type SaleTrip = Trip & { segments: SaleSegment[] };
+type SaleCheckout = { transaction_id: string; payment_url: string | null; payment_method: number; total: number | string; currency: string };
+type SaleResult = { booking: Booking; checkout?: SaleCheckout | null; payment_error?: string };
+
+function newSaleKey() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID().replace(/-/g, "")
+    : `${Date.now()}${Math.random().toString(36).slice(2)}`.slice(0, 40);
+}
+
+export function CounterPanel({ onChanged }: { trips?: Trip[]; payments?: PaymentMethod[]; onChanged: () => Promise<void> }) {
   const feedback = useActionFeedback();
+  const [saleTrips, setSaleTrips] = useState<SaleTrip[] | null>(null);
+  const [routeLabel, setRouteLabel] = useState("");
+  const [pairKey, setPairKey] = useState("");
   const [tripId, setTripId] = useState("");
-  const [originId, setOriginId] = useState("");
-  const [destinationId, setDestinationId] = useState("");
   const [boardingPointId, setBoardingPointId] = useState("");
   const [alightingPointId, setAlightingPointId] = useState("");
   const [seats, setSeats] = useState<Seat[]>([]);
   const [seat, setSeat] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  // Numéro WhatsApp du client, facultatif : sert seulement à lui envoyer le lien de son billet.
+  const [methodId, setMethodId] = useState<number | null>(null);
+  const [result, setResult] = useState<SaleResult | null>(null);
+  // Numéro WhatsApp du client, facultatif : prérempli avec son téléphone, sert seulement à lui envoyer son billet.
   const [whatsapp, setWhatsapp] = useState("");
-  const [ticket, setTicket] = useState<Ticket | null>(null);
-  const [notice, setNotice] = useState<NoticeState>(null);
   const [busy, setBusy] = useState(false);
+  const [saleKey, setSaleKey] = useState<string | null>(null);
 
-  const selectedTrip = trips.find((t) => String(t.id) === tripId);
-  const routeStops = selectedTrip?.route_detail?.stops || [];
-  const effectiveOriginId = originId || (selectedTrip ? String(selectedTrip.route_detail.origin) : "");
-  const effectiveDestId = destinationId || (selectedTrip ? String(selectedTrip.route_detail.destination) : "");
+  const loadOptions = useCallback(async () => {
+    try {
+      const payload = await apiFetch<{ trips: SaleTrip[] }>("/staff/sales/options/");
+      // Le serveur ne renvoie que les départs vendables (à venir, ni annulés ni terminés) : tri du plus proche au plus lointain.
+      setSaleTrips([...(payload.trips || [])].sort((a, b) => a.departure_at.localeCompare(b.departure_at)));
+    } catch (reason) { setSaleTrips([]); feedback.failure(reason, "Les départs à vendre n’ont pas pu être chargés."); }
+  }, [feedback]);
 
-  const getPointsForCity = useCallback((cityIdStr: string) => {
-    if (!cityIdStr || !selectedTrip) return [];
-    const numId = Number(cityIdStr);
-    const fromStop = selectedTrip.route_detail?.stops?.find((s) => s.id === numId || s.location_id === numId);
-    if (fromStop?.boarding_points) return fromStop.boarding_points.filter((p) => p.active);
-    if (selectedTrip.route_detail?.origin === numId && selectedTrip.route_detail.origin_detail?.boarding_points) {
-      return selectedTrip.route_detail.origin_detail.boarding_points.filter((p) => p.active);
-    }
-    if (selectedTrip.route_detail?.destination === numId && selectedTrip.route_detail.destination_detail?.boarding_points) {
-      return selectedTrip.route_detail.destination_detail.boarding_points.filter((p) => p.active);
-    }
-    return [];
-  }, [selectedTrip]);
+  useEffect(() => { void loadOptions(); }, [loadOptions]);
 
-  const activeBoardingPoints = getPointsForCity(effectiveOriginId);
-  const activeAlightingPoints = getPointsForCity(effectiveDestId);
+  const pairOf = (item: { origin_id: number; destination_id: number }) => `${item.origin_id}-${item.destination_id}`;
+  const trips = saleTrips ?? [];
+  const routeLabels = Array.from(new Set(trips.map((trip) => trip.route_detail.label)));
+  const currentRoute = routeLabel || routeLabels[0] || "";
+  const routeTrips = trips.filter((trip) => trip.route_detail.label === currentRoute);
+  // Tronçons avec tarif, dans l'ordre du bus, sans doublon d'un départ à l'autre.
+  const pairs: SaleSegment[] = [];
+  for (const trip of routeTrips) for (const segment of trip.segments || []) if (!pairs.some((item) => pairOf(item) === pairOf(segment))) pairs.push(segment);
+  const pair = pairs.find((item) => pairOf(item) === pairKey) || null;
+  const pairTrips = pair ? routeTrips.filter((trip) => (trip.segments || []).some((segment) => pairOf(segment) === pairKey)) : [];
+  const selectedTrip = pairTrips.find((trip) => String(trip.id) === tripId) || null;
+  const quotes = selectedTrip?.segments.find((segment) => pairOf(segment) === pairKey)?.quotes || pair?.quotes || [];
+  const quote = quotes.find((item) => item.payment_method === methodId) || null;
+  const price = quotes[0] ? money(quotes[0].total, quotes[0].currency) : "";
+
+  const pointsOf = (locationId: number | undefined) => {
+    const stop = selectedTrip?.route_detail.stops?.find((item) => item.id === locationId);
+    return (stop?.boarding_points || []).filter((point) => point.active);
+  };
+  const boardingPoints = pointsOf(pair?.origin_id);
+  const alightingPoints = pointsOf(pair?.destination_id);
 
   useEffect(() => {
-    if (activeBoardingPoints.length === 1) {
-      setBoardingPointId(String(activeBoardingPoints[0].id));
-    } else if (activeBoardingPoints.length === 0) {
-      setBoardingPointId("");
-    } else if (!activeBoardingPoints.some((p) => String(p.id) === boardingPointId)) {
-      setBoardingPointId("");
-    }
-  }, [effectiveOriginId, activeBoardingPoints, boardingPointId]);
-
+    if (boardingPoints.length === 1) setBoardingPointId(String(boardingPoints[0].id));
+    else if (!boardingPoints.some((point) => String(point.id) === boardingPointId)) setBoardingPointId("");
+  }, [boardingPoints, boardingPointId]);
   useEffect(() => {
-    if (activeAlightingPoints.length === 1) {
-      setAlightingPointId(String(activeAlightingPoints[0].id));
-    } else if (activeAlightingPoints.length === 0) {
-      setAlightingPointId("");
-    } else if (!activeAlightingPoints.some((p) => String(p.id) === alightingPointId)) {
-      setAlightingPointId("");
-    }
-  }, [effectiveDestId, activeAlightingPoints, alightingPointId]);
+    if (alightingPoints.length === 1) setAlightingPointId(String(alightingPoints[0].id));
+    else if (!alightingPoints.some((point) => String(point.id) === alightingPointId)) setAlightingPointId("");
+  }, [alightingPoints, alightingPointId]);
 
   const loadSeats = useCallback(async (id: string) => {
     if (!id) { setSeats([]); return; }
-    try { setSeats(await apiList<Seat>(`/seats/?trip=${id}`)); } catch (reason) { setSeats([]); setNotice(failure(reason, "Chargement des sièges impossible.")); }
-  }, []);
-
+    try { setSeats(await apiList<Seat>(`/seats/?trip=${id}`)); } catch (reason) { setSeats([]); feedback.failure(reason, "Chargement des sièges impossible."); }
+  }, [feedback]);
   useEffect(() => { void loadSeats(tripId); }, [tripId, loadSeats]);
+
+  function chooseRoute(label: string) { setRouteLabel(label); setPairKey(""); setTripId(""); setSeat(""); setMethodId(null); }
+  function choosePair(key: string) { setPairKey(key); setTripId(""); setSeat(""); setMethodId(null); }
+
+  function clearForm() {
+    setSeat(""); setName(""); setPhone(""); setMethodId(null); setSaleKey(null);
+    setBoardingPointId(""); setAlightingPointId("");
+  }
+
+  async function refreshAfterSale() {
+    await Promise.all([loadSeats(tripId), loadOptions(), onChanged()]);
+  }
 
   async function sell(event: FormEvent) {
     event.preventDefault();
-    if (activeBoardingPoints.length > 1 && !boardingPointId) {
-      feedback.failure(null, "Veuillez choisir un point d’embarquement.");
-      return;
-    }
-    if (activeAlightingPoints.length > 1 && !alightingPointId) {
-      feedback.failure(null, "Veuillez choisir un point de débarquement.");
-      return;
-    }
+    if (busy || !selectedTrip || !pair || !quote) return;
+    if (!seat) { feedback.failure(null, "Choisissez un siège libre."); return; }
+    if (!name.trim()) { feedback.failure(null, "Saisissez le nom du passager."); return; }
+    if (!phone.trim()) { feedback.failure(null, "Saisissez le téléphone du passager."); return; }
+    if (boardingPoints.length > 1 && !boardingPointId) { feedback.failure(null, "Choisissez le point d’embarquement."); return; }
+    if (alightingPoints.length > 1 && !alightingPointId) { feedback.failure(null, "Choisissez le point de débarquement."); return; }
+    const amount = money(quote.total, quote.currency);
+    if (!quote.online && !window.confirm(`Espèces reçues ? Confirmez avoir reçu ${amount} du passager.`)) return;
+    const key = saleKey ?? newSaleKey();
+    setSaleKey(key);
     setBusy(true);
     try {
-      const created = await apiFetch<Ticket>("/tickets/", {
+      const payload = await apiFetch<SaleResult>("/staff/sales/sell/", {
         method: "POST",
         body: JSON.stringify({
-          trip: Number(tripId),
+          idempotency_key: key,
+          trip: selectedTrip.id,
           seat: Number(seat),
-          passenger_name: name,
-          passenger_phone: phone,
-          channel: "COUNTER",
-          origin: originId || undefined,
-          destination: destinationId || undefined,
+          passenger_name: name.trim(),
+          passenger_phone: phone.trim(),
+          payment_method: quote.payment_method,
+          origin: String(pair.origin_id),
+          destination: String(pair.destination_id),
           boarding_point_id: boardingPointId ? Number(boardingPointId) : undefined,
           alighting_point_id: alightingPointId ? Number(alightingPointId) : undefined,
         }),
       });
-      setTicket(created);
-      feedback.success("Siège bloqué. Enregistrez maintenant l’encaissement.");
-      setSeat("");
-      await Promise.all([onChanged(), loadSeats(tripId)]);
-    } catch (reason) { feedback.failure(reason, "La vente n’a pas été enregistrée."); }
-    finally { setBusy(false); }
+      setResult(payload);
+      if (payload.payment_error) feedback.failure(null, `Le paiement n’a pas pu démarrer : ${payload.payment_error}`);
+      else if (payload.booking.status === "CONFIRMED") { feedback.success(`Billet ${payload.booking.tickets[0]?.reference ?? ""} émis.`); setWhatsapp(phone.trim()); clearForm(); }
+      // Pas d'ouverture automatique : après un appel au serveur, Safari et Chrome mobile la bloquent.
+      // L'agent ouvre la page par le bouton « Ouvrir la page de paiement » de la vente en cours.
+      else if (payload.checkout?.payment_url) feedback.info("Paiement demandé : cliquez sur « Ouvrir la page de paiement », puis sur « Vérifier le paiement ».");
+      await refreshAfterSale();
+    } catch (reason) {
+      // Refus net du serveur (4xx) : rien n'a été réservé, nouvelle clé. Erreur réseau ou 5xx : la vente a pu
+      // passer côté serveur, on garde la même clé pour qu'un nouvel essai la reprenne sans doublon.
+      const status = (reason as { status?: number }).status;
+      if (status && status >= 400 && status < 500) setSaleKey(null);
+      feedback.failure(reason, "La vente n’a pas été enregistrée.");
+    } finally { setBusy(false); }
   }
 
-  async function pay(method: PaymentMethod) {
-    if (!ticket) return;
+  async function verify() {
+    if (busy || !result?.checkout) return;
     setBusy(true);
     try {
-      const result = await apiFetch<{ ticket: Ticket }>(`/tickets/${ticket.id}/pay/`, { method: "POST", body: JSON.stringify({ payment_method: method.id }) });
-      setTicket(result.ticket);
-      feedback.success(`Billet ${result.ticket.reference} émis.`);
-      await Promise.all([onChanged(), loadSeats(tripId)]);
-    } catch (reason) { feedback.failure(reason, "L’encaissement n’a pas été enregistré."); }
+      const payload = await apiFetch<SaleResult>(`/staff/sales/${result.booking.id}/verify/`, {
+        method: "POST",
+        body: JSON.stringify({ payment_method: result.checkout.payment_method, external_reference: result.checkout.transaction_id }),
+      });
+      setResult({ ...payload, checkout: payload.booking.status === "CONFIRMED" ? null : result.checkout });
+      if (payload.booking.status === "CONFIRMED") { feedback.success(`Paiement reçu : billet ${payload.booking.tickets[0]?.reference ?? ""} émis.`); setWhatsapp(phone.trim()); clearForm(); await refreshAfterSale(); }
+    } catch (reason) { feedback.failure(reason, "Paiement pas encore reçu. Aucun billet n’est émis tant qu’il n’est pas confirmé."); }
     finally { setBusy(false); }
   }
 
-  function reset() {
-    setTicket(null); setNotice(null); setSeat(""); setName(""); setPhone("");
-    setOriginId(""); setDestinationId(""); setBoardingPointId(""); setAlightingPointId("");
+  async function cancelSale() {
+    if (busy || !result) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/staff/sales/${result.booking.id}/cancel/`, { method: "POST", body: "{}" });
+      feedback.success("Vente annulée. La place est libérée.");
+      setResult(null); clearForm();
+      await refreshAfterSale();
+    } catch (reason) { feedback.failure(reason, "La vente n’a pas été annulée."); }
+    finally { setBusy(false); }
   }
 
-  // Départs à venir et vendables (itinéraire actif, pas encore partis), du plus proche au plus lointain.
-  const sellable = upcomingSellableTrips(trips);
-  const activeMethods = payments.filter((p) => p.active);
-  const held = ticket?.status === "HELD";
+  const booking = result?.booking;
+  const issued = booking?.status === "CONFIRMED";
+  const pending = booking?.status === "HELD";
+  const ticket = booking?.tickets?.[0];
 
+  if (saleTrips === null) return <Loading />;
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
-      <section className="card lg:col-span-2">
-        <SectionHeading eyebrow="À vendre" title="Prochains départs" />
-        {sellable.length === 0 ? <EmptyState title="Aucun départ à venir" text="Créez les départs dans l’onglet « Trajets & planning »." /> : (
-          <div className="table-scroll">
-            <table className="staff-table min-w-[640px]">
-              <thead><tr><th>Départ</th><th>Parcours</th><th>Prix</th><th>Places libres</th><th /></tr></thead>
-              <tbody>
-                {sellable.map((trip) => (
-                  <tr key={trip.id} className={String(trip.id) === tripId ? "bg-[var(--tint)]" : undefined}>
-                    <td className="whitespace-nowrap">{formatDate(trip.departure_at)}</td>
-                    <td className="strong">{trip.route_detail.label}</td>
-                    <td className="whitespace-nowrap">{trip.current_fare ? money(trip.current_fare.amount, trip.current_fare.currency) : "sans prix (non vendable)"}</td>
-                    <td>{trip.available_seats}</td>
-                    <td className="text-right">
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        disabled={!trip.current_fare || trip.available_seats === 0}
-                        onClick={() => {
-                          setTripId(String(trip.id));
-                          setSeat("");
-                          const stops = trip.route_detail?.stops || [];
-                          if (stops.length >= 2) {
-                            setOriginId(String(stops[0].id));
-                            setDestinationId(String(stops[stops.length - 1].id));
-                          } else {
-                            setOriginId(String(trip.route_detail.origin));
-                            setDestinationId(String(trip.route_detail.destination));
-                          }
-                        }}
-                      >
-                        {String(trip.id) === tripId ? "Sélectionné" : "Vendre"}
-                      </button>
-                    </td>
-                  </tr>
+    <div className="grid min-w-0 gap-5 lg:grid-cols-2">
+      <section className="card min-w-0 lg:col-span-2">
+        <SectionHeading eyebrow="À vendre" title="Trajet du passager" />
+        {routeLabels.length === 0 ? <EmptyState title="Aucun départ à vendre" text="Créez les départs dans l’onglet « Trajets & planning »." /> : (
+          <>
+            <div role="tablist" className="mb-4 flex flex-wrap gap-2">
+              {routeLabels.map((label) => (
+                <button key={label} type="button" role="tab" aria-selected={currentRoute === label} className={currentRoute === label ? "primary-button" : "secondary-button"} onClick={() => chooseRoute(label)}>{label}</button>
+              ))}
+            </div>
+            {pairs.length === 0 ? <EmptyState title="Aucun trajet avec tarif" text="Aucun tronçon de ce sens n’a de prix." /> : (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {pairs.map((item) => (
+                  <button key={pairOf(item)} type="button" onClick={() => choosePair(pairOf(item))} className={`min-w-0 rounded-[14px] border p-4 text-left ${pairOf(item) === pairKey ? "border-[var(--blue)] bg-[var(--tint)]" : "border-[var(--line)] bg-white"}`}>
+                    <span className="block font-bold text-axis-900">{item.origin} → {item.destination}</span>
+                    <span className="mt-1 block text-lg font-extrabold">{item.quotes[0] ? money(item.quotes[0].total, item.quotes[0].currency) : "Prix indisponible"}</span>
+                  </button>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-      <section className="card">
-        <SectionHeading eyebrow="Base commune" title="Vendre un billet" />
-        <form onSubmit={sell} className="space-y-4">
-          <Select
-            label="Voyage"
-            value={tripId}
-            onChange={(value) => {
-              setTripId(value);
-              setSeat("");
-              const t = trips.find((item) => String(item.id) === value);
-              const stops = t?.route_detail?.stops || [];
-              if (stops.length >= 2) {
-                setOriginId(String(stops[0].id));
-                setDestinationId(String(stops[stops.length - 1].id));
-              } else if (t) {
-                setOriginId(String(t.route_detail.origin));
-                setDestinationId(String(t.route_detail.destination));
-              }
-            }}
-            options={sellable.map((trip) => [String(trip.id), counterTripLabel(trip.route_detail.label, formatDate(trip.departure_at), trip.current_fare ? money(trip.current_fare.amount, trip.current_fare.currency) : null)])}
-          />
-          {routeStops.length > 2 && (
-            <div className="grid grid-cols-2 gap-3">
-              <Select
-                label="Arrêt de départ (montée)"
-                value={originId}
-                onChange={(val) => {
-                  setOriginId(val);
-                  const origIdx = routeStops.findIndex((s) => String(s.id) === val);
-                  const destIdx = routeStops.findIndex((s) => String(s.id) === destinationId);
-                  if (destIdx <= origIdx && origIdx < routeStops.length - 1) {
-                    setDestinationId(String(routeStops[origIdx + 1].id));
-                  }
-                }}
-                options={routeStops.slice(0, -1).map((s) => [String(s.id), s.name])}
-              />
-              <Select
-                label="Arrêt d'arrivée (descente)"
-                value={destinationId}
-                onChange={setDestinationId}
-                options={(() => {
-                  const origIdx = routeStops.findIndex((s) => String(s.id) === originId);
-                  const validStops = origIdx >= 0 ? routeStops.slice(origIdx + 1) : routeStops.slice(1);
-                  return validStops.map((s) => [String(s.id), s.name]);
-                })()}
-              />
-            </div>
-          )}
-          {selectedTrip && (activeBoardingPoints.length > 0 || activeAlightingPoints.length > 0) && (
-            <div className="grid grid-cols-2 gap-3">
-              {activeBoardingPoints.length > 0 && (
-                <Select
-                  label="Point d’embarquement"
-                  value={boardingPointId}
-                  onChange={setBoardingPointId}
-                  options={activeBoardingPoints.map((pt) => [String(pt.id), pt.name])}
-                  required={activeBoardingPoints.length > 1}
-                />
-              )}
-              {activeAlightingPoints.length > 0 && (
-                <Select
-                  label="Point de débarquement"
-                  value={alightingPointId}
-                  onChange={setAlightingPointId}
-                  options={activeAlightingPoints.map((pt) => [String(pt.id), pt.name])}
-                  required={activeAlightingPoints.length > 1}
-                />
-              )}
-            </div>
-          )}
-          <Select label="Siège libre" value={seat} onChange={setSeat} options={seats.filter((item) => item.status === "AVAILABLE").map((item) => [String(item.id), item.number])} />
-          {seats.length > 0 && (
-            <div>
-              <span className="field-label">Plan des sièges (Libre · Retenu · Occupé)</span>
-              <BusSeatMap
-                seats={seats}
-                selectedSeatIds={seat ? [Number(seat)] : []}
-                onToggleSeat={(s) => setSeat(String(s.id))}
-                maxSeats={1}
-              />
-            </div>
-          )}
-          <Input label="Nom du passager" value={name} onChange={setName} />
-          <Input label="Téléphone" value={phone} onChange={setPhone} required={false} />
-          <button className="primary-button w-full" disabled={busy || held}>Réserver au guichet</button>
-        </form>
-      </section>
-      <section className="card">
-        <SectionHeading eyebrow="Encaissement" title="Finaliser la vente" action={ticket && <StatusBadge tone={ticketTone(ticket.status)}>{ticket.status_display}</StatusBadge>} />
-        {ticket ? (
-          <div>
-            <p className="text-lg font-extrabold text-axis-900">{ticket.reference}</p>
-            <p className="mt-1 text-sm text-slate-500">{ticket.passenger_name} · siège {ticket.seat_detail.number}</p>
-            <p className="text-sm font-semibold text-slate-700">{ticket.segment_label || ticket.trip_detail.route_detail.label}</p>
-            {ticket.boarding_display && <p className="text-xs text-slate-600 mt-1">Embarquement : {ticket.boarding_display}</p>}
-            {ticket.alighting_display && <p className="text-xs text-slate-600">Débarquement : {ticket.alighting_display}</p>}
-            <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div><dt className="field-label">Embarquement</dt><dd>{ticket.trip_detail.boarding_at ? formatDate(ticket.trip_detail.boarding_at) : "à confirmer"}</dd></div>
-              <div><dt className="field-label">{ticket.departure_label || "Départ"}</dt><dd>{formatDate(ticket.effective_departure_at || ticket.trip_detail.departure_at)}</dd></div>
-            </dl>
-            <p className="field-label mt-4">Prix du billet</p>
-            <p className="price">{money(ticket.amount, ticket.currency)}</p>
-            {held && (
-              <>
-                <p className="field-label mt-5">Moyen de paiement</p>
-                <div className="flex flex-wrap gap-2">
-                  {activeMethods.map((method) => <button key={method.id} disabled={busy} onClick={() => void pay(method)} className="secondary-button">{method.label}</button>)}
-                </div>
-                {activeMethods.length === 0 && <Notice notice={{ text: "Configurez au moins un moyen de paiement actif.", tone: "error" }} />}
-              </>
-            )}
-            {!held && (
-              <div className="mt-5 flex flex-wrap gap-2">
-                {ticket.status === "ISSUED" && <a className="primary-button" href={`/t/${encodeURIComponent(ticket.reference)}`} target="_blank" rel="noreferrer">Afficher / imprimer le billet</a>}
-                <button className="secondary-button" onClick={() => { setWhatsapp(""); reset(); }}>Nouvelle vente</button>
               </div>
             )}
-            {!held && ticket.status === "ISSUED" && (
+          </>
+        )}
+      </section>
+
+      <section className="card min-w-0">
+        <SectionHeading eyebrow="Vente" title="Vendre un billet" />
+        {!pair ? <p className="text-sm text-slate-500">Choisissez d’abord un trajet ci-dessus.</p> : (
+          <form onSubmit={sell} className="space-y-4">
+            <p className="rounded-[10px] bg-[var(--tint)] p-3 text-sm"><b>{pair.origin} → {pair.destination}</b> · prix du billet : <b>{price}</b></p>
+            <label className="block">
+              <span className="field-label">Départ</span>
+              <select className="field" value={tripId} onChange={(e) => { setTripId(e.target.value); setSeat(""); setMethodId(null); }} required>
+                <option value="">Choisir un départ</option>
+                {pairTrips.map((trip) => <option key={trip.id} value={trip.id} disabled={trip.available_seats === 0}>{formatDate(trip.departure_at)} · {trip.available_seats} place(s) libre(s)</option>)}
+              </select>
+            </label>
+            {selectedTrip && (boardingPoints.length > 0 || alightingPoints.length > 0) && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {boardingPoints.length > 0 && <Select label={`Embarquement (${pair.origin})`} value={boardingPointId} onChange={setBoardingPointId} options={boardingPoints.map((point) => [String(point.id), point.name])} required={boardingPoints.length > 1} />}
+                {alightingPoints.length > 0 && <Select label={`Débarquement (${pair.destination})`} value={alightingPointId} onChange={setAlightingPointId} options={alightingPoints.map((point) => [String(point.id), point.name])} required={alightingPoints.length > 1} />}
+              </div>
+            )}
+            {selectedTrip && (
+              <div>
+                <span className="field-label">Siège (Libre · Retenu · Occupé)</span>
+                {seats.length === 0 ? <p className="text-sm text-slate-500">Chargement des sièges…</p> : (
+                  <div className="overflow-x-auto"><BusSeatMap seats={seats} selectedSeatIds={seat ? [Number(seat)] : []} onToggleSeat={(item) => setSeat(String(item.id))} maxSeats={1} /></div>
+                )}
+              </div>
+            )}
+            <Input label="Nom du passager" value={name} onChange={setName} />
+            <Input label="Téléphone du passager" type="tel" value={phone} onChange={setPhone} />
+            {quotes.length > 0 && (
+              <div>
+                <span className="field-label">Paiement</span>
+                <div className="flex flex-wrap gap-2">
+                  {quotes.map((item) => (
+                    <button key={item.payment_method} type="button" className={methodId === item.payment_method ? "primary-button" : "secondary-button"} onClick={() => setMethodId(item.payment_method)}>{item.label}</button>
+                  ))}
+                </div>
+                {quote && <p className="mt-2 text-xs text-slate-500">{quote.online ? "Une demande de paiement s’ouvre pour le téléphone du passager ; le billet est émis dès la confirmation." : "Encaissez le montant exact avant de valider."}</p>}
+              </div>
+            )}
+            <button className="primary-button w-full" disabled={busy || pending || !selectedTrip || !quote}>
+              {busy ? "Patientez…" : quote ? `${quote.online ? "Demander le paiement de" : "Encaisser"} ${money(quote.total, quote.currency)}` : "Choisissez un moyen de paiement"}
+            </button>
+          </form>
+        )}
+      </section>
+
+      <section className="card min-w-0">
+        <SectionHeading eyebrow="Encaissement" title="Vente en cours" action={booking && <StatusBadge tone={issued ? "green" : pending ? "amber" : "grey"}>{booking.client_status_display || booking.status_display}</StatusBadge>} />
+        {!booking ? <EmptyState title="Aucune vente en cours" text="Le billet s’affiche ici après l’encaissement." /> : (
+          <div>
+            <p className="text-lg font-extrabold text-axis-900">{ticket?.reference ?? booking.reference}</p>
+            <p className="text-sm font-semibold text-slate-700">{booking.segment_label}</p>
+            <p className="field-label mt-4">Prix du billet</p>
+            <p className="price">{money(booking.amount, booking.currency)}</p>
+            {pending && result?.checkout && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {result.checkout.payment_url && <a className="secondary-button" href={result.checkout.payment_url} target="_blank" rel="noreferrer">Ouvrir la page de paiement</a>}
+                <button type="button" className="primary-button" disabled={busy} onClick={() => void verify()}>Vérifier le paiement</button>
+              </div>
+            )}
+            {pending && <button type="button" className="text-button mt-3" disabled={busy} onClick={() => void cancelSale()}>Annuler la vente</button>}
+            {issued && ticket && (
+              <div className="mt-5 flex flex-wrap gap-2">
+                <a className="primary-button" href={`/t/${encodeURIComponent(ticket.reference)}`} target="_blank" rel="noreferrer">Afficher / imprimer le billet</a>
+                <button type="button" className="secondary-button" onClick={() => { setResult(null); setWhatsapp(""); }}>Nouvelle vente</button>
+              </div>
+            )}
+            {issued && ticket && (
               <div className="mt-4 rounded-lg border border-slate-200 p-3">
                 <label className="block"><span className="field-label">WhatsApp du client (facultatif)</span>
-                  <input className="field" inputMode="tel" value={whatsapp || phone} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Format international, ex. : +229 …" />
+                  <input className="field" inputMode="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Format international, ex. : +229 …" />
                 </label>
-                {(whatsapp || phone) && !whatsappHref(whatsapp || phone) && <p className="mt-1 text-xs text-amber-700">Numéro au format international (+ et indicatif) pour l’ouvrir directement ; sinon WhatsApp vous laissera choisir le contact.</p>}
+                {whatsapp && !whatsappHref(whatsapp) && <p className="mt-1 text-xs text-amber-700">Numéro au format international (+ et indicatif) pour l’ouvrir directement ; sinon WhatsApp vous laissera choisir le contact.</p>}
                 <a className="primary-button mt-2 inline-flex" target="_blank" rel="noopener noreferrer"
-                  href={soldTicketWhatsappHref({ reference: ticket.reference, passenger_name: ticket.passenger_name, passenger_phone: whatsapp || phone }, `${window.location.origin}/t/${encodeURIComponent(ticket.reference)}`)}>
+                  href={soldTicketWhatsappHref({ reference: ticket.reference, passenger_name: ticket.passenger_name ?? "", passenger_phone: whatsapp }, `${window.location.origin}/t/${encodeURIComponent(ticket.reference)}`)}>
                   Envoyer le billet par WhatsApp
                 </a>
               </div>
             )}
           </div>
-        ) : <EmptyState title="Aucune vente en cours" text="Sélectionnez un voyage et un siège dans la vue consolidée." />}
-        <Notice notice={notice} />
+        )}
       </section>
     </div>
   );

@@ -502,3 +502,58 @@ class ParcelOriginDestinationTests(StaffSaleSegmentTests):
         response = self.parcel("Parakou", "Bohicon")
         self.assertEqual(response.status_code, 201, response.data)
         self.assertIsNone(Parcel.objects.get().trip_id)
+
+
+class CounterWebSaleTests(SegmentsTestCase):
+    """/guichet (web) vend par /staff/sales/ comme l'app : tout tronçon tarifé, espèces réservées au personnel."""
+
+    def setUp(self):
+        super().setUp()
+        self.trip = self.departure(self.forward)
+        self.cash = PaymentMethod.objects.create(code="especes", label="Espèces", active=True)
+        self.counter = User.objects.create_user(username="test-guichet-web", password="secret", role=User.Role.COUNTER)
+
+    def test_counter_sells_an_intermediate_segment_in_cash(self):
+        self.client.force_authenticate(self.counter)
+        options = self.client.get("/api/v1/staff/sales/options/").json()["trips"]
+        pairs = {(row["origin"], row["destination"]) for row in options[0]["segments"]}
+        self.assertIn(("Savè", "Bohicon"), pairs)
+        self.assertNotIn(("Glazoué", "Dassa"), pairs)
+        self.assertFalse(any(origin in {"Glazoué", "Dassa"} for origin, _ in pairs))
+        seat = self.trip.seats.order_by("number").first()
+        response = self.client.post(
+            "/api/v1/staff/sales/sell/",
+            {
+                "idempotency_key": "guichet-web-01",
+                "trip": self.trip.pk,
+                "seat": seat.pk,
+                "passenger_name": "TEST Guichet",
+                "passenger_phone": "90000097",
+                "payment_method": self.cash.pk,
+                "origin": str(self.places["Savè"].pk),
+                "destination": str(self.places["Bohicon"].pk),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        booking = Booking.objects.get()
+        self.assertEqual((booking.amount, booking.status), (3000, Booking.Status.CONFIRMED))
+        self.assertEqual(booking.tickets.get().status, "ISSUED")
+
+    def test_a_client_cannot_pay_in_cash(self):
+        client = User.objects.create_user(username="test-client-cash", password="s", role=User.Role.CLIENT)
+        self.client.force_authenticate(client)
+        seat = self.trip.seats.order_by("number").first()
+        created = self.client.post(
+            "/api/v1/client/bookings/",
+            {"trip": self.trip.pk, "contact_phone": "90000096",
+             "passengers": [{"full_name": "TEST Client", "phone": "90000096", "seat": seat.pk}]},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        paid = self.client.post(f"/api/v1/client/bookings/{created.data['id']}/pay/", {"payment_method": self.cash.pk}, format="json")
+        self.assertEqual(paid.status_code, 400)
+        self.assertEqual(Booking.objects.get().status, Booking.Status.HELD)
+        methods = self.client.get("/api/v1/client/payment-methods/").json()
+        rows = methods["results"] if isinstance(methods, dict) else methods
+        self.assertFalse(next(row for row in rows if row["code"] == "especes")["online"])
