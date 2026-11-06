@@ -2240,7 +2240,8 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                 parcel=parcel, to_status=Parcel.Status.REGISTERED, changed_by=request.user
             )
         return Response(
-            {"tracking_number": parcel.tracking_number, "amount": parcel.amount, "photos": [url for url, _ in stored]},
+            # « id » : l'application en a besoin pour encaisser le colis (/parcels/<id>/pay/).
+            {"id": parcel.pk, "tracking_number": parcel.tracking_number, "amount": parcel.amount, "photos": [url for url, _ in stored]},
             status=status.HTTP_201_CREATED,
         )
 
