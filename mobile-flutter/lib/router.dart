@@ -14,6 +14,8 @@ import 'features/parcels/parcels_screen.dart';
 import 'features/passengers/presentation/passengers_screen.dart';
 import 'features/profile/profile_screen.dart';
 import 'features/rentals/rentals_screen.dart';
+import 'features/profile/connection_settings_screen.dart';
+import 'features/profile/profile_menu.dart';
 import 'features/sales/sell_ticket_screen.dart';
 import 'features/sold/sold_today_screen.dart';
 import 'features/seats/presentation/seat_selection_screen.dart';
@@ -110,6 +112,21 @@ GoRouter buildAxisRouter() => GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       path: '/mon-compte',
       builder: (context, state) => const AccountScreen(),
+    ),
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/parametres-connexion',
+      builder: (context, state) => const ConnectionSettingsScreen(),
+    ),
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/a-propos',
+      builder: (context, state) => const AboutScreen(),
+    ),
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/aide',
+      builder: (context, state) => const HelpScreen(),
     ),
     GoRoute(
       parentNavigatorKey: _rootNavigatorKey,

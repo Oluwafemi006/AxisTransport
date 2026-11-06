@@ -8,6 +8,7 @@ import '../../core/theme/axis_spacing.dart';
 import '../../core/theme/axis_tokens.dart';
 import '../../shared/contact_actions.dart';
 import '../../shared/widgets.dart';
+import 'profile_menu.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -51,6 +52,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final user = session.user;
     final theme = Theme.of(context);
     final tokens = context.axis;
+    final contact = ref.watch(contactProvider).value;
+    final hasContact = (contact?['phone'] ?? '').isNotEmpty || (contact?['whatsapp'] ?? '').isNotEmpty;
+    final site = siteUrlFromApi();
     if (!session.ready) return const Center(child: CircularProgressIndicator());
     if (user == null) {
       return Center(
@@ -135,23 +139,54 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   _Count(value: _rentals, label: 'Locations'),
                 ],
               ),
-              const SizedBox(height: 22),
-              OutlinedButton(
-                onPressed: () => context.push('/mon-compte'),
-                child: const Text('E-mail et mot de passe'),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton(
-                onPressed: () async {
-                  await ref.read(sessionProvider.notifier).logout();
-                  if (context.mounted) context.go('/');
-                },
-                child: const Text('Se déconnecter'),
-              ),
             ],
           ),
         ),
-        const ContactActions(),
+        ProfileMenuGroup(
+          items: [
+            ProfileMenuItem(icon: Icons.confirmation_number_outlined, label: 'Billets', onTap: () => context.go('/billets')),
+            ProfileMenuItem(icon: Icons.inventory_2_outlined, label: 'Colis', onTap: () => context.go('/colis')),
+            ProfileMenuItem(icon: Icons.directions_car_outlined, label: 'Locations', onTap: () => context.go('/location')),
+          ],
+        ),
+        ProfileMenuGroup(
+          items: [
+            ProfileMenuItem(icon: Icons.lock_outline, label: 'E-mail et mot de passe', onTap: () => context.push('/mon-compte')),
+            ProfileMenuItem(
+              icon: Icons.fingerprint,
+              label: 'Paramètres de connexion',
+              keyName: 'menu-connection',
+              onTap: () => context.push('/parametres-connexion'),
+            ),
+          ],
+        ),
+        ProfileMenuGroup(
+          items: [
+            if (hasContact)
+              ProfileMenuItem(icon: Icons.help_outline, label: 'Aide et suggestions', onTap: () => context.push('/aide')),
+            if (site.isNotEmpty)
+              ProfileMenuItem(icon: Icons.share_outlined, label: 'Partager l’application', onTap: () => shareApp(site)),
+            ProfileMenuItem(
+              icon: Icons.info_outline,
+              label: 'À propos',
+              keyName: 'menu-about',
+              onTap: () => context.push('/a-propos'),
+            ),
+          ],
+        ),
+        ProfileMenuGroup(
+          items: [
+            ProfileMenuItem(
+              icon: Icons.logout_rounded,
+              label: 'Déconnexion',
+              keyName: 'menu-logout',
+              onTap: () async {
+                await ref.read(sessionProvider.notifier).logout();
+                if (context.mounted) context.go('/');
+              },
+            ),
+          ],
+        ),
       ],
     );
   }
