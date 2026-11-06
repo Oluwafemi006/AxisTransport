@@ -65,6 +65,18 @@ export interface Vehicle {
   description: string;
   rental_daily_rate: string | null;
   driver_available: boolean;
+  rental_daily_rate_with_driver?: string | null;
+  driver_required?: boolean;
+  brand?: string;
+  model_name?: string;
+  transmission?: "" | "MANUAL" | "AUTOMATIC";
+  transmission_display?: string;
+  fuel?: "" | "PETROL" | "DIESEL" | "HYBRID" | "ELECTRIC";
+  fuel_display?: string;
+  archived?: boolean;
+  photo_url?: string;
+  /** Faux si indisponible ou en maintenance : affiché « Indisponible », non demandable (calculé par le serveur). */
+  rentable?: boolean;
 }
 
 export interface Fare {

@@ -1643,12 +1643,28 @@ function Rentals({ user, vehicles, rentals, onAuthenticated, onChanged }: { user
         {vehicles.length === 0 ? <p style={{ color: 'var(--mute)' }}>Aucun véhicule publié.</p> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {vehicles.map(v => (
-              <div key={v.id} style={{ border: '1px solid var(--line)', padding: '16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h4 style={{ color: 'var(--navy)' }}>{v.name}</h4>
-                  <p style={{ fontSize: '13px', color: 'var(--mute)' }}>{v.capacity} places · {money(v.rental_daily_rate)} / jour</p>
+              <div key={v.id} style={{ border: '1px solid var(--line)', padding: '16px', borderRadius: '12px', opacity: v.rentable === false ? 0.7 : 1 }}>
+                {/* Photo du véhicule, ou image de secours si elle manque. */}
+                {v.photo_url
+                  ? <img src={v.photo_url} alt={v.name} style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '8px', marginBottom: '12px' }} />
+                  : <div aria-label="Pas de photo" style={{ width: '100%', height: '160px', borderRadius: '8px', marginBottom: '12px', background: 'var(--bg)', display: 'grid', placeItems: 'center', color: 'var(--mute)' }}>Pas de photo</div>}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <h4 style={{ color: 'var(--navy)' }}>{v.name}</h4>
+                    {(v.brand || v.model_name) && <p style={{ fontSize: '13px' }}>{[v.brand, v.model_name].filter(Boolean).join(" ")}</p>}
+                    <p style={{ fontSize: '13px', color: 'var(--mute)' }}>
+                      {[v.capacity ? `${v.capacity} places` : "", v.transmission_display, v.fuel_display].filter(Boolean).join(" · ")}
+                    </p>
+                    <p style={{ fontSize: '13px', color: 'var(--mute)' }}>
+                      {v.driver_required
+                        ? (v.rental_daily_rate_with_driver ? `Avec chauffeur uniquement : ${money(v.rental_daily_rate_with_driver)} / jour` : "Avec chauffeur uniquement")
+                        : [v.rental_daily_rate ? `${money(v.rental_daily_rate)} / jour` : "", v.rental_daily_rate_with_driver ? `avec chauffeur : ${money(v.rental_daily_rate_with_driver)} / jour` : ""].filter(Boolean).join(" · ")}
+                    </p>
+                  </div>
+                  {v.rentable === false
+                    ? <span className="pill ex">Indisponible</span>
+                    : <button className="btn s p">Louer</button>}
                 </div>
-                <button className="btn s p">Louer</button>
               </div>
             ))}
           </div>

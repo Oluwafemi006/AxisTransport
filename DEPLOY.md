@@ -870,3 +870,13 @@ Valeurs proposées, réglables (ce ne sont pas des règles de la direction) :
 - App : l'écran colis affiche le bus, le départ (par défaut l'arrêt où se trouve le bus) et la destination (arrêts suivants), puis un récapitulatif avant l'envoi.
 
 
+
+### Flotte de location : photos et migration 0029
+
+- Migration `0029_vehicle_fleet` (additive) : marque, modèle, boîte, carburant, archivé, photo, tarif avec chauffeur,
+  « avec chauffeur uniquement ». Appliquée au démarrage du backend (`migrate`).
+- Photos des véhicules : envoyées depuis `/admin` « Flotte », vérifiées (JPG, PNG, WebP, 5 Mo au plus), réduites à
+  1600 px et stockées chez Cloudinary dans le dossier `axis/vehicules`. Mêmes variables que les photos de colis,
+  aucune autre : `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` dans `.env.vps`.
+  Sans elles, l'envoi est refusé avec « Le stockage des photos n'est pas configuré. ».
+- Les photos ne sont ni sur le VPS ni dans `backup.sh` : elles restent chez Cloudinary.

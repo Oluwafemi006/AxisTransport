@@ -12,12 +12,13 @@ from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
 from django.db import DatabaseError, IntegrityError, transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, ProtectedError, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied, Throttled, ValidationError
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
@@ -119,7 +120,7 @@ from .payments import (
     settle_ticket_payment,
     verify_fedapay_signature,
 )
-from .photo_storage import upload_parcel_photo
+from .photo_storage import VEHICLE_FOLDER, prepare_vehicle_photo, upload_parcel_photo, upload_photo
 from .rental_admin import manage_rental
 from .line_admin import create_segment_fare, line_payload, log_line_change, save_line, set_segment_fare_active
 from .services import (
@@ -801,7 +802,34 @@ class VehicleViewSet(PublicReadAdminWriteMixin, viewsets.ModelViewSet):
             queryset = queryset.filter(category=category)
         if state_value:
             queryset = queryset.filter(state=state_value)
+        # Hors administration, les véhicules archivés ne sont jamais listés.
+        if not (self.request.user.is_authenticated and self.request.user.role == User.Role.ADMIN):
+            queryset = queryset.filter(archived=False)
         return queryset
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAxisAdmin], parser_classes=[MultiPartParser])
+    def photo(self, request, pk=None):
+        """Photo du véhicule (admin) : type réel vérifié, réduite à 1600 px, envoyée chez Cloudinary."""
+        vehicle = self.get_object()
+        upload = request.FILES.get("photo")
+        if upload is None:
+            raise ValidationError({"photo": "Choisissez une photo (JPG, PNG ou WebP, 5 Mo maximum)."})
+        try:
+            url, public_id = upload_photo(prepare_vehicle_photo(upload), folder=VEHICLE_FOLDER)
+        except DjangoValidationError as exc:
+            raise ValidationError({"photo": exc.messages})
+        vehicle.photo_url, vehicle.photo_public_id = url, public_id
+        vehicle.save(update_fields=["photo_url", "photo_public_id", "updated_at"])
+        return Response(VehicleSerializer(vehicle, context={"request": request}).data)
+
+    def destroy(self, request, *args, **kwargs):
+        # Un véhicule lié à des départs ou des demandes de location ne s'efface pas : on l'archive.
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError:
+            raise ValidationError(
+                {"detail": "Ce véhicule a un historique (départs ou locations) : archivez-le au lieu de le supprimer."}
+            )
 
     @action(detail=True, methods=["post"], url_path="sync-future-seats")
     def sync_future_seats(self, request, pk=None):
