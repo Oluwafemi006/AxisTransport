@@ -398,13 +398,27 @@ class RentalVehicleCard extends StatelessWidget {
             color: axis.primarySoft,
             child: Stack(
               children: [
-                Center(
-                  child: Icon(
-                    Icons.directions_car_filled_rounded,
-                    size: 64,
-                    color: theme.colorScheme.primary,
+                // Photo du véhicule ; pictogramme de secours si elle manque ou ne se charge pas.
+                if (vehicle.photoUrl.isNotEmpty)
+                  Positioned.fill(
+                    child: Image.network(
+                      vehicle.photoUrl,
+                      key: const Key('vehicle-photo'),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Center(
+                        child: Icon(Icons.directions_car_filled_rounded, size: 64, color: theme.colorScheme.primary),
+                      ),
+                    ),
+                  )
+                else
+                  Center(
+                    child: Icon(
+                      Icons.directions_car_filled_rounded,
+                      key: const Key('vehicle-photo-fallback'),
+                      size: 64,
+                      color: theme.colorScheme.primary,
+                    ),
                   ),
-                ),
                 if (_isDriverOnly)
                   Positioned(
                     top: AxisSpacing.s10,
@@ -521,6 +535,15 @@ class RentalVehicleCard extends StatelessWidget {
                   spacing: AxisSpacing.s8,
                   runSpacing: AxisSpacing.s8,
                   children: [
+                    if ('${vehicle.brand} ${vehicle.modelName}'.trim().isNotEmpty)
+                      _CharacteristicChip(
+                        icon: Icons.directions_car_outlined,
+                        label: '${vehicle.brand} ${vehicle.modelName}'.trim(),
+                      ),
+                    if (vehicle.transmissionDisplay.isNotEmpty)
+                      _CharacteristicChip(icon: Icons.settings_outlined, label: vehicle.transmissionDisplay),
+                    if (vehicle.fuelDisplay.isNotEmpty)
+                      _CharacteristicChip(icon: Icons.local_gas_station_outlined, label: vehicle.fuelDisplay),
                     if (vehicle.capacity != null)
                       _CharacteristicChip(
                         icon: Icons.people_outline_rounded,
@@ -547,7 +570,15 @@ class RentalVehicleCard extends StatelessWidget {
 
                 const SizedBox(height: AxisSpacing.s14),
 
-                if (_unavailableInSelectedMode)
+                if (!vehicle.rentable)
+                  const AxisButton(
+                    key: Key('vehicle-unavailable'),
+                    label: 'Indisponible',
+                    variant: AxisButtonVariant.outline,
+                    height: AxisSizes.minTarget,
+                    onPressed: null,
+                  )
+                else if (_unavailableInSelectedMode)
                   AxisButton(
                     label: !withDriver
                         ? 'Voir avec chauffeur'

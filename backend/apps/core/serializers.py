@@ -200,7 +200,8 @@ class VehicleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vehicle
         fields = "__all__"
-        read_only_fields = ["created_at", "updated_at"]
+        # Photo : envoyée par l'action « photo » (vérifiée et réduite côté serveur), jamais saisie à la main.
+        read_only_fields = ["created_at", "updated_at", "photo_url", "photo_public_id"]
 
     def validate(self, attrs):
         instance = self.instance or Vehicle()
@@ -213,6 +214,10 @@ class VehicleSerializer(serializers.ModelSerializer):
 class PublicVehicleSerializer(serializers.ModelSerializer):
     category_display = serializers.CharField(source="get_category_display", read_only=True)
     state_display = serializers.CharField(source="get_state_display", read_only=True)
+    transmission_display = serializers.CharField(source="get_transmission_display", read_only=True)
+    fuel_display = serializers.CharField(source="get_fuel_display", read_only=True)
+    # Faux pour un véhicule indisponible ou en maintenance : affiché « Indisponible », non demandable.
+    rentable = serializers.BooleanField(read_only=True)
     base_location_detail = LocationSerializer(source="base_location", read_only=True)
 
     class Meta:
@@ -230,6 +235,16 @@ class PublicVehicleSerializer(serializers.ModelSerializer):
             "description",
             "rental_daily_rate",
             "driver_available",
+            "rental_daily_rate_with_driver",
+            "driver_required",
+            "brand",
+            "model_name",
+            "transmission",
+            "transmission_display",
+            "fuel",
+            "fuel_display",
+            "photo_url",
+            "rentable",
         ]
 
 
@@ -841,6 +856,17 @@ class RentalBookingSerializer(serializers.ModelSerializer):
         # Nouvelle demande : le début ne peut pas être déjà passé.
         if self.instance is None and attrs.get("starts_at") and attrs["starts_at"] <= timezone.now():
             raise serializers.ValidationError({"starts_at": "Le début de la location doit être dans le futur."})
+        # Nouvelle demande ou changement de véhicule : seul un véhicule actif et non archivé se demande.
+        vehicle = attrs.get("vehicle")
+        if vehicle is not None and (self.instance is None or vehicle.pk != self.instance.vehicle_id):
+            if vehicle.archived or vehicle.category != Vehicle.Category.RENTAL:
+                raise serializers.ValidationError({"vehicle": "Ce véhicule n'est plus proposé à la location."})
+            if vehicle.state != Vehicle.State.ACTIVE:
+                raise serializers.ValidationError({"vehicle": "Ce véhicule est indisponible pour le moment."})
+        target = vehicle or getattr(self.instance, "vehicle", None)
+        with_driver = attrs.get("with_driver", getattr(self.instance, "with_driver", False))
+        if target is not None and target.driver_required and not with_driver:
+            raise serializers.ValidationError({"with_driver": "Ce véhicule se loue uniquement avec chauffeur."})
         instance = self.instance or RentalBooking()
         for key, value in attrs.items():
             setattr(instance, key, value)

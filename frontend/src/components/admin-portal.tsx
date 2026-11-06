@@ -1317,7 +1317,8 @@ function RentalPanel() {
 
 function FleetPanel({ locations, vehicles, onChanged }: { locations: Location[]; vehicles: Vehicle[]; onChanged: () => Promise<void> }) {
   const feedback = useActionFeedback();
-  const emptyVehicle = { category: "BUS", name: "", registration_number: "", capacity: "", base_location: "", rental_daily_rate: "", driver_available: false, state: "ACTIVE", seat_configuration: "" };
+  const emptyVehicle = { category: "BUS", name: "", registration_number: "", capacity: "", base_location: "", state: "ACTIVE", seat_configuration: "", ...emptyRentalFields };
+  const [showArchived, setShowArchived] = useState(false);
   const [form, setForm] = useState(emptyVehicle);
   const [busy, setBusy] = useState(false);
 
@@ -1327,7 +1328,7 @@ function FleetPanel({ locations, vehicles, onChanged }: { locations: Location[];
     setBusy(true);
     try {
       const seatConfiguration = form.seat_configuration.trim() ? JSON.parse(form.seat_configuration) : [];
-      await apiFetch("/vehicles/", { method: "POST", body: JSON.stringify({ ...form, seat_configuration: seatConfiguration, capacity: form.capacity ? Number(form.capacity) : null, base_location: form.base_location ? Number(form.base_location) : null, rental_daily_rate: form.rental_daily_rate || null, registration_number: form.registration_number || null }) });
+      await apiFetch("/vehicles/", { method: "POST", body: JSON.stringify({ ...form, ...rentalPayload(form), seat_configuration: seatConfiguration, capacity: form.capacity ? Number(form.capacity) : null, base_location: form.base_location ? Number(form.base_location) : null, registration_number: form.registration_number || null }) });
       feedback.success("Véhicule ajouté.");
       setForm(emptyVehicle);
       await onChanged();
@@ -1338,7 +1339,8 @@ function FleetPanel({ locations, vehicles, onChanged }: { locations: Location[];
   return (
     <div className="grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
       <section className="grid content-start gap-4 md:grid-cols-2">
-        {vehicles.map((vehicle) => <VehicleEditor key={vehicle.id} vehicle={vehicle} locations={locations} onChanged={onChanged} />)}
+        <label className="flex items-center gap-2 text-sm md:col-span-2"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />Afficher les véhicules archivés</label>
+        {vehicles.filter((vehicle) => showArchived || !vehicle.archived).map((vehicle) => <VehicleEditor key={vehicle.id} vehicle={vehicle} locations={locations} onChanged={onChanged} />)}
       </section>
       <section className="card self-start">
         <SectionHeading eyebrow="Flotte extensible" title="Ajouter un véhicule" />
@@ -1354,7 +1356,8 @@ function FleetPanel({ locations, vehicles, onChanged }: { locations: Location[];
               <textarea className="field min-h-24" placeholder={'[{"label":"1A","row":1,"column":1}]'} value={form.seat_configuration} onChange={(e) => setForm({ ...form, seat_configuration: e.target.value })} />
             </label>
           )}
-          {form.category === "RENTAL" && <Input label="Tarif journalier" type="number" value={form.rental_daily_rate} onChange={(value) => setForm({ ...form, rental_daily_rate: value })} required={false} />}
+          {form.category === "RENTAL" && <RentalFields form={form} onChange={(patch) => setForm({ ...form, ...patch })} />}
+          {form.category === "RENTAL" && <p className="text-sm text-slate-500">La photo s’ajoute ensuite, sur la fiche du véhicule.</p>}
           <button className="primary-button w-full" disabled={busy}>{busy ? "Ajout…" : "Ajouter"}</button>
         </form>
       </section>
@@ -1362,16 +1365,86 @@ function FleetPanel({ locations, vehicles, onChanged }: { locations: Location[];
   );
 }
 
+// Champs propres à la location : partagés par l'ajout et la modification d'un véhicule.
+const emptyRentalFields = { rental_daily_rate: "", rental_daily_rate_with_driver: "", driver_available: false, driver_required: false, brand: "", model_name: "", transmission: "", fuel: "" };
+type RentalForm = typeof emptyRentalFields;
+
+function rentalFieldsOf(v: Vehicle): RentalForm {
+  return {
+    rental_daily_rate: v.rental_daily_rate || "", rental_daily_rate_with_driver: v.rental_daily_rate_with_driver || "",
+    driver_available: v.driver_available, driver_required: Boolean(v.driver_required), brand: v.brand || "", model_name: v.model_name || "",
+    transmission: v.transmission || "", fuel: v.fuel || "",
+  };
+}
+
+function rentalPayload(form: RentalForm) {
+  return {
+    rental_daily_rate: form.rental_daily_rate || null, rental_daily_rate_with_driver: form.rental_daily_rate_with_driver || null,
+    driver_available: form.driver_available || form.driver_required, driver_required: form.driver_required,
+    brand: form.brand, model_name: form.model_name, transmission: form.transmission, fuel: form.fuel,
+  };
+}
+
+function RentalFields({ form, onChange }: { form: RentalForm; onChange: (patch: Partial<RentalForm>) => void }) {
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Input label="Marque" value={form.brand} onChange={(value) => onChange({ brand: value })} required={false} />
+        <Input label="Modèle" value={form.model_name} onChange={(value) => onChange({ model_name: value })} required={false} />
+        <Select label="Boîte" value={form.transmission} onChange={(value) => onChange({ transmission: value })} options={[["MANUAL", "Manuelle"], ["AUTOMATIC", "Automatique"]]} required={false} />
+        <Select label="Carburant" value={form.fuel} onChange={(value) => onChange({ fuel: value })} options={[["PETROL", "Essence"], ["DIESEL", "Diesel"], ["HYBRID", "Hybride"], ["ELECTRIC", "Électrique"]]} required={false} />
+      </div>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.driver_required} onChange={(e) => onChange({ driver_required: e.target.checked, driver_available: e.target.checked || form.driver_available })} />Avec chauffeur uniquement</label>
+      {!form.driver_required && <Input label="Tarif journalier sans chauffeur (FCFA)" type="number" value={form.rental_daily_rate} onChange={(value) => onChange({ rental_daily_rate: value })} required={false} />}
+      {!form.driver_required && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.driver_available} onChange={(e) => onChange({ driver_available: e.target.checked })} />Chauffeur disponible en option</label>}
+      {(form.driver_available || form.driver_required) && <Input label="Tarif journalier avec chauffeur (FCFA)" type="number" value={form.rental_daily_rate_with_driver} onChange={(value) => onChange({ rental_daily_rate_with_driver: value })} required={false} />}
+    </div>
+  );
+}
+
+// Photo du véhicule, ou image de secours (pictogramme) si elle manque.
+function VehiclePhoto({ vehicle }: { vehicle: Vehicle }) {
+  return vehicle.photo_url
+    ? <img src={vehicle.photo_url} alt={vehicle.name} className="mb-4 h-40 w-full rounded-lg object-cover" />
+    : <div className="mb-4 flex h-40 w-full items-center justify-center rounded-lg bg-slate-100 text-slate-400" aria-label="Pas de photo">Pas de photo</div>;
+}
+
 function VehicleEditor({ vehicle, locations, onChanged }: { vehicle: Vehicle; locations: Location[]; onChanged: () => Promise<void> }) {
   const feedback = useActionFeedback();
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ registration_number: vehicle.registration_number || "", capacity: vehicle.capacity ? String(vehicle.capacity) : "", base_location: vehicle.base_location ? String(vehicle.base_location) : "", rental_daily_rate: vehicle.rental_daily_rate || "", state: vehicle.state, seat_configuration: JSON.stringify(vehicle.seat_configuration || [], null, 2) });
+  const formOf = (v: Vehicle) => ({ registration_number: v.registration_number || "", capacity: v.capacity ? String(v.capacity) : "", base_location: v.base_location ? String(v.base_location) : "", state: v.state, seat_configuration: JSON.stringify(v.seat_configuration || [], null, 2), ...rentalFieldsOf(v) });
+  const [form, setForm] = useState(formOf(vehicle));
+  const [uploading, setUploading] = useState(false);
 
-  useEffect(() => { setForm({ registration_number: vehicle.registration_number || "", capacity: vehicle.capacity ? String(vehicle.capacity) : "", base_location: vehicle.base_location ? String(vehicle.base_location) : "", rental_daily_rate: vehicle.rental_daily_rate || "", state: vehicle.state, seat_configuration: JSON.stringify(vehicle.seat_configuration || [], null, 2) }); }, [vehicle]);
+  useEffect(() => { setForm(formOf(vehicle)); }, [vehicle]);
+
+  async function uploadPhoto(file: File | undefined) {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { feedback.failure(null, "Photo trop lourde (5 Mo maximum)."); return; }
+    const body = new FormData();
+    body.append("photo", file);
+    setUploading(true);
+    try {
+      await apiFetch(`/vehicles/${vehicle.id}/photo/`, { method: "POST", body });
+      feedback.success(`Photo de ${vehicle.name} enregistrée.`);
+      await onChanged();
+    } catch (reason) { feedback.failure(reason, "La photo n’a pas été enregistrée (JPG, PNG ou WebP, 5 Mo maximum)."); }
+    finally { setUploading(false); }
+  }
+
+  async function toggleArchive() {
+    const archive = !vehicle.archived;
+    if (!window.confirm(archive ? `Archiver ${vehicle.name} ? Il disparaîtra du site et de l’application, son historique est gardé.` : `Remettre ${vehicle.name} dans la liste ?`)) return;
+    try {
+      await apiFetch(`/vehicles/${vehicle.id}/`, { method: "PATCH", body: JSON.stringify({ archived: archive }) });
+      feedback.success(archive ? `${vehicle.name} archivé.` : `${vehicle.name} remis dans la liste.`);
+      await onChanged();
+    } catch (reason) { feedback.failure(reason, "Le véhicule n’a pas été modifié."); }
+  }
 
   async function save() {
     try {
-      await apiFetch(`/vehicles/${vehicle.id}/`, { method: "PATCH", body: JSON.stringify({ registration_number: form.registration_number || null, capacity: form.capacity ? Number(form.capacity) : null, base_location: form.base_location ? Number(form.base_location) : null, rental_daily_rate: form.rental_daily_rate || null, state: form.state, seat_configuration: form.seat_configuration.trim() ? JSON.parse(form.seat_configuration) : [] }) });
+      await apiFetch(`/vehicles/${vehicle.id}/`, { method: "PATCH", body: JSON.stringify({ registration_number: form.registration_number || null, capacity: form.capacity ? Number(form.capacity) : null, base_location: form.base_location ? Number(form.base_location) : null, state: form.state, seat_configuration: form.seat_configuration.trim() ? JSON.parse(form.seat_configuration) : [], ...(vehicle.category === "RENTAL" ? rentalPayload(form) : {}) }) });
       setEditing(false);
       feedback.success(`Véhicule ${vehicle.name} enregistré.`);
       await onChanged();
@@ -1387,10 +1460,11 @@ function VehicleEditor({ vehicle, locations, onChanged }: { vehicle: Vehicle; lo
   }
 
   return (
-    <article className="card">
+    <article className={`card ${vehicle.archived ? "opacity-60" : ""}`}>
+      {vehicle.category === "RENTAL" && <VehiclePhoto vehicle={vehicle} />}
       <div className="flex justify-between gap-3">
         <div>
-          <p className="eyebrow">{vehicle.category_display}</p>
+          <p className="eyebrow">{vehicle.category_display}{vehicle.archived ? " · Archivé" : ""}</p>
           <h3 className="mt-1 text-lg font-bold text-axis-900">{vehicle.name}</h3>
         </div>
         <span><StatusBadge tone={vehicle.state === "ACTIVE" ? "green" : "amber"}>{vehicle.state_display}</StatusBadge></span>
@@ -1407,7 +1481,7 @@ function VehicleEditor({ vehicle, locations, onChanged }: { vehicle: Vehicle; lo
               <textarea className="field min-h-28 font-mono text-xs" value={form.seat_configuration} onChange={(e) => setForm({ ...form, seat_configuration: e.target.value })} />
             </label>
           )}
-          {vehicle.category === "RENTAL" && <Input label="Tarif journalier" type="number" value={form.rental_daily_rate} onChange={(value) => setForm({ ...form, rental_daily_rate: value })} required={false} />}
+          {vehicle.category === "RENTAL" && <RentalFields form={form} onChange={(patch) => setForm({ ...form, ...patch })} />}
           <div className="flex gap-2">
             <button className="primary-button flex-1" onClick={() => void save()}>Enregistrer</button>
             <button className="secondary-button" onClick={() => setEditing(false)}>Annuler</button>
@@ -1419,10 +1493,20 @@ function VehicleEditor({ vehicle, locations, onChanged }: { vehicle: Vehicle; lo
             <div><dt className="field-label">Immatriculation</dt><dd>{vehicle.registration_number || "À renseigner"}</dd></div>
             <div><dt className="field-label">Capacité</dt><dd>{vehicle.capacity ?? "À confirmer"}</dd></div>
             <div><dt className="field-label">Base</dt><dd>{vehicle.base_location_detail?.name || "À renseigner"}</dd></div>
-            <div><dt className="field-label">Tarif location</dt><dd>{vehicle.category === "RENTAL" ? money(vehicle.rental_daily_rate) : "—"}</dd></div>
+            <div><dt className="field-label">Tarif location</dt><dd>{vehicle.category === "RENTAL" ? (vehicle.driver_required ? "Avec chauffeur uniquement" : vehicle.rental_daily_rate ? money(vehicle.rental_daily_rate) : "À renseigner") : "—"}</dd></div>
+            {vehicle.category === "RENTAL" && <div><dt className="field-label">Avec chauffeur</dt><dd>{vehicle.rental_daily_rate_with_driver ? money(vehicle.rental_daily_rate_with_driver) : "Non proposé"}</dd></div>}
+            {vehicle.category === "RENTAL" && (vehicle.brand || vehicle.model_name) && <div><dt className="field-label">Marque / modèle</dt><dd>{[vehicle.brand, vehicle.model_name].filter(Boolean).join(" ")}</dd></div>}
+            {vehicle.category === "RENTAL" && (vehicle.transmission_display || vehicle.fuel_display) && <div><dt className="field-label">Boîte / carburant</dt><dd>{[vehicle.transmission_display, vehicle.fuel_display].filter(Boolean).join(" · ")}</dd></div>}
           </dl>
           <div className="mt-5 grid gap-3">
             <button className="secondary-button w-full" onClick={() => setEditing(true)}>Configurer</button>
+            {vehicle.category === "RENTAL" && (
+              <label className="secondary-button w-full cursor-pointer text-center">
+                {uploading ? "Envoi de la photo…" : vehicle.photo_url ? "Changer la photo" : "Ajouter une photo"}
+                <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={uploading} onChange={(e) => { void uploadPhoto(e.target.files?.[0]); e.target.value = ""; }} />
+              </label>
+            )}
+            {vehicle.category === "RENTAL" && <button className="text-button" onClick={() => void toggleArchive()}>{vehicle.archived ? "Remettre dans la liste" : "Archiver"}</button>}
             {vehicle.category === "BUS" && vehicle.capacity && <button className="text-button" onClick={() => void syncSeats()}>Synchroniser les sièges des trajets futurs</button>}
           </div>
         </>

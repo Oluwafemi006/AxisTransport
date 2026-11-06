@@ -287,10 +287,8 @@ class ClientVehicleViewSet(viewsets.ReadOnlyModelViewSet):
     Les données de configuration interne (registration_number, seat_labels, etc.)
     ne sont pas incluses grâce au PublicVehicleSerializer.
     """
-    queryset = Vehicle.objects.filter(
-        category=Vehicle.Category.RENTAL,
-        state=Vehicle.State.ACTIVE,
-    )
+    # Indisponibles et en maintenance affichés (« rentable » faux, non demandables) ; archivés cachés.
+    queryset = Vehicle.objects.filter(category=Vehicle.Category.RENTAL, archived=False)
     serializer_class = PublicVehicleSerializer
     permission_classes = [AllowAny]
 

@@ -919,7 +919,24 @@ class Vehicle {
     this.dailyRateWithDriver,
     this.onlyWithDriver = false,
     this.baseLocation,
+    this.brand = '',
+    this.modelName = '',
+    this.transmissionDisplay = '',
+    this.fuelDisplay = '',
+    this.photoUrl = '',
+    this.rentable = true,
   });
+
+  final String brand;
+  final String modelName;
+  final String transmissionDisplay;
+  final String fuelDisplay;
+
+  /// Photo chez Cloudinary ; vide = image de secours.
+  final String photoUrl;
+
+  /// Faux si indisponible ou en maintenance (calculé par le serveur) : affiché, non demandable.
+  final bool rentable;
 
   final int id;
   final String name;
@@ -948,7 +965,14 @@ class Vehicle {
       dailyRateWithDriver: json['rental_daily_rate_with_driver'] == null
           ? null
           : asNum(json['rental_daily_rate_with_driver']),
-      onlyWithDriver: json['only_with_driver'] as bool? ?? false,
+      // Le serveur envoie « driver_required » (avec chauffeur uniquement).
+      onlyWithDriver: json['driver_required'] as bool? ?? json['only_with_driver'] as bool? ?? false,
+      brand: json['brand'] as String? ?? '',
+      modelName: json['model_name'] as String? ?? '',
+      transmissionDisplay: json['transmission_display'] as String? ?? '',
+      fuelDisplay: json['fuel_display'] as String? ?? '',
+      photoUrl: json['photo_url'] as String? ?? '',
+      rentable: json['rentable'] as bool? ?? true,
       baseLocation: json['base_location_detail'] is Map
           ? Place.fromJson(
               Map<String, dynamic>.from(json['base_location_detail'] as Map),

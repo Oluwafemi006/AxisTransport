@@ -267,14 +267,44 @@ class Vehicle(TimeStampedModel):
         Location, on_delete=models.PROTECT, related_name="vehicles", null=True, blank=True
     )
     description = models.TextField(blank=True)
+    class Transmission(models.TextChoices):
+        MANUAL = "MANUAL", "Manuelle"
+        AUTOMATIC = "AUTOMATIC", "Automatique"
+
+    class Fuel(models.TextChoices):
+        PETROL = "PETROL", "Essence"
+        DIESEL = "DIESEL", "Diesel"
+        HYBRID = "HYBRID", "Hybride"
+        ELECTRIC = "ELECTRIC", "Électrique"
+
+    # Prix par jour sans chauffeur ; `rental_daily_rate_with_driver` : avec chauffeur (vide = option non proposée).
     rental_daily_rate = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     driver_available = models.BooleanField(default=False)
+    rental_daily_rate_with_driver = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    # Loué uniquement avec chauffeur : implique driver_available.
+    driver_required = models.BooleanField(default=False)
+    brand = models.CharField(max_length=80, blank=True)
+    model_name = models.CharField(max_length=80, blank=True)
+    transmission = models.CharField(max_length=16, choices=Transmission.choices, blank=True)
+    fuel = models.CharField(max_length=16, choices=Fuel.choices, blank=True)
+    # Archivé : retiré des listes publiques et des demandes, gardé en base pour l'historique.
+    archived = models.BooleanField(default=False, db_index=True)
+    # Photo chez Cloudinary (photo_storage.py).
+    photo_url = models.URLField(max_length=500, blank=True)
+    photo_public_id = models.CharField(max_length=255, blank=True)
 
     class Meta:
         ordering = ["category", "name"]
 
+    @property
+    def rentable(self):
+        """Peut être demandé en location : véhicule de location, actif, non archivé."""
+        return self.category == self.Category.RENTAL and self.state == self.State.ACTIVE and not self.archived
+
     def clean(self):
         super().clean()
+        if self.driver_required and not self.driver_available:
+            raise ValidationError({"driver_required": "Un véhicule loué uniquement avec chauffeur doit avoir un chauffeur disponible."})
         labels = self.seat_labels
         if len(labels) != len(set(labels)):
             raise ValidationError({"seat_configuration": "Chaque libellé de siège doit être unique."})
