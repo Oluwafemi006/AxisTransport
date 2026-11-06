@@ -1,17 +1,18 @@
 from datetime import timedelta
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.core.models import Booking, PaymentMethod, RentalBooking, Ticket, Trip, User, Vehicle
-from apps.core.services import DEPARTED_MESSAGE
+from apps.core.services import DEPARTED_MESSAGE, reserve_booking, validate_ticket
 
 from .factories import build_operational_context
 
 
 class DepartedTripTests(APITestCase):
-    """Un départ déjà parti n'est plus réservable, sauf pour la vente du contrôleur à l'arrêt."""
+    """Un départ déjà parti n'est plus réservable en ligne ; le personnel vend sur ceux du jour seulement."""
 
     def setUp(self):
         self.context = build_operational_context()
@@ -60,10 +61,47 @@ class DepartedTripTests(APITestCase):
             format="json",
         )
 
-    def test_counter_cannot_sell_a_departed_trip_from_the_staff_app(self):
+    def test_counter_sells_on_todays_departed_trip(self):
+        # Décision transmise par Eddy : le guichet vend comme le contrôleur sur les départs du jour déjà partis.
+        self.client.force_authenticate(self.counter)
+        rows = self.client.get("/api/v1/staff/sales/options/").json()["trips"]
+        self.assertEqual([(row["id"], row["departed"]) for row in rows], [(self.trip.pk, True)])
         response = self.sell_from_staff_app(self.counter, "vente-partie-01")
+        self.assertIn(response.status_code, (200, 201), response.data)
+        ticket = Ticket.objects.get()
+        self.assertEqual(ticket.status, Ticket.Status.ISSUED)
+        # Le scan du jour du départ reste accepté.
+        checked, _ = validate_ticket(qr_token=ticket.qr_token, controller=self.context["controller"], expected_trip=self.trip)
+        self.assertEqual(checked.status, Ticket.Status.CHECKED)
+
+    def test_admin_sells_on_todays_departed_trip(self):
+        response = self.sell_from_staff_app(self.context["admin"], "vente-partie-02")
+        self.assertIn(response.status_code, (200, 201), response.data)
+
+    def test_yesterdays_departure_is_refused_and_hidden(self):
+        Trip.objects.filter(pk=self.trip.pk).update(departure_at=timezone.now() - timedelta(days=1))
+        self.client.force_authenticate(self.counter)
+        self.assertEqual(self.client.get("/api/v1/staff/sales/options/").json()["trips"], [])
+        response = self.sell_from_staff_app(self.counter, "vente-hier-01")
         self.assertEqual(response.status_code, 400, response.data)
         self.assertFalse(Booking.objects.exists())
+
+    def test_cancelled_departure_is_refused_and_hidden(self):
+        Trip.objects.filter(pk=self.trip.pk).update(status=Trip.Status.CANCELLED)
+        self.client.force_authenticate(self.counter)
+        self.assertEqual(self.client.get("/api/v1/staff/sales/options/").json()["trips"], [])
+        response = self.sell_from_staff_app(self.counter, "vente-annule-01")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertFalse(Booking.objects.exists())
+
+    def test_service_refuses_a_past_day_even_with_allow_departed(self):
+        Trip.objects.filter(pk=self.trip.pk).update(departure_at=timezone.now() - timedelta(days=1))
+        self.trip.refresh_from_db()
+        with self.assertRaises(DjangoValidationError):
+            reserve_booking(
+                trip=self.trip, passengers=[{"full_name": "TEST Hier", "seat": self.seats[0]}],
+                contact_phone="", channel=Ticket.Channel.COUNTER, allow_departed=True,
+            )
 
     def test_controller_still_sells_at_the_stop_after_departure(self):
         response = self.sell_from_staff_app(self.context["controller"], "vente-arret-01")

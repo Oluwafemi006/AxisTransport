@@ -731,7 +731,8 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
 // Le serveur décide de tout : départs vendables, tronçons avec tarif, prix, place tenue, paiement et émission.
 type SaleQuote = { payment_method: number; label: string; total: number | string; currency: string; online: boolean };
 type SaleSegment = { origin_id: number; origin: string; destination_id: number; destination: string; quotes: SaleQuote[] };
-type SaleTrip = Trip & { segments: SaleSegment[] };
+// `departed` : départ du jour dont l'heure est passée, encore vendable (calculé par le serveur).
+type SaleTrip = Trip & { segments: SaleSegment[]; departed?: boolean };
 type SaleCheckout = { transaction_id: string; payment_url: string | null; payment_method: number; total: number | string; currency: string };
 type SaleResult = { booking: Booking; checkout?: SaleCheckout | null; payment_error?: string };
 
@@ -930,9 +931,10 @@ export function CounterPanel({ onChanged }: { trips?: Trip[]; payments?: Payment
               <span className="field-label">Départ</span>
               <select className="field" value={tripId} onChange={(e) => { setTripId(e.target.value); setSeat(""); setMethodId(null); }} required>
                 <option value="">Choisir un départ</option>
-                {pairTrips.map((trip) => <option key={trip.id} value={trip.id} disabled={trip.available_seats === 0}>{formatDate(trip.departure_at)} · {trip.available_seats} place(s) libre(s)</option>)}
+                {pairTrips.map((trip) => <option key={trip.id} value={trip.id} disabled={trip.available_seats === 0}>{trip.departed ? "Déjà parti · " : ""}{formatDate(trip.departure_at)} · {trip.available_seats} place(s) libre(s)</option>)}
               </select>
             </label>
+            {selectedTrip?.departed && <p className="notice notice-error mt-2" role="alert">Ce départ est déjà parti. Vérifiez que le passager monte à un arrêt que le bus n’a pas encore passé.</p>}
             {selectedTrip && (boardingPoints.length > 0 || alightingPoints.length > 0) && (
               <div className="grid gap-3 sm:grid-cols-2">
                 {boardingPoints.length > 0 && <Select label={`Embarquement (${pair.origin})`} value={boardingPointId} onChange={setBoardingPointId} options={boardingPoints.map((point) => [String(point.id), point.name])} required={boardingPoints.length > 1} />}
@@ -1591,12 +1593,15 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
   }
 
   async function addMethod() {
+    const label = method.trim();
+    if (!label) { feedback.failure(null, "Moyen de paiement : non ajouté. Saisissez son libellé."); return; }
+    if (!window.confirm(`Ajouter « ${label} » ? Il sera proposé tout de suite aux clients et au personnel.`)) return;
     try {
-      await apiFetch("/payment-methods/", { method: "POST", body: JSON.stringify({ code: method.toLowerCase().replace(/[^a-z0-9]+/g, "-"), label: method, active: true }) });
-      feedback.success(`Moyen de paiement « ${method} » ajouté.`);
+      await apiFetch("/payment-methods/", { method: "POST", body: JSON.stringify({ code: label.toLowerCase().replace(/[^a-z0-9]+/g, "-"), label, active: true }) });
+      feedback.success(`Moyen de paiement « ${label} » ajouté et actif.`);
       setMethod("");
       await onChanged();
-    } catch (reason) { feedback.failure(reason, `Le moyen de paiement « ${method} » n’a pas été ajouté.`); }
+    } catch (reason) { feedback.failure(reason, `Le moyen de paiement « ${label} » n’a pas été ajouté.`); }
   }
 
   const openPolicies = [["contact_phone", "Téléphone de contact (affiché aux clients)"], ["contact_whatsapp", "Numéro WhatsApp (affiché aux clients, format international)"], ["ticket_cancellation_policy", "Annulation et report"], ["baggage_policy", "Bagages et suppléments"], ["parcel_pricing_policy", "Tarification des colis"], ["rental_conditions", "Caution et conditions de location"]];
@@ -1626,6 +1631,7 @@ function PricingPanel({ routes, fares, flags, payments, settings, onChanged }: {
         </div>
         <form onSubmit={addFare} className="card space-y-4">
           <SectionHeading eyebrow="Paramètre commercial" title="Ajouter un tarif" />
+          <p className="text-sm text-slate-500">Ce tarif ne change pas le prix de vente d’un billet : ce prix vient uniquement de l’onglet « Tarifs par tronçon ».</p>
           <Select label="Parcours" value={fare.route} onChange={(value) => setFare({ ...fare, route: value })} options={routes.map((r) => [String(r.id), r.label])} />
           <Input label="Nom" value={fare.name} onChange={(value) => setFare({ ...fare, name: value })} />
           <Select label="Type" value={fare.rule_type} onChange={(value) => setFare({ ...fare, rule_type: value })} options={[["STANDARD", "Standard"], ["ADVANCE", "Anticipé"], ["SAME_DAY", "Jour du départ"], ["PROMOTION", "Promotion"]]} />

@@ -415,6 +415,7 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
           onTap: () => _selectTripWithDefaultQuote(item),
           title: item.label,
           subtitle:
+              '${item.departed ? 'Déjà parti · ' : ''}'
               '${item.availableSeats} places libres'
               '${item.departureAt != null ? ' · Départ ${formatTime(item.departureAt!)}' : ''}',
           price: item.quotes.isNotEmpty

@@ -13,7 +13,7 @@ const source = readFileSync(path.join(here, "../src/lib/portal-rules.ts"), "utf8
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
 const compiled = path.join(mkdtempSync(path.join(tmpdir(), "axis-portal-rules-")), "portal-rules.mjs");
 writeFileSync(compiled, outputText);
-const { placeChoices, segmentDepartureLabel, segmentSearchDate, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE } = await import(pathToFileURL(compiled).href);
+const { placeChoices, segmentDepartureLabel, segmentSearchDate, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE, writeKey, shareInFlight } = await import(pathToFileURL(compiled).href);
 
 const places = [{ id: 1, name: "Cotonou" }, { id: 2, name: "Parakou" }];
 
@@ -207,4 +207,48 @@ test("libellé du prochain départ d'un tronçon, à l'heure du Bénin, comme da
 test("recherche préremplie : jour du Bénin du prochain départ, sinon aujourd'hui", () => {
   assert.equal(segmentSearchDate({ next_departure: "2026-11-05T23:30:00Z" }), "2026-11-06");
   assert.equal(segmentSearchDate({ next_departure: null }, new Date("2026-11-03T10:00:00Z")), "2026-11-03");
+});
+
+test("double clic : une écriture identique en cours n'est envoyée qu'une fois", async () => {
+  const pending = new Map();
+  let sent = 0;
+  let release;
+  const start = () => { sent += 1; return new Promise((resolve) => { release = resolve; }); };
+  const key = writeKey("POST", "/vehicles/", JSON.stringify({ name: "TEST" }));
+  const first = shareInFlight(pending, key, start);
+  const second = shareInFlight(pending, key, start);
+  release({ id: 1 });
+  assert.deepEqual(await first, { id: 1 });
+  assert.deepEqual(await second, { id: 1 });
+  assert.equal(sent, 1);
+  // Une fois la réponse reçue, un nouvel ajout repart vers le serveur.
+  const third = shareInFlight(pending, key, start);
+  release({ id: 2 });
+  assert.deepEqual(await third, { id: 2 });
+  assert.equal(sent, 2);
+});
+
+test("double clic : une erreur libère l'écriture, une écriture différente n'est pas bloquée", async () => {
+  const pending = new Map();
+  await assert.rejects(shareInFlight(pending, "POST /x a", () => Promise.reject(new Error("TEST"))));
+  assert.equal(pending.size, 0);
+  let sent = 0;
+  const start = () => { sent += 1; return Promise.resolve(null); };
+  await Promise.all([shareInFlight(pending, writeKey("POST", "/x", "a"), start), shareInFlight(pending, writeKey("POST", "/x", "b"), start)]);
+  assert.equal(sent, 2);
+});
+
+test("lectures et envois de fichier ne sont jamais regroupés", () => {
+  assert.equal(writeKey(undefined, "/trips/", undefined), null);
+  assert.equal(writeKey("GET", "/trips/", undefined), null);
+  assert.equal(writeKey("POST", "/vehicles/1/photo/", { fichier: "TEST" }), null);
+  assert.equal(writeKey("patch", "/users/1/", "{}"), "PATCH /users/1/ {}");
+});
+
+test("admin : ajout d'un moyen de paiement confirmé, avertissement sur « Ajouter un tarif »", () => {
+  const admin = readFileSync(path.join(here, "../src/components/admin-portal.tsx"), "utf8");
+  const addMethod = admin.slice(admin.indexOf("async function addMethod()"), admin.indexOf("const openPolicies"));
+  assert.match(addMethod, /window\.confirm\(`Ajouter « \$\{label\} » \? Il sera proposé tout de suite/);
+  assert.match(addMethod, /if \(!label\)/);
+  assert.match(admin, /Ce tarif ne change pas le prix de vente d’un billet/);
 });

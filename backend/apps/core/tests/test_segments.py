@@ -498,6 +498,28 @@ class ParcelOriginDestinationTests(StaffSaleSegmentTests):
         Location.objects.filter(name="Dassa").update(active=False)
         self.assertEqual(self.parcel("Parakou", "Dassa").status_code, 400)
 
+    def test_response_carries_the_id_and_the_controller_collects_cash(self):
+        SystemSetting.objects.create(key="parcel_base_price_fcfa", value=2000)
+        response = self.parcel("Parakou", "Cotonou", trip=self.trip.pk)
+        self.assertEqual(response.status_code, 201, response.data)
+        parcel = Parcel.objects.get()
+        self.assertEqual((response.data["id"], response.data["amount"]), (parcel.pk, 2000))
+        paid = self.client.post(f"/api/v1/parcels/{parcel.pk}/pay/", {"payment_method": self.cash.pk}, format="json")
+        self.assertEqual(paid.status_code, 200, paid.data)
+        self.assertIsNone(paid.data["checkout"])
+        self.assertTrue(paid.data["receipt"]["paid"])
+        again = self.client.post(f"/api/v1/parcels/{parcel.pk}/pay/", {"payment_method": self.cash.pk}, format="json")
+        self.assertEqual(again.status_code, 400)
+
+    def test_inactive_payment_method_is_refused_with_a_message(self):
+        SystemSetting.objects.create(key="parcel_base_price_fcfa", value=2000)
+        self.parcel("Parakou", "Cotonou", trip=self.trip.pk)
+        parcel = Parcel.objects.get()
+        momo = PaymentMethod.objects.create(code="FEDAPAY", label="FedaPay", active=False)
+        refused = self.client.post(f"/api/v1/parcels/{parcel.pk}/pay/", {"payment_method": momo.pk}, format="json")
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn("payment_method", refused.data)
+
     def test_published_app_without_trip_still_works(self):
         response = self.parcel("Parakou", "Bohicon")
         self.assertEqual(response.status_code, 201, response.data)
