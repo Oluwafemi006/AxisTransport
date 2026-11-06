@@ -1,4 +1,4 @@
-import { nextPagePath } from "./portal-rules";
+import { nextPagePath, shareInFlight, writeKey } from "./portal-rules";
 import type { User } from "./types";
 
 // Adresse de l'API (se termine par /api/v1). Aucune valeur par défaut : voir DEPLOY.md.
@@ -43,7 +43,13 @@ function errorMessage(payload: unknown) {
   return "Une erreur est survenue.";
 }
 
-export async function apiFetch<T>(path: string, init: RequestInit = {}, authenticated = true): Promise<T> {
+const pendingWrites = new Map<string, Promise<unknown>>();
+
+export function apiFetch<T>(path: string, init: RequestInit = {}, authenticated = true): Promise<T> {
+  return shareInFlight(pendingWrites, writeKey(init.method, path, init.body), () => send<T>(path, init, authenticated));
+}
+
+async function send<T>(path: string, init: RequestInit, authenticated: boolean): Promise<T> {
   const headers = new Headers(init.headers);
   if (!(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   if (authenticated) {
