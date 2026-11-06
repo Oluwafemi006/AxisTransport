@@ -934,7 +934,7 @@ def reserve_booking(
     """
     Reserve all seats for a group or none of them.
     `terminus_boarding_only` : vente en ligne, montée au départ du parcours seulement (les autres montées se font à bord).
-    Départ déjà parti : refusé, sauf `allow_departed` (vente du contrôleur à l'arrêt, départs du jour seulement).
+    Départ déjà parti : refusé, sauf `allow_departed` (vente du personnel), et alors seulement s'il part aujourd'hui.
     """
     buyer_ifu = clean_buyer_ifu(buyer_ifu)
     if not 1 <= len(passengers) <= 8:
@@ -944,7 +944,9 @@ def reserve_booking(
     locked_trip = Trip.objects.select_for_update().select_related("route").get(pk=trip.pk)
     if locked_trip.status not in {Trip.Status.SCHEDULED, Trip.Status.BOARDING}:
         raise ValidationError("Ce trajet n'accepte pas de nouvelle réservation.")
-    if not allow_departed and locked_trip.departure_at <= timezone.now():
+    if locked_trip.departure_at <= timezone.now() and (
+        not allow_departed or timezone.localdate(locked_trip.departure_at) != timezone.localdate()
+    ):
         raise ValidationError(DEPARTED_MESSAGE)
 
     all_trip_seats = list(Seat.objects.select_for_update().filter(trip=locked_trip))

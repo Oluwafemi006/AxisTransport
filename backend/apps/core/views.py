@@ -2112,7 +2112,9 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
         if self.request.user.role == User.Role.CONTROLLER:
             # Le contrôleur vend sur les départs du jour (vente à l'arrêt, y compris après l'heure de départ).
             return trips.filter(departure_at__date=today)
-        return trips.filter(departure_at__gte=timezone.now())
+        # Guichet et admin : départs à venir, plus ceux du jour déjà partis (passagers des arrêts suivants,
+        # décision transmise par Eddy). Un départ d'un jour passé, annulé ou terminé reste exclu.
+        return trips.filter(Q(departure_at__gte=timezone.now()) | Q(departure_at__date=today))
 
     @action(detail=False, methods=["get"])
     def options(self, request):
@@ -2137,6 +2139,8 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                     {**payment_quote(target, method), "online": method.code.upper() in ONLINE_PROVIDERS}
                     for method in methods
                 ]
+            # Départ du jour dont l'heure est passée : affiché « déjà parti » par le site et l'application.
+            item["departed"] = trip.departure_at <= timezone.now()
             # Vente en route : tous les tronçons du départ dans le sens du bus ; sans tarif, pas de tronçon.
             item["arrivals"] = list(trip.stop_arrivals.values_list("location_id", flat=True))
             item["segments"] = []
@@ -2373,8 +2377,8 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                         channel=Ticket.Channel.COUNTER,
                         sold_by=request.user,
                         idempotency_key=key,
-                        # Le contrôleur vend à l'arrêt, y compris après l'heure (départs du jour : _sellable_trips).
-                        allow_departed=request.user.role == User.Role.CONTROLLER,
+                        # Tout agent vend après l'heure : seuls les départs du jour passent _sellable_trips.
+                        allow_departed=True,
                         buyer_ifu=str(request.data.get("buyer_ifu") or ""),
                         origin=origin,
                         destination=destination,
