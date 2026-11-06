@@ -238,3 +238,28 @@ export function segmentDepartureLabel(segment: Pick<SegmentOffer, "next_departur
 export function segmentSearchDate(segment: Pick<SegmentOffer, "next_departure">, now: Date = new Date()): string {
   return segment.next_departure ? beninDateKey(new Date(segment.next_departure)) : beninDateKey(now);
 }
+
+// Demande de location : mêmes contrôles que l'application (benin_time.dart, rentalPeriodError) ; le serveur revérifie tout.
+export function rentalPeriodError(startsAt: string, endsAt: string, now: Date = new Date()): string | null {
+  if (!startsAt) return "Choisissez la date et l’heure de début.";
+  if (!endsAt) return "Choisissez la date et l’heure de fin.";
+  const start = new Date(startsAt).getTime();
+  const end = new Date(endsAt).getTime();
+  if (Number.isNaN(start)) return "Choisissez la date et l’heure de début.";
+  if (Number.isNaN(end)) return "Choisissez la date et l’heure de fin.";
+  if (start <= now.getTime()) return "Le début de la location doit être dans le futur.";
+  if (end <= start) return "La fin de la location doit être après le début.";
+  return null;
+}
+
+// Option chauffeur : imposée si le véhicule se loue uniquement avec chauffeur, impossible sans chauffeur disponible.
+export function rentalWithDriver(vehicle: { driver_required?: boolean; driver_available?: boolean }, chosen: boolean): boolean {
+  if (vehicle.driver_required) return true;
+  if (!vehicle.driver_available) return false;
+  return chosen;
+}
+
+// Corps envoyé à POST /client/rentals/ : le même que l'application (api_client.dart, createRental).
+export function rentalRequestBody(vehicleId: number, startsAt: string, endsAt: string, withDriver: boolean) {
+  return { vehicle: vehicleId, starts_at: new Date(startsAt).toISOString(), ends_at: new Date(endsAt).toISOString(), with_driver: withDriver };
+}

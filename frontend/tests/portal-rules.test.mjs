@@ -13,7 +13,7 @@ const source = readFileSync(path.join(here, "../src/lib/portal-rules.ts"), "utf8
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
 const compiled = path.join(mkdtempSync(path.join(tmpdir(), "axis-portal-rules-")), "portal-rules.mjs");
 writeFileSync(compiled, outputText);
-const { placeChoices, segmentDepartureLabel, segmentSearchDate, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE } = await import(pathToFileURL(compiled).href);
+const { placeChoices, segmentDepartureLabel, segmentSearchDate, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE, rentalPeriodError, rentalWithDriver, rentalRequestBody } = await import(pathToFileURL(compiled).href);
 
 const places = [{ id: 1, name: "Cotonou" }, { id: 2, name: "Parakou" }];
 
@@ -207,4 +207,31 @@ test("libellé du prochain départ d'un tronçon, à l'heure du Bénin, comme da
 test("recherche préremplie : jour du Bénin du prochain départ, sinon aujourd'hui", () => {
   assert.equal(segmentSearchDate({ next_departure: "2026-11-05T23:30:00Z" }), "2026-11-06");
   assert.equal(segmentSearchDate({ next_departure: null }, new Date("2026-11-03T10:00:00Z")), "2026-11-03");
+});
+
+test("location : période refusée comme dans l'application", () => {
+  const now = new Date("2026-11-06T10:00:00Z");
+  assert.equal(rentalPeriodError("", "2026-11-08T10:00", now), "Choisissez la date et l’heure de début.");
+  assert.equal(rentalPeriodError("2026-11-08T10:00", "", now), "Choisissez la date et l’heure de fin.");
+  assert.equal(rentalPeriodError("2026-11-05T10:00:00Z", "2026-11-08T10:00:00Z", now), "Le début de la location doit être dans le futur.");
+  assert.equal(rentalPeriodError("2026-11-08T10:00:00Z", "2026-11-08T09:00:00Z", now), "La fin de la location doit être après le début.");
+  assert.equal(rentalPeriodError("2026-11-08T10:00:00Z", "2026-11-09T10:00:00Z", now), null);
+});
+
+test("location : chauffeur imposé si obligatoire, impossible sans chauffeur disponible", () => {
+  assert.equal(rentalWithDriver({ driver_required: true, driver_available: true }, false), true);
+  assert.equal(rentalWithDriver({ driver_required: false, driver_available: false }, true), false);
+  assert.equal(rentalWithDriver({ driver_required: false, driver_available: true }, true), true);
+  assert.equal(rentalWithDriver({ driver_required: false, driver_available: true }, false), false);
+});
+
+test("location : même corps que l'application, sans aucun montant", () => {
+  const body = rentalRequestBody(7, "2026-11-08T10:00:00Z", "2026-11-09T10:00:00Z", true);
+  assert.deepEqual(body, { vehicle: 7, starts_at: "2026-11-08T10:00:00.000Z", ends_at: "2026-11-09T10:00:00.000Z", with_driver: true });
+});
+
+test("site : le bouton « Louer » ouvre le formulaire branché sur /client/rentals/", () => {
+  const portal = readFileSync(path.join(here, "../src/components/client-portal.tsx"), "utf8");
+  assert.match(portal, /onClick=\{\(\) => \{ setSelected\(v\); setSent\(""\); \}\}>Louer<\/button>/);
+  assert.match(portal, /apiFetch<RentalBooking>\("\/client\/rentals\/", \{ method: "POST", body: JSON\.stringify\(rentalRequestBody\(/);
 });

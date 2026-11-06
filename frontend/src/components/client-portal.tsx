@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail } from "@/lib/api";
-import { SEGMENT_FARE_MISSING_MESSAGE, beninDateKey, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
+import { SEGMENT_FARE_MISSING_MESSAGE, beninDateKey, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, rentalPeriodError, rentalRequestBody, rentalWithDriver, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { BusSeatMap } from "./bus-seat-map";
@@ -1634,7 +1634,8 @@ function Parcels() {
 }
 
 function Rentals({ user, vehicles, rentals, onAuthenticated, onChanged }: { user: User | null; vehicles: Vehicle[]; rentals: RentalBooking[]; onAuthenticated: () => Promise<void>; onChanged: () => Promise<void> }) {
-  // Simplified rentals UI
+  const [selected, setSelected] = useState<Vehicle | null>(null);
+  const [sent, setSent] = useState("");
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }} className="responsive-grid">
       <div className="card">
@@ -1663,8 +1664,12 @@ function Rentals({ user, vehicles, rentals, onAuthenticated, onChanged }: { user
                   </div>
                   {v.rentable === false
                     ? <span className="pill ex">Indisponible</span>
-                    : <button className="btn s p">Louer</button>}
+                    : <button type="button" className="btn s p" onClick={() => { setSelected(v); setSent(""); }}>Louer</button>}
                 </div>
+                {selected?.id === v.id && (
+                  <RentalRequestForm vehicle={v} user={user} onCancel={() => setSelected(null)}
+                    onSent={async (message) => { setSelected(null); setSent(message); await onChanged(); }} />
+                )}
               </div>
             ))}
           </div>
@@ -1673,6 +1678,7 @@ function Rentals({ user, vehicles, rentals, onAuthenticated, onChanged }: { user
       <div className="card">
         <h3>Vos demandes</h3>
         <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
+        {sent && <p className="notice notice-ok" role="status" style={{ marginBottom: '12px' }}>{sent}</p>}
         {!user ? <LoginCard title="Connectez-vous" allowRegistration onSuccess={() => void onAuthenticated()} /> : rentals.length === 0 ? <p style={{ color: 'var(--mute)' }}>Aucune demande en cours.</p> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {rentals.map(r => (
@@ -1685,6 +1691,48 @@ function Rentals({ user, vehicles, rentals, onAuthenticated, onChanged }: { user
         )}
       </div>
     </div>
+  );
+}
+
+// Demande de location : même formulaire et même adresse que l'application (dates, option chauffeur) ; le prix est fixé par l'agence.
+function RentalRequestForm({ vehicle, user, onCancel, onSent }: { vehicle: Vehicle; user: User | null; onCancel: () => void; onSent: (message: string) => Promise<void> }) {
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [chosenDriver, setChosenDriver] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const withDriver = rentalWithDriver(vehicle, chosenDriver);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    if (!user) { setError("Connectez-vous (ou créez un compte) dans « Vos demandes » pour envoyer la demande."); return; }
+    const periodError = rentalPeriodError(startsAt, endsAt);
+    if (periodError) { setError(periodError); return; }
+    setBusy(true); setError("");
+    try {
+      const rental = await apiFetch<RentalBooking>("/client/rentals/", { method: "POST", body: JSON.stringify(rentalRequestBody(vehicle.id, startsAt, endsAt, withDriver)) });
+      await onSent(`Demande ${rental.reference} envoyée (${rental.status_display}).`);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "La demande n’a pas été envoyée."); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <form onSubmit={submit} style={{ marginTop: '12px', display: 'grid', gap: '8px' }} aria-label={`Demande de location ${vehicle.name}`}>
+      <label className="field-label" htmlFor={`rental-start-${vehicle.id}`}>Début</label>
+      <input id={`rental-start-${vehicle.id}`} type="datetime-local" className="field" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} required />
+      <label className="field-label" htmlFor={`rental-end-${vehicle.id}`}>Fin</label>
+      <input id={`rental-end-${vehicle.id}`} type="datetime-local" className="field" value={endsAt} min={startsAt || undefined} onChange={(e) => setEndsAt(e.target.value)} required />
+      {vehicle.driver_required
+        ? <p style={{ fontSize: '13px' }}>Avec chauffeur (obligatoire pour ce véhicule).</p>
+        : vehicle.driver_available && <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}><input type="checkbox" checked={chosenDriver} onChange={(e) => setChosenDriver(e.target.checked)} />Avec chauffeur</label>}
+      <p style={{ fontSize: '13px', color: 'var(--mute)' }}>Le montant et la caution vous sont confirmés par l’agence.</p>
+      {error && <p className="notice notice-error" role="alert">{error}</p>}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <button className="btn s p" disabled={busy}>{busy ? "Envoi…" : "Envoyer la demande"}</button>
+        <button type="button" className="btn s" onClick={onCancel}>Annuler</button>
+      </div>
+    </form>
   );
 }
 

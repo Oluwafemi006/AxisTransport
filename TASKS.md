@@ -4,6 +4,7 @@ Une ligne par tâche. Mettre à jour en début et en fin de tâche. Un seul outi
 Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée dans main.
 
 | Tâche | Branche | Outil | Statut |
+| Site : bouton « Louer » branché sur la demande de location de l'app | `cc/location-site` | Claude Code | à valider par Eddy |
 |---|---|---|---|
 | Mon compte : e-mail du client et changement de mot de passe (app et site) | `cc/changer-mot-de-passe-v2` | Claude Code | à valider par Eddy |
 | Couleur principale de l'app alignée sur le bleu du site (mise de côté, `git stash`) | `cc/couleur-primaire` | Claude Code | en attente |
