@@ -84,7 +84,7 @@ class _RentalsScreenState extends ConsumerState<RentalsScreen> {
   }
 
   Future<void> _openRentalDetail(Vehicle vehicle, bool withDriver) async {
-    final result = await Navigator.of(context).push<String>(
+    final result = await Navigator.of(context, rootNavigator: true).push<String>(
       MaterialPageRoute(
         builder: (context) => RentalDetailScreen(
           vehicle: vehicle,

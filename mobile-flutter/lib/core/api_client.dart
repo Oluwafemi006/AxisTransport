@@ -156,6 +156,16 @@ class ApiClient {
     );
   }
 
+  /// Le client corrige ses informations ; seuls les champs fournis sont envoyés.
+  Future<void> updateProfile(Map<String, String> fields) async {
+    await _request<dynamic>(
+      '/auth/me/',
+      data: fields,
+      auth: true,
+      method: 'PATCH',
+    );
+  }
+
   /// Les autres sessions sont fermées par le serveur ; celle-ci garde les nouveaux jetons.
   Future<void> changePassword({
     required String currentPassword,

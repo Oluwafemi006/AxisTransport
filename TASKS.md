@@ -4,6 +4,7 @@ Une ligne par tâche. Mettre à jour en début et en fin de tâche. Un seul outi
 Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée dans main.
 
 | Tâche | Branche | Outil | Statut |
+| Profil client modifiable (nom, téléphone, e-mail) et barre du bas masquée sur les écrans secondaires, app 1.0.6+8 | `cc/profil-client` | Claude Code | à valider par Eddy |
 | Admin : défauts restants de la revue (double envoi, moyen de paiement confirmé, avertissement tarif) | `cc/admin-defauts` | Claude Code | à valider par Eddy |
 |---|---|---|---|
 | Mon compte : e-mail du client et changement de mot de passe (app et site) | `cc/changer-mot-de-passe-v2` | Claude Code | à valider par Eddy |

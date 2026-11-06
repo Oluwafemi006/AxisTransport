@@ -121,11 +121,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          user.phone.isEmpty ? user.username : user.phone,
+                          maskPhone(user.phone).isEmpty ? 'Numéro à compléter' : maskPhone(user.phone),
+                          key: const Key('profile-phone-line'),
                           style: const TextStyle(color: AxisColors.muted),
                         ),
                       ],
                     ),
+                  ),
+                  IconButton(
+                    key: const Key('profile-edit'),
+                    tooltip: 'Modifier mes informations',
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: () => context.push('/mon-profil'),
                   ),
                 ],
               ),
@@ -151,6 +158,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         ProfileMenuGroup(
           items: [
+            ProfileMenuItem(icon: Icons.person_outline, label: 'Mes informations', keyName: 'menu-edit-profile', onTap: () => context.push('/mon-profil')),
             ProfileMenuItem(icon: Icons.lock_outline, label: 'E-mail et mot de passe', onTap: () => context.push('/mon-compte')),
             ProfileMenuItem(
               icon: Icons.fingerprint,

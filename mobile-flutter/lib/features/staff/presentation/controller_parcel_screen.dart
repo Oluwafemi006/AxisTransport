@@ -235,7 +235,7 @@ class _ControllerParcelScreenState
 
   /// Caméra intégrée à l'application : la photo revient directement dans sa case.
   Future<PhotoSlotItem?> _showCameraCaptureSheet(int index) async {
-    final bytes = await Navigator.of(context).push<List<int>>(
+    final bytes = await Navigator.of(context, rootNavigator: true).push<List<int>>(
       MaterialPageRoute(builder: (_) => const ParcelCameraScreen()),
     );
     if (bytes == null) return null;
