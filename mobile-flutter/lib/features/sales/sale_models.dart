@@ -62,7 +62,11 @@ class SaleTrip {
     this.destinationId,
     this.stops = const [],
     this.arrivedStopIds = const {},
+    this.departed = false,
   });
+
+  /// Départ du jour dont l'heure est passée, encore vendable (calculé par le serveur).
+  final bool departed;
 
   /// Arrêts du départ dans le sens du bus, et ceux dont l'arrivée est confirmée.
   final List<RouteStopInfo> stops;
@@ -119,6 +123,7 @@ class SaleTrip {
             departureAt: base.departureAt,
             boardingAt: base.boardingAt,
             availableSeats: base.availableSeats,
+            departed: base.departed,
             originName: row['origin'] as String? ?? '',
             destinationName: row['destination'] as String? ?? '',
             originId: row['origin_id'] as int?,
@@ -149,6 +154,7 @@ class SaleTrip {
       departureAt: _date(json['departure_at']),
       boardingAt: _date(json['boarding_at']),
       availableSeats: json['available_seats'] as int? ?? 0,
+      departed: json['departed'] == true,
       originName: originDetail['name'] as String? ?? '',
       destinationName: destDetail['name'] as String? ?? '',
       originBoardingPoints: (originDetail['boarding_points'] as List? ?? const [])

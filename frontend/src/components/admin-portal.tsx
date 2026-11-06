@@ -731,7 +731,8 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
 // Le serveur décide de tout : départs vendables, tronçons avec tarif, prix, place tenue, paiement et émission.
 type SaleQuote = { payment_method: number; label: string; total: number | string; currency: string; online: boolean };
 type SaleSegment = { origin_id: number; origin: string; destination_id: number; destination: string; quotes: SaleQuote[] };
-type SaleTrip = Trip & { segments: SaleSegment[] };
+// `departed` : départ du jour dont l'heure est passée, encore vendable (calculé par le serveur).
+type SaleTrip = Trip & { segments: SaleSegment[]; departed?: boolean };
 type SaleCheckout = { transaction_id: string; payment_url: string | null; payment_method: number; total: number | string; currency: string };
 type SaleResult = { booking: Booking; checkout?: SaleCheckout | null; payment_error?: string };
 
@@ -930,9 +931,10 @@ export function CounterPanel({ onChanged }: { trips?: Trip[]; payments?: Payment
               <span className="field-label">Départ</span>
               <select className="field" value={tripId} onChange={(e) => { setTripId(e.target.value); setSeat(""); setMethodId(null); }} required>
                 <option value="">Choisir un départ</option>
-                {pairTrips.map((trip) => <option key={trip.id} value={trip.id} disabled={trip.available_seats === 0}>{formatDate(trip.departure_at)} · {trip.available_seats} place(s) libre(s)</option>)}
+                {pairTrips.map((trip) => <option key={trip.id} value={trip.id} disabled={trip.available_seats === 0}>{trip.departed ? "Déjà parti · " : ""}{formatDate(trip.departure_at)} · {trip.available_seats} place(s) libre(s)</option>)}
               </select>
             </label>
+            {selectedTrip?.departed && <p className="notice notice-error mt-2" role="alert">Ce départ est déjà parti. Vérifiez que le passager monte à un arrêt que le bus n’a pas encore passé.</p>}
             {selectedTrip && (boardingPoints.length > 0 || alightingPoints.length > 0) && (
               <div className="grid gap-3 sm:grid-cols-2">
                 {boardingPoints.length > 0 && <Select label={`Embarquement (${pair.origin})`} value={boardingPointId} onChange={setBoardingPointId} options={boardingPoints.map((point) => [String(point.id), point.name])} required={boardingPoints.length > 1} />}
