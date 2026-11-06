@@ -77,3 +77,8 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Thèmes Theme.AppCompat de styles.xml (exigés par local_auth sur Android 8 et plus ancien).
+    implementation("androidx.appcompat:appcompat:1.6.1")
+}
