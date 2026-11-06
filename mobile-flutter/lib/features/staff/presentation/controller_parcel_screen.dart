@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../sales/sale_models.dart';
 import 'parcel_camera_screen.dart';
 import 'staff_home_screen.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -20,6 +21,7 @@ import '../../../core/widgets/axis_header.dart';
 import '../../../core/widgets/axis_text_field.dart';
 import '../../../core/widgets/photo_slots.dart';
 import '../../../core/widgets/segmented_toggle.dart';
+import '../../../shared/payment_link.dart';
 
 /// Exécutée hors de l'écran : réduit chaque photo pour rester léger en 3G.
 List<List<int>> compressParcelPhotos(List<List<int>> photos) {
@@ -66,14 +68,18 @@ class ControllerParcelScreen extends ConsumerStatefulWidget {
     this.fareFcfa,
     this.onCapturePhoto,
     this.onSubmit,
+    this.openPayment,
   });
 
   final String? tripSubtitle;
+
+  /// Ouverture de la page Mobile Money ; remplaçable dans les tests (aucun navigateur).
+  final Future<bool> Function(Uri url)? openPayment;
   final List<PhotoSlotItem> initialPhotos;
   final List<Place>? destinations;
   final num? fareFcfa;
   final Future<PhotoSlotItem?> Function(ParcelPhotoCaptureSettings settings)?
-      onCapturePhoto;
+  onCapturePhoto;
   final ValueChanged<Map<String, dynamic>>? onSubmit;
 
   @override
@@ -106,6 +112,13 @@ class _ControllerParcelScreenState
   bool _sending = false;
   num? _serverFare;
   String? _savedTrackingNumber;
+  // Encaissement après l'enregistrement : identifiant et prix renvoyés par le serveur.
+  int? _savedParcelId;
+  num? _savedAmount;
+  bool _parcelPaid = false;
+  bool _paying = false;
+  String? _checkoutUrl;
+  String? _paymentError;
 
   @override
   void initState() {
@@ -248,8 +261,7 @@ class _ControllerParcelScreenState
         _recipientPhone.text.trim().isEmpty ||
         _description.text.trim().isEmpty) {
       setState(() {
-        _formError =
-            'Veuillez renseigner l’expéditeur, le destinataire et la description du colis.';
+        _formError = 'Veuillez renseigner l’expéditeur, le destinataire et la description du colis.';
       });
       return;
     }
@@ -282,18 +294,30 @@ class _ControllerParcelScreenState
   Future<void> _confirmAndSend() async {
     final trip = _trip;
     if (trip == null || _originId == null || _selectedDestinationId == null) {
-      setState(() => _formError = 'Choisissez le départ du bus, le départ et la destination du colis.');
+      setState(
+        () => _formError = 'Choisissez le départ du bus, le départ et la destination du colis.',
+      );
       return;
     }
-    final when = trip.departureAt == null ? '' : ', départ du ${formatFullDateTime(trip.departureAt!.toLocal())}';
+    final when = trip.departureAt == null
+        ? ''
+        : ', départ du ${formatFullDateTime(trip.departureAt!.toLocal())}';
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirmer le colis'),
-        content: Text('Colis ${_nameOf(_originId)} → ${_nameOf(_selectedDestinationId)}$when (bus ${trip.label}).'),
+        content: Text(
+          'Colis ${_nameOf(_originId)} → ${_nameOf(_selectedDestinationId)}$when (bus ${trip.label}).',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Corriger')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Enregistrer')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Corriger'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Enregistrer'),
+          ),
         ],
       ),
     );
@@ -309,19 +333,31 @@ class _ControllerParcelScreenState
         setState(() => _formError = 'Aucun départ en cours pour ce colis.');
         return;
       }
-      final result = await api.createParcel({
-        'sender_name': _senderName.text.trim(),
-        'sender_phone': _senderPhone.text.trim(),
-        'recipient_name': _recipientName.text.trim(),
-        'recipient_phone': _recipientPhone.text.trim(),
-        'trip': trip.id,
-        'origin': _originId,
-        'destination': _selectedDestinationId,
-        'description': _description.text.trim(),
-      }, await compute(compressParcelPhotos, [for (final photo in _photos) ?photo.imageBytes]));
+      final result = await api.createParcel(
+        {
+          'sender_name': _senderName.text.trim(),
+          'sender_phone': _senderPhone.text.trim(),
+          'recipient_name': _recipientName.text.trim(),
+          'recipient_phone': _recipientPhone.text.trim(),
+          'trip': trip.id,
+          'origin': _originId,
+          'destination': _selectedDestinationId,
+          'description': _description.text.trim(),
+        },
+        await compute(compressParcelPhotos, [
+          for (final photo in _photos) ?photo.imageBytes,
+        ]),
+      );
       ref.read(staffActivityProvider.notifier).changed();
       if (mounted) {
-        setState(() => _savedTrackingNumber = '${result['tracking_number']}');
+        setState(() {
+          _savedTrackingNumber = '${result['tracking_number']}';
+          _savedParcelId = (result['id'] as num?)?.toInt();
+          _savedAmount = result['amount'] as num?;
+          _parcelPaid = false;
+          _checkoutUrl = null;
+          _paymentError = null;
+        });
       }
     } on ApiException catch (e) {
       if (mounted) setState(() => _formError = e.message);
@@ -330,9 +366,208 @@ class _ControllerParcelScreenState
     }
   }
 
+  /// Moyen de paiement actif choisi dans le formulaire : espèces (hors ligne) ou Mobile Money (en ligne).
+  Future<PaymentMethod?> _chosenMethod() async {
+    final methods = await ref.read(apiClientProvider).paymentMethods();
+    final wantOnline = _paymentIndex == 1;
+    return methods.where((m) => m.active && m.online == wantOnline).firstOrNull;
+  }
+
+  Future<void> _collect() async {
+    final id = _savedParcelId;
+    if (id == null || _paying) return;
+    final amount = _savedAmount;
+    setState(() {
+      _paying = true;
+      _paymentError = null;
+    });
+    PaymentMethod? method;
+    try {
+      method = await _chosenMethod();
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _paymentError = e.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _paymentError = 'Les moyens de paiement n’ont pas pu être chargés. Vérifiez la connexion et réessayez.',
+        );
+      }
+    }
+    if (mounted) setState(() => _paying = false);
+    if (!mounted || _paymentError != null) return;
+    if (method == null) {
+      setState(
+        () => _paymentError = _paymentIndex == 1
+            ? 'Le paiement Mobile Money n’est pas activé. Prévenez l’administrateur, ou encaissez en espèces.'
+            : 'Le paiement en espèces n’est pas activé. Prévenez l’administrateur.',
+      );
+      return;
+    }
+    // Espèces : l'agent confirme avoir reçu le montant, avant tout appel au serveur.
+    if (!method.online) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Espèces reçues ?'),
+          content: Text(
+            'Confirmez avoir reçu ${amount ?? ''} FCFA de l’expéditeur.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Non'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Oui, reçues'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+    setState(() => _paying = true);
+    try {
+      final result = await ref.read(apiClientProvider).payParcel(id, method.id);
+      final checkout = result['checkout'];
+      if (checkout is Map && checkout['payment_url'] is String) {
+        final url = checkout['payment_url'] as String;
+        if (mounted) setState(() => _checkoutUrl = url);
+        var opened = false;
+        try {
+          opened = await (widget.openPayment ?? openPaymentPage)(
+            Uri.parse(url),
+          );
+        } catch (_) {}
+        if (!opened && mounted) {
+          setState(
+            () => _paymentError = 'La page de paiement n’a pas pu s’ouvrir. Réessayez avec « Ouvrir la page de paiement ».',
+          );
+        }
+      } else {
+        if (mounted) setState(() => _parcelPaid = true);
+        ref.read(staffActivityProvider.notifier).changed();
+      }
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _paymentError = e.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _paymentError = 'L’encaissement n’a pas abouti. Vérifiez la connexion et réessayez.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _paying = false);
+    }
+  }
+
+  Future<void> _verifyPayment() async {
+    final id = _savedParcelId;
+    if (id == null || _paying) return;
+    setState(() {
+      _paying = true;
+      _paymentError = null;
+    });
+    try {
+      await ref.read(apiClientProvider).verifyParcelPayment(id);
+      if (mounted) setState(() => _parcelPaid = true);
+      ref.read(staffActivityProvider.notifier).changed();
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _paymentError = e.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _paymentError = 'La vérification n’a pas abouti. Vérifiez la connexion et réessayez.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _paying = false);
+    }
+  }
+
+  Widget _paymentBlock(ThemeData theme, AxisTokens axis) {
+    if (_savedParcelId == null) return const SizedBox.shrink();
+    final children = <Widget>[];
+    if (_parcelPaid) {
+      children.add(
+        Text(
+          'Colis payé.',
+          key: const Key('parcel-paid'),
+          textAlign: TextAlign.center,
+          style: theme.textTheme.titleMedium?.copyWith(color: axis.success),
+        ),
+      );
+    } else if (_savedAmount == null) {
+      children.add(
+        Text(
+          'Prix du colis pas encore fixé : l’agence l’encaissera.',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: axis.textSecondary,
+          ),
+        ),
+      );
+    } else {
+      children.add(
+        AxisButton(
+          key: const Key('parcel-pay'),
+          label: _paymentIndex == 1
+              ? 'Demander $_savedAmount FCFA par Mobile Money'
+              : 'Encaisser $_savedAmount FCFA en espèces',
+          loading: _paying,
+          onPressed: _paying ? null : _collect,
+        ),
+      );
+      if (_checkoutUrl != null) {
+        children.addAll([
+          const SizedBox(height: AxisSpacing.xs),
+          AxisButton(
+            label: 'Ouvrir la page de paiement',
+            variant: AxisButtonVariant.outline,
+            onPressed: _paying
+                ? null
+                : () => (widget.openPayment ?? openPaymentPage)(
+                    Uri.parse(_checkoutUrl!),
+                  ),
+          ),
+          const SizedBox(height: AxisSpacing.xs),
+          AxisButton(
+            key: const Key('parcel-verify'),
+            label: 'Vérifier le paiement',
+            variant: AxisButtonVariant.outline,
+            onPressed: _paying ? null : _verifyPayment,
+          ),
+        ]);
+      }
+    }
+    if (_paymentError != null) {
+      children.addAll([
+        const SizedBox(height: AxisSpacing.xs),
+        Text(
+          _paymentError!,
+          key: const Key('parcel-pay-error'),
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall?.copyWith(color: axis.danger),
+        ),
+      ]);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ...children,
+        const SizedBox(height: AxisSpacing.lg),
+      ],
+    );
+  }
+
   void _newParcel() {
     setState(() {
       _savedTrackingNumber = null;
+      _savedParcelId = null;
+      _savedAmount = null;
+      _parcelPaid = false;
+      _checkoutUrl = null;
+      _paymentError = null;
       _photos.clear();
       for (final field in [
         _senderName,
@@ -358,49 +593,53 @@ class _ControllerParcelScreenState
             onBack: () => context.pop(),
           ),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(AxisSpacing.lg),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Numéro de suivi',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: axis.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: AxisSpacing.xs),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: SelectableText(
-                      code,
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        color: axis.ink,
-                        fontWeight: FontWeight.w800,
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(AxisSpacing.lg),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Numéro de suivi',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: axis.textSecondary,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AxisSpacing.lg),
-                  AxisButton(
-                    key: const Key('parcel-share'),
-                    label: 'Partager le numéro',
-                    textColor: AxisButtonTextColor.ink,
-                    onPressed: () => SharePlus.instance.share(
-                      ShareParams(
-                        text: 'AXIS Transport : suivez votre colis avec le numéro $code',
+                    const SizedBox(height: AxisSpacing.xs),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: SelectableText(
+                        code,
+                        style: theme.textTheme.headlineMedium?.copyWith(
+                          color: axis.ink,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AxisSpacing.sm),
-                  AxisButton(
-                    key: const Key('parcel-new'),
-                    label: 'Nouveau colis',
-                    variant: AxisButtonVariant.secondary,
-                    onPressed: _newParcel,
-                  ),
-                ],
+                    const SizedBox(height: AxisSpacing.lg),
+                    _paymentBlock(theme, axis),
+                    AxisButton(
+                      key: const Key('parcel-share'),
+                      label: 'Partager le numéro',
+                      textColor: AxisButtonTextColor.ink,
+                      onPressed: () => SharePlus.instance.share(
+                        ShareParams(
+                          text:
+                              'AXIS Transport : suivez votre colis avec le numéro $code',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AxisSpacing.sm),
+                    AxisButton(
+                      key: const Key('parcel-new'),
+                      label: 'Nouveau colis',
+                      variant: AxisButtonVariant.secondary,
+                      onPressed: _newParcel,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -603,10 +842,17 @@ class _ControllerParcelScreenState
                       if (_trips.isEmpty)
                         Text(
                           'Aucun départ disponible : le colis ne peut pas être enregistré.',
-                          style: theme.textTheme.bodyMedium?.copyWith(color: axis.textSecondary),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: axis.textSecondary,
+                          ),
                         )
                       else ...[
-                        Text('BUS *', style: theme.textTheme.labelSmall?.copyWith(color: axis.textSecondary)),
+                        Text(
+                          'BUS *',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: axis.textSecondary,
+                          ),
+                        ),
                         const SizedBox(height: AxisSpacing.xs),
                         DropdownButtonFormField<int>(
                           key: ValueKey('trip-$_tripId'),
@@ -631,22 +877,42 @@ class _ControllerParcelScreenState
                           },
                         ),
                         const SizedBox(height: AxisSpacing.sm),
-                        Text('DÉPART DU COLIS *', style: theme.textTheme.labelSmall?.copyWith(color: axis.textSecondary)),
+                        Text(
+                          'DÉPART DU COLIS *',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: axis.textSecondary,
+                          ),
+                        ),
                         const SizedBox(height: AxisSpacing.xs),
                         DropdownButtonFormField<int>(
                           key: ValueKey('origin-$_tripId-$_originId'),
                           initialValue: _originId,
                           isExpanded: true,
                           items: [
-                            for (final stop in (_trip?.stops ?? const <RouteStopInfo>[]).take(((_trip?.stops.length ?? 1) - 1).clamp(0, 99)))
-                              DropdownMenuItem<int>(value: stop.id, child: Text(stop.name)),
+                            for (final stop
+                                in (_trip?.stops ?? const <RouteStopInfo>[])
+                                    .take(
+                                      ((_trip?.stops.length ?? 1) - 1).clamp(
+                                        0,
+                                        99,
+                                      ),
+                                    ))
+                              DropdownMenuItem<int>(
+                                value: stop.id,
+                                child: Text(stop.name),
+                              ),
                           ],
                           onChanged: (val) {
                             if (val != null) setState(() => _chooseOrigin(val));
                           },
                         ),
                         const SizedBox(height: AxisSpacing.sm),
-                        Text('DESTINATION DU COLIS *', style: theme.textTheme.labelSmall?.copyWith(color: axis.textSecondary)),
+                        Text(
+                          'DESTINATION DU COLIS *',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: axis.textSecondary,
+                          ),
+                        ),
                         const SizedBox(height: AxisSpacing.xs),
                         DropdownButtonFormField<int>(
                           key: ValueKey('destination-$_tripId-$_originId'),
@@ -654,9 +920,13 @@ class _ControllerParcelScreenState
                           isExpanded: true,
                           items: [
                             for (final stop in _stopsAfter(_originId))
-                              DropdownMenuItem<int>(value: stop.id, child: Text(stop.name)),
+                              DropdownMenuItem<int>(
+                                value: stop.id,
+                                child: Text(stop.name),
+                              ),
                           ],
-                          onChanged: (val) => setState(() => _selectedDestinationId = val),
+                          onChanged: (val) =>
+                              setState(() => _selectedDestinationId = val),
                         ),
                       ],
                       const SizedBox(height: AxisSpacing.sm),
@@ -739,4 +1009,3 @@ class _ControllerParcelScreenState
     );
   }
 }
-

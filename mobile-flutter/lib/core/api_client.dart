@@ -595,6 +595,20 @@ class ApiClient {
     );
   }
 
+  /// Encaisse un colis : espèces (attestées par l'agent) ou Mobile Money (« checkout » avec la page de paiement).
+  Future<Map<String, dynamic>> payParcel(int parcelId, int paymentMethodId) {
+    return _request<Map<String, dynamic>>(
+      '/parcels/$parcelId/pay/',
+      data: {'payment_method': paymentMethodId},
+      auth: true,
+    );
+  }
+
+  /// Demande au serveur si le paiement Mobile Money du colis est arrivé.
+  Future<Map<String, dynamic>> verifyParcelPayment(int parcelId) {
+    return _request<Map<String, dynamic>>('/parcels/$parcelId/verify/', data: const {}, auth: true);
+  }
+
   /// Billets vendus aujourd'hui (lecture seule) : ses ventes pour un agent, toutes pour l'administrateur.
   Future<List<dynamic>> soldToday() {
     return _request<List<dynamic>>('/staff/sales/today/', auth: true);
