@@ -2,6 +2,8 @@ import 'package:axis_transport_flutter/core/api_client.dart';
 import 'package:axis_transport_flutter/core/models.dart';
 import 'package:axis_transport_flutter/core/session.dart';
 import 'package:axis_transport_flutter/core/session_store.dart';
+import 'package:axis_transport_flutter/core/widgets/axis_bottom_nav.dart';
+import 'package:axis_transport_flutter/router.dart';
 import 'package:axis_transport_flutter/features/sales/sell_ticket_screen.dart';
 import 'package:axis_transport_flutter/features/staff/presentation/controller_scanner_screen.dart';
 import 'package:axis_transport_flutter/main.dart';
@@ -122,6 +124,19 @@ void main() {
       expect(api.memory.owner, 'staff:7');
     });
   }
+
+  testWidgets('écran secondaire ouvert : la barre du bas disparaît, elle revient au retour', (tester) async {
+    await _open(tester, role: 'CLIENT');
+    expect(find.byType(AxisBottomNav), findsOneWidget);
+    for (final location in ['/billets/recherche', '/mon-profil', '/a-propos']) {
+      axisRouter.push(location);
+      await tester.pumpAndSettle();
+      expect(find.byType(AxisBottomNav), findsNothing, reason: location);
+      axisRouter.pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(AxisBottomNav), findsOneWidget, reason: location);
+    }
+  });
 
   testWidgets(
     'la caméra n’est pas ouverte au lancement : le scanner n’est construit qu’à son ouverture',

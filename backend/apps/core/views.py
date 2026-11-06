@@ -283,17 +283,41 @@ class MeView(APIView):
     def get(self, request):
         return Response(UserSerializer(request.user).data)
 
+    PROFILE_FIELDS = {"first_name": "prénom", "last_name": "nom", "phone": "téléphone", "email": "e-mail"}
+
     def patch(self, request):
-        """Le client complète ou corrige son e-mail (seul champ modifiable ici)."""
+        """Le client corrige lui-même son prénom, son nom, son téléphone ou son e-mail ; chaque changement est journalisé."""
         user = request.user
         if user.role != User.Role.CLIENT:
-            raise PermissionDenied("Votre e-mail se modifie par un administrateur.")
-        if set(request.data) - {"email"}:
-            raise ValidationError({"detail": "Seul l'e-mail peut être modifié ici."})
-        serializer = UserSerializer(user, data={"email": request.data.get("email", "")}, partial=True)
+            raise PermissionDenied("Vos informations se modifient par un administrateur.")
+        if not request.data or set(request.data) - set(self.PROFILE_FIELDS):
+            raise ValidationError({"detail": "Seuls le prénom, le nom, le téléphone et l'e-mail peuvent être modifiés ici."})
+        data = {key: str(request.data.get(key) or "").strip() for key in request.data}
+        # Prénom et téléphone ne peuvent pas être effacés : ils identifient le client au guichet et au contrôle.
+        for key, message in (("first_name", "Le prénom est obligatoire."), ("phone", "Le numéro de téléphone est obligatoire.")):
+            if key in data and not data[key]:
+                raise ValidationError({key: [message]})
+        if "phone" in data and not phone_digits_valid(data["phone"]):
+            raise ValidationError({"phone": ["Numéro de téléphone invalide."]})
+        before = {key: getattr(user, key) for key in self.PROFILE_FIELDS}
+        serializer = UserSerializer(user, data=data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        changed = [label for key, label in self.PROFILE_FIELDS.items() if before[key] != getattr(user, key)]
+        if changed:
+            AccountChange.objects.create(
+                target=user, actor=user, action=AccountChange.Action.UPDATED, detail=f"par le client : {', '.join(changed)}",
+            )
         return Response(UserSerializer(user).data)
+
+
+def phone_digits_valid(phone):
+    """Entre 8 et 15 chiffres, espaces, tirets, points, parenthèses et « + » initial acceptés ; aucun format de pays imposé."""
+    import re
+
+    if not re.fullmatch(r"\+?[0-9 ().-]+", phone):
+        return False
+    return 8 <= len(re.sub(r"\D", "", phone)) <= 15
 
 
 class TooManyAttempts(Throttled):

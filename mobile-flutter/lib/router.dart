@@ -15,6 +15,7 @@ import 'features/passengers/presentation/passengers_screen.dart';
 import 'features/profile/profile_screen.dart';
 import 'features/rentals/rentals_screen.dart';
 import 'features/profile/connection_settings_screen.dart';
+import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/profile_menu.dart';
 import 'features/sales/sell_ticket_screen.dart';
 import 'features/sold/sold_today_screen.dart';
@@ -72,7 +73,8 @@ String? globalRoleRedirect(BuildContext context, GoRouterState state) {
         loc.startsWith('/billets') ||
         loc.startsWith('/colis') ||
         loc.startsWith('/location') ||
-        loc.startsWith('/profil');
+        loc.startsWith('/profil') ||
+        loc == '/mon-profil';
     if (isClientExclusiveTarget) {
       return '/staff';
     }
@@ -117,6 +119,11 @@ GoRouter buildAxisRouter() => GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       path: '/parametres-connexion',
       builder: (context, state) => const ConnectionSettingsScreen(),
+    ),
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/mon-profil',
+      builder: (context, state) => const EditProfileScreen(),
     ),
     GoRoute(
       parentNavigatorKey: _rootNavigatorKey,
@@ -166,6 +173,7 @@ GoRouter buildAxisRouter() => GoRouter(
               builder: (context, state) => const TicketsScreen(),
               routes: [
                 GoRoute(
+                  parentNavigatorKey: _rootNavigatorKey,
                   path: 'recherche',
                   builder: (context, state) => TripSearchScreen(
                     initialSearch: TripSearch.fromQueryParameters(
@@ -174,6 +182,7 @@ GoRouter buildAxisRouter() => GoRouter(
                   ),
                 ),
                 GoRoute(
+                  parentNavigatorKey: _rootNavigatorKey,
                   path: 'resultats',
                   builder: (context, state) {
                     final search = TripSearch.fromQueryParameters(
@@ -185,11 +194,13 @@ GoRouter buildAxisRouter() => GoRouter(
                   },
                 ),
                 GoRoute(
+                  parentNavigatorKey: _rootNavigatorKey,
                   path: 'booking/:id',
                   redirect: (context, state) =>
                       '/billets/booking/${state.pathParameters['id']}/passagers',
                 ),
                 GoRoute(
+                  parentNavigatorKey: _rootNavigatorKey,
                   path: 'booking/:id/passagers',
                   builder: (context, state) => PassengersScreen(
                     tripId: int.parse(state.pathParameters['id']!),
@@ -206,18 +217,21 @@ GoRouter buildAxisRouter() => GoRouter(
                   ),
                 ),
                 GoRoute(
+                  parentNavigatorKey: _rootNavigatorKey,
                   path: 'booking/:id/sieges',
                   builder: (context, state) => SeatSelectionScreen(
                     tripId: int.parse(state.pathParameters['id']!),
                   ),
                 ),
                 GoRoute(
+                  parentNavigatorKey: _rootNavigatorKey,
                   path: 'booking/:id/recapitulatif',
                   builder: (context, state) => BookingReviewScreen(
                     tripId: int.parse(state.pathParameters['id']!),
                   ),
                 ),
                 GoRoute(
+                  parentNavigatorKey: _rootNavigatorKey,
                   path: 'ticket/:id',
                   builder: (context, state) => TicketScreen(
                     ticketId: int.parse(state.pathParameters['id']!),
@@ -267,6 +281,7 @@ GoRouter buildAxisRouter() => GoRouter(
               builder: (context, state) => const StaffHomeScreen(),
               routes: [
                 GoRoute(
+                  parentNavigatorKey: _rootNavigatorKey,
                   path: 'colis',
                   builder: (context, state) => const ControllerParcelScreen(),
                 ),
@@ -297,6 +312,7 @@ GoRouter buildAxisRouter() => GoRouter(
               builder: (context, state) => const SoldTodayScreen(),
               routes: [
                 GoRoute(
+                  parentNavigatorKey: _rootNavigatorKey,
                   path: ':reference',
                   builder: (context, state) =>
                       SoldTicketScreen(reference: state.pathParameters['reference'] ?? ''),
