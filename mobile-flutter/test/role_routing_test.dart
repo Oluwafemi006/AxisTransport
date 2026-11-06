@@ -160,7 +160,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Rôle : Contrôleur'), findsOneWidget);
       api.role = null;
-      await tester.tap(find.text('Se déconnecter'));
+      // Libellé « Déconnexion » en bas du menu du profil (lot profil et paramètres).
+      await tester.scrollUntilVisible(find.text('Déconnexion'), 200, scrollable: find.byType(Scrollable).last);
+      await tester.tap(find.text('Déconnexion'));
       await tester.pumpAndSettle();
       expect(find.text('Scanner'), findsNothing);
       expect(api.memory.owner, isNull);

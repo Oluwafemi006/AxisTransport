@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
+import 'core/app_lock.dart';
 import 'core/session.dart';
 import 'core/theme/axis_theme.dart';
 import 'router.dart';
@@ -65,6 +66,8 @@ class _AxisTransportAppState extends ConsumerState<AxisTransportApp> {
       localizationsDelegates: _delegates,
       key: ValueKey(_lastUserId),
       routerConfig: axisRouter,
+      // Verrouillage par biométrie au retour au premier plan (option désactivée par défaut).
+      builder: (context, child) => AppLockGate(child: child ?? const SizedBox.shrink()),
     );
   }
 }

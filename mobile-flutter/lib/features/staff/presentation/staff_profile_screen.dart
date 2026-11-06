@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/formatters.dart';
 import '../../../core/session.dart';
 import '../../../core/theme/axis_spacing.dart';
-import '../../../core/theme/axis_tokens.dart';
-import '../../../core/widgets/axis_button.dart';
 import '../../../core/widgets/axis_header.dart';
+import '../../../shared/contact_actions.dart';
+import '../../profile/profile_menu.dart';
+import 'staff_home_screen.dart';
 
 /// Libellés des rôles du personnel, tels que le serveur les nomme.
 const staffRoleLabels = {
@@ -15,19 +17,24 @@ const staffRoleLabels = {
   'ADMIN': 'Administrateur',
 };
 
-/// Profil d'un membre du personnel : identité, rôle, déconnexion.
+/// Résumé du jour de l'agent, calculé par le serveur (/staff/sales/summary/).
+final staffDaySummaryProvider = FutureProvider.autoDispose<ControllerDaySummary>((ref) async {
+  ref.watch(staffActivityProvider);
+  return ControllerDaySummary.fromJson(await ref.read(apiClientProvider).saleSummary());
+});
+
+/// Profil d'un membre du personnel : identité, résumé du jour, réglages, déconnexion.
 class StaffProfileScreen extends ConsumerWidget {
   const StaffProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final axis = context.axis;
     final theme = Theme.of(context);
     final user = ref.watch(sessionProvider).user;
-    final name = [
-      user?.firstName ?? '',
-      user?.lastName ?? '',
-    ].where((item) => item.isNotEmpty).join(' ');
+    final summary = ref.watch(staffDaySummaryProvider);
+    final contact = ref.watch(contactProvider).value;
+    final hasContact = (contact?['phone'] ?? '').isNotEmpty || (contact?['whatsapp'] ?? '').isNotEmpty;
+    final site = siteUrlFromApi();
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -42,49 +49,77 @@ class StaffProfileScreen extends ConsumerWidget {
             child: ListView(
               padding: const EdgeInsets.all(AxisSpacing.md),
               children: [
-                Container(
-                  padding: const EdgeInsets.all(AxisSpacing.md),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surface,
-                    borderRadius: BorderRadius.circular(AxisRadius.lg),
-                    border: Border.all(color: axis.border),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name.isEmpty ? (user?.username ?? '') : name,
-                        style: theme.textTheme.titleMedium,
+                if (user != null) ProfileHeader(user: user, roleLabel: staffRoleLabels[user.role] ?? user.role),
+                Card(
+                  margin: const EdgeInsets.only(top: 12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: summary.when(
+                      loading: () => const Text('Résumé du jour : chargement…'),
+                      error: (_, _) => const Text('Résumé du jour indisponible (connexion).'),
+                      data: (day) => Column(
+                        key: const Key('staff-day-summary'),
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Aujourd’hui', style: theme.textTheme.titleSmall),
+                          const SizedBox(height: 6),
+                          Text('Billets vendus : ${day.soldTickets} · Billets scannés : ${day.scannedTickets}'),
+                          Text('Colis enregistrés : ${day.parcelsCount}'),
+                          Text(
+                            'Espèces : ${formatMoney(day.cashAmountFcfa, 'XOF')} · '
+                            'Mobile Money : ${formatMoney(day.mobileMoneyAmountFcfa, 'XOF')}',
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: AxisSpacing.xs),
-                      Text(
-                        'Identifiant : ${user?.username ?? ''}',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: axis.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: AxisSpacing.xxs),
-                      Text(
-                        'Rôle : ${staffRoleLabels[user?.role] ?? user?.role ?? ''}',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: axis.ink,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: AxisSpacing.md),
-                AxisButton(
-                  label: 'Changer mon mot de passe',
-                  variant: AxisButtonVariant.outline,
-                  onPressed: () => context.push('/mon-compte'),
+                ProfileMenuGroup(
+                  items: [
+                    ProfileMenuItem(
+                      icon: Icons.lock_outline,
+                      label: 'Changer le mot de passe',
+                      onTap: () => context.push('/mon-compte'),
+                    ),
+                    ProfileMenuItem(
+                      icon: Icons.fingerprint,
+                      label: 'Paramètres de connexion',
+                      keyName: 'menu-connection',
+                      onTap: () => context.push('/parametres-connexion'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: AxisSpacing.sm),
-                AxisButton(
-                  label: 'Se déconnecter',
-                  variant: AxisButtonVariant.secondary,
-                  icon: const Icon(Icons.logout_rounded),
-                  onPressed: () => ref.read(sessionProvider.notifier).logout(),
+                ProfileMenuGroup(
+                  items: [
+                    if (hasContact)
+                      ProfileMenuItem(
+                        icon: Icons.help_outline,
+                        label: 'Aide et suggestions',
+                        onTap: () => context.push('/aide'),
+                      ),
+                    if (site.isNotEmpty)
+                      ProfileMenuItem(
+                        icon: Icons.share_outlined,
+                        label: 'Partager l’application',
+                        onTap: () => shareApp(site),
+                      ),
+                    ProfileMenuItem(
+                      icon: Icons.info_outline,
+                      label: 'À propos',
+                      keyName: 'menu-about',
+                      onTap: () => context.push('/a-propos'),
+                    ),
+                  ],
+                ),
+                ProfileMenuGroup(
+                  items: [
+                    ProfileMenuItem(
+                      icon: Icons.logout_rounded,
+                      label: 'Déconnexion',
+                      keyName: 'menu-logout',
+                      onTap: () => ref.read(sessionProvider.notifier).logout(),
+                    ),
+                  ],
                 ),
               ],
             ),
