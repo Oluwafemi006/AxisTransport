@@ -238,3 +238,20 @@ export function segmentDepartureLabel(segment: Pick<SegmentOffer, "next_departur
 export function segmentSearchDate(segment: Pick<SegmentOffer, "next_departure">, now: Date = new Date()): string {
   return segment.next_departure ? beninDateKey(new Date(segment.next_departure)) : beninDateKey(now);
 }
+
+// Clé d'une écriture (méthode, adresse, contenu) ; null pour une lecture ou un envoi de fichier.
+export function writeKey(method: string | undefined, path: string, body: unknown): string | null {
+  const verb = (method || "GET").toUpperCase();
+  if (verb === "GET" || verb === "HEAD" || (body !== undefined && body !== null && typeof body !== "string")) return null;
+  return `${verb} ${path} ${body ?? ""}`;
+}
+
+// Double clic : une écriture identique déjà en cours n'est pas renvoyée au serveur ; le second appel reçoit la même réponse.
+export function shareInFlight<T>(pending: Map<string, Promise<unknown>>, key: string | null, start: () => Promise<T>): Promise<T> {
+  if (key === null) return start();
+  const current = pending.get(key);
+  if (current) return current as Promise<T>;
+  const request = start().finally(() => pending.delete(key));
+  pending.set(key, request);
+  return request;
+}
