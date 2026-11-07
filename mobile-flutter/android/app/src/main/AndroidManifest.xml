@@ -9,7 +9,10 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="false" tools:node="replace"/>
     <uses-feature android:name="android.hardware.camera" android:required="false" tools:node="replace"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" tools:node="replace"/>
-    <!-- RECORD_AUDIO (plugin camera) rendrait le micro requis implicitement. -->
+    <!-- Le plugin camera déclare RECORD_AUDIO ; l'application ne filme ni n'enregistre jamais de son
+         (photos de colis avec enableAudio: false) : la permission est retirée du manifeste fusionné. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>
+    <!-- Sans micro requis : les téléphones sans micro restent compatibles. -->
     <uses-feature android:name="android.hardware.microphone" android:required="false" tools:node="replace"/>
     <application
         android:label="Axis Transport"

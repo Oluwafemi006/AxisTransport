@@ -568,7 +568,7 @@ export function ClientPortal() {
               {phoneHref(contact.contact_phone) && <a className="btn s" href={phoneHref(contact.contact_phone)!}>Appeler</a>}
             </div>
           </div>
-          <div className="copy">© {new Date().getFullYear()} AXIS Transport · Mentions légales · Politique de confidentialité</div>
+          <div className="copy">© {new Date().getFullYear()} AXIS Transport · <a href="/privacy">Politique de confidentialité</a> · <a href="/suppression-compte">Suppression de compte</a></div>
         </div>
       </footer>
     </>

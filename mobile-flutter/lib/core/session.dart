@@ -105,6 +105,12 @@ class SessionNotifier extends Notifier<SessionState> {
     await restore();
   }
 
+  Future<void> deleteAccount(String password) async {
+    await _api.deleteAccount(password);
+    state = const SessionState(ready: true);
+    sessionRouterNotifier.update(state);
+  }
+
   Future<void> logout() async {
     await _api.logout();
     state = const SessionState(ready: true);
