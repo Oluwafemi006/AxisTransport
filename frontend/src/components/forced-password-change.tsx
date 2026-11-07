@@ -1,5 +1,6 @@
 "use client";
 
+import { PasswordInput } from "./password-input";
 import { FormEvent, useState } from "react";
 import { changeMyPassword } from "@/lib/api";
 
@@ -29,11 +30,11 @@ export function ForcedPasswordChange({ onDone }: { onDone: () => void }) {
       <h1 className="mt-2 text-2xl font-extrabold text-axis-900">Choisissez votre mot de passe</h1>
       <p className="mt-2 text-sm text-slate-500">Votre mot de passe actuel est provisoire : remplacez-le pour continuer.</p>
       <label className="field-label mt-6" htmlFor="forcedCurrent">Mot de passe provisoire</label>
-      <input id="forcedCurrent" type="password" className="field" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
+      <PasswordInput id="forcedCurrent" className="field" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
       <label className="field-label mt-4" htmlFor="forcedNew">Nouveau mot de passe</label>
-      <input id="forcedNew" type="password" className="field" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+      <PasswordInput id="forcedNew" className="field" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
       <label className="field-label mt-4" htmlFor="forcedConfirmation">Confirmer le mot de passe</label>
-      <input id="forcedConfirmation" type="password" className="field" autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} required />
+      <PasswordInput id="forcedConfirmation" className="field" autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} required />
       {error && <p className="notice notice-error mt-4" role="alert">{error}</p>}
       <button className="primary-button mt-6 w-full" disabled={busy}>{busy ? "Patientez…" : "Enregistrer et continuer"}</button>
     </form>

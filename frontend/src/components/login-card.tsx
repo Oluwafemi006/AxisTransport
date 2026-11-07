@@ -1,5 +1,6 @@
 "use client";
 
+import { PasswordInput } from "./password-input";
 import { FormEvent, useState } from "react";
 import { API_URL, login, requestPasswordReset } from "@/lib/api";
 
@@ -102,7 +103,7 @@ export function LoginCard({ title, onSuccess, allowRegistration = false }: { tit
       <label className={`field-label ${registering ? "mt-4" : "mt-6"}`} htmlFor="username">Identifiant</label>
       <input id="username" className="field" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
       <label className="field-label mt-4" htmlFor="password">Mot de passe</label>
-      <input id="password" type="password" className="field" autoComplete={registering ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} required />
+      <PasswordInput id="password" className="field" autoComplete={registering ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} required />
       {registering && (
         <>
           <label className="field-label mt-4" htmlFor="registerPhone">Téléphone</label>

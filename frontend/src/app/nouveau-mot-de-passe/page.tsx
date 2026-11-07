@@ -1,5 +1,6 @@
 "use client";
 
+import { PasswordInput } from "@/components/password-input";
 import { FormEvent, useEffect, useState } from "react";
 import { checkPasswordResetLink, submitPasswordResetLink } from "@/lib/api";
 
@@ -49,9 +50,9 @@ export default function NewPasswordPage() {
         {state === "ready" && (
           <>
             <label className="field-label mt-6" htmlFor="newPassword">Nouveau mot de passe</label>
-            <input id="newPassword" type="password" className="field" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <PasswordInput id="newPassword" className="field" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             <label className="field-label mt-4" htmlFor="newPasswordConfirmation">Confirmer le mot de passe</label>
-            <input id="newPasswordConfirmation" type="password" className="field" autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} required />
+            <PasswordInput id="newPasswordConfirmation" className="field" autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} required />
             {message && <p className="notice notice-error mt-4" role="alert">{message}</p>}
             <button className="primary-button mt-6 w-full" disabled={busy}>{busy ? "Patientez…" : "Enregistrer"}</button>
           </>

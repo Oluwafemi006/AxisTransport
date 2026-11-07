@@ -1,5 +1,6 @@
 "use client";
 
+import { PasswordInput } from "./password-input";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail } from "@/lib/api";
@@ -1787,11 +1788,11 @@ function AccountSettings({ user, onSaved }: { user: User; onSaved: () => Promise
       <form onSubmit={savePassword}>
         <h4 style={{ fontSize: '17px', marginBottom: '8px' }}>Changer le mot de passe</h4>
         <label className="field-label" htmlFor="currentPassword">Mot de passe actuel</label>
-        <input id="currentPassword" type="password" className="field" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
+        <PasswordInput id="currentPassword" className="field" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
         <label className="field-label mt-2" htmlFor="newPassword">Nouveau mot de passe</label>
-        <input id="newPassword" type="password" className="field" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <PasswordInput id="newPassword" className="field" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         <label className="field-label mt-2" htmlFor="newPasswordConfirmation">Confirmer le mot de passe</label>
-        <input id="newPasswordConfirmation" type="password" className="field" autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} required />
+        <PasswordInput id="newPasswordConfirmation" className="field" autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} required />
         {passwordNotice.error && <p className="notice notice-error mt-2" role="alert">{passwordNotice.error}</p>}
         {passwordNotice.ok && <p className="notice mt-2" role="status">{passwordNotice.ok}</p>}
         <button className="primary-button mt-2 w-full" disabled={busy}>Changer le mot de passe</button>

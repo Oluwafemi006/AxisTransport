@@ -1,5 +1,6 @@
 "use client";
 
+import { PasswordInput } from "./password-input";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone, useActionFeedback } from "./ui";
 import { SoldToday } from "./sold-today";
@@ -2782,7 +2783,9 @@ function Input({ label, value, onChange, type = "text", required = true }: { lab
   return (
     <label className="block">
       <span className="field-label">{label}</span>
-      <input className="field" type={type} value={value} onChange={(e) => onChange(e.target.value)} required={required} autoComplete={type === "password" ? "new-password" : undefined} />
+      {type === "password"
+        ? <PasswordInput value={value} onChange={(e) => onChange(e.target.value)} required={required} autoComplete="new-password" />
+        : <input className="field" type={type} value={value} onChange={(e) => onChange(e.target.value)} required={required} />}
     </label>
   );
 }

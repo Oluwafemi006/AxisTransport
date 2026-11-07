@@ -18,7 +18,11 @@ const { outputText } = ts.transpileModule(source, {
   },
 });
 const compiled = path.join(here, ".activation-form.test.tmp.mjs");
-writeFileSync(compiled, outputText);
+// Le formulaire importe le champ de mot de passe : il est compilé à côté, sous un nom de fichier explicite.
+const passwordSource = readFileSync(path.join(here, "../src/components/password-input.tsx"), "utf8");
+const passwordCompiled = path.join(here, ".password-input.activation.tmp.mjs");
+writeFileSync(passwordCompiled, ts.transpileModule(passwordSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX } }).outputText);
+writeFileSync(compiled, outputText.replace('"./password-input"', '"./.password-input.activation.tmp.mjs"'));
 
 let ActivationForm;
 try {
@@ -26,6 +30,7 @@ try {
   ActivationForm = mod.ActivationForm;
 } finally {
   try { unlinkSync(compiled); } catch {}
+  try { unlinkSync(passwordCompiled); } catch {}
 }
 
 test("rendu du formulaire d'activation : titre, champs mot de passe et bouton", () => {
