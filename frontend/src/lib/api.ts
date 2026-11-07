@@ -117,8 +117,13 @@ export async function requestPasswordReset(email: string) {
   return await apiFetch<{ detail: string }>("/auth/password-reset/request/", { method: "POST", body: JSON.stringify({ email }) }, false);
 }
 
-export async function confirmPasswordReset(email: string, code: string, password: string) {
-  return await apiFetch<{ detail: string }>("/auth/password-reset/confirm/", { method: "POST", body: JSON.stringify({ email, code, password }) }, false);
+// Lien reçu par e-mail (ou transmis par l'agence) : vérification, puis choix du nouveau mot de passe.
+export async function checkPasswordResetLink(token: string) {
+  return await apiFetch<{ valid: boolean }>(`/auth/password-reset/link/?token=${encodeURIComponent(token)}`, {}, false);
+}
+
+export async function submitPasswordResetLink(token: string, password: string) {
+  return await apiFetch<{ detail: string }>("/auth/password-reset/link/", { method: "POST", body: JSON.stringify({ token, password }) }, false);
 }
 
 export async function verifyStaffInvitation(token: string): Promise<StaffInvitationVerification> {

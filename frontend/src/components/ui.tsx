@@ -1,5 +1,6 @@
 "use client";
 
+import { ForcedPasswordChange } from "./forced-password-change";
 import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Brand } from "./brand";
 import { actionErrorText } from "@/lib/portal-rules";
@@ -145,7 +146,7 @@ export function StaffShell<Key extends string>({ user, tabs, current, onTab, chi
           )}
           <button className="btn s staff-logout" onClick={logout}>Déconnexion</button>
         </div>
-        {tabs && (
+        {tabs && !user?.must_change_password && (
           <nav className="wrap staff-tabs" aria-label="Sections">
             {tabs.map(([key, label]) => (
               <button key={key} className={current === key ? "on" : ""} aria-current={current === key ? "page" : undefined} onClick={() => onTab?.(key)}>
@@ -155,7 +156,11 @@ export function StaffShell<Key extends string>({ user, tabs, current, onTab, chi
           </nav>
         )}
       </header>
-      <main className="wrap staff-main"><ActionFeedbackProvider>{children}</ActionFeedbackProvider></main>
+      <main className="wrap staff-main">
+        {user?.must_change_password
+          ? <ForcedPasswordChange onDone={() => window.location.reload()} />
+          : <ActionFeedbackProvider>{children}</ActionFeedbackProvider>}
+      </main>
     </div>
   );
 }

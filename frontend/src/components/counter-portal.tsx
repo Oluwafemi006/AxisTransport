@@ -24,6 +24,8 @@ export function CounterPortal() {
     try {
       const me = await apiFetch<User>("/auth/me/");
       if (!["COUNTER", "ADMIN"].includes(me.role)) { setUser(me); setAccessDenied(true); return; }
+      // Mot de passe provisoire : seul l'écran de changement s'affiche (le serveur refuse le reste).
+      if (me.must_change_password) { setUser(me); return; }
       const [allTrips, methods] = await Promise.all([
         apiList<Trip>("/trips/?all=true"),
         apiList<PaymentMethod>("/payment-methods/"),

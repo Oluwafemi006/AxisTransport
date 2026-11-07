@@ -6,6 +6,7 @@ import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccess
 import { SEGMENT_FARE_MISSING_MESSAGE, beninDateKey, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
+import { ForcedPasswordChange } from "./forced-password-change";
 import { BusSeatMap } from "./bus-seat-map";
 import { PassengerForm, type PassengerItem } from "./passenger-form";
 import { clearGuestBooking, loadGuestBooking, rememberGuestPayment, saveGuestBooking } from "@/lib/guest-booking";
@@ -42,6 +43,8 @@ export function ClientPortal() {
         setRentals([]);
         return;
       }
+      // Compte créé par l'agence avec un mot de passe provisoire : changement obligatoire d'abord.
+      if (me.must_change_password) { setUser(me); return; }
       const [myTickets, myBookings, myParcels, myRentals] = await Promise.all([
         apiList<Ticket>("/client/tickets/"),
         apiList<Booking>("/client/bookings/mine/").catch(() => []),
@@ -209,6 +212,8 @@ export function ClientPortal() {
     if (tripDate !== (searchDate || beninDateKey())) match = false;
     return match;
   });
+
+  if (user?.must_change_password) return <ForcedPasswordChange onDone={() => window.location.reload()} />;
 
   return (
     <>

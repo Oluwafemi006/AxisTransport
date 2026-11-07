@@ -2533,6 +2533,7 @@ function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChange
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [resetPassword, setResetPassword] = useState("");
   const [lastLink, setLastLink] = useState<string | null>(null);
+  const [resetLink, setResetLink] = useState<{ username: string; url: string } | null>(null);
   const [editTarget, setEditTarget] = useState<User | null>(null);
   const [editForm, setEditForm] = useState({ first_name: "", last_name: "", phone: "", email: "" });
 
@@ -2621,12 +2622,29 @@ function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChange
     } catch (reason) { feedback.failure(reason, "Le compte n’a pas été modifié."); }
   }
 
+  // Client : il choisit lui-même son mot de passe par un lien ; l'admin ne le voit jamais.
+  async function sendResetLink(user: User) {
+    if (!window.confirm(`Envoyer à ${user.username} un lien pour choisir un nouveau mot de passe ?`)) return;
+    setResetLink(null);
+    try {
+      const result = await apiFetch<{ email_sent: boolean; link: string; detail: string }>(`/users/${user.id}/reset-link/`, { method: "POST", body: "{}" });
+      if (result.email_sent) feedback.success(result.detail);
+      else { feedback.failure(null, result.detail); setResetLink({ username: user.username, url: result.link }); }
+      await reload();
+    } catch (reason) { feedback.failure(reason, "Le lien de réinitialisation n’a pas été créé."); }
+  }
+
+  async function copyResetLink(url: string) {
+    try { await navigator.clipboard.writeText(url); feedback.success("Lien copié. Transmettez-le uniquement au client, il ne sert qu’une fois."); }
+    catch { window.prompt("Copiez ce lien :", url); }
+  }
+
   async function submitReset(event: FormEvent) {
     event.preventDefault();
     if (!resetTarget) return;
     try {
       await apiFetch(`/users/${resetTarget.id}/reset-password/`, { method: "POST", body: JSON.stringify({ password: resetPassword }) });
-      feedback.success(`Mot de passe de ${resetTarget.username} modifié. Ses sessions sont fermées.`);
+      feedback.success(`Mot de passe provisoire de ${resetTarget.username} enregistré. Ses sessions sont fermées ; il devra le changer à sa prochaine connexion.`);
       setResetTarget(null);
       setResetPassword("");
     } catch (reason) { feedback.failure(reason, "Le mot de passe n’a pas été modifié."); }
@@ -2654,7 +2672,9 @@ function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChange
                     <td><StatusBadge tone={user.is_active === false ? "grey" : "green"}>{user.is_active === false ? "Désactivé" : "Actif"}</StatusBadge></td>
                     <td className="whitespace-nowrap">
                       <button type="button" className="text-button mr-2" onClick={() => openEdit(user)}>Modifier</button>
-                      <button type="button" className="text-button mr-2" onClick={() => { setResetTarget(user); setResetPassword(""); }}>Mot de passe</button>
+                      {user.role === "CLIENT"
+                        ? <button type="button" className="text-button mr-2" onClick={() => void sendResetLink(user)}>Lien de réinitialisation</button>
+                        : <button type="button" className="text-button mr-2" onClick={() => { setResetTarget(user); setResetPassword(""); }}>Mot de passe provisoire</button>}
                       <button type="button" className="text-button danger" onClick={() => void toggleActive(user)}>{user.is_active === false ? "Réactiver" : "Désactiver"}</button>
                     </td>
                   </tr>
@@ -2716,10 +2736,18 @@ function TeamPanel({ users: initialUsers, onChanged }: { users: User[]; onChange
             <button type="button" className="text-button w-full" onClick={() => setEditTarget(null)}>Annuler</button>
           </form>
         )}
+        {resetLink && (
+          <div className="card space-y-3">
+            <SectionHeading eyebrow="Lien de réinitialisation" title={resetLink.username} />
+            <p className="text-sm text-slate-500">L’e-mail n’est pas parti : copiez ce lien et transmettez-le au client. Il ne sert qu’une fois.</p>
+            <button type="button" className="primary-button w-full" onClick={() => void copyResetLink(resetLink.url)}>Copier le lien</button>
+            <button type="button" className="text-button w-full" onClick={() => setResetLink(null)}>Fermer</button>
+          </div>
+        )}
         {resetTarget && (
           <form onSubmit={submitReset} className="card space-y-4">
-            <SectionHeading eyebrow="Mot de passe" title={`Réinitialiser ${resetTarget.username}`} />
-            <p className="text-sm text-slate-500">Communiquez-le à la personne en main propre. Toutes ses sessions seront fermées.</p>
+            <SectionHeading eyebrow="Mot de passe provisoire" title={`Réinitialiser ${resetTarget.username}`} />
+            <p className="text-sm text-slate-500">Communiquez-le à la personne en main propre. Toutes ses sessions seront fermées et elle devra le remplacer à sa prochaine connexion.</p>
             <Input label="Nouveau mot de passe" type="password" value={resetPassword} onChange={setResetPassword} />
             <button className="primary-button w-full">Enregistrer</button>
             <button type="button" className="text-button w-full" onClick={() => setResetTarget(null)}>Annuler</button>
