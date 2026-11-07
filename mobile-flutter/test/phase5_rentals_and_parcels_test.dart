@@ -11,6 +11,8 @@ import 'package:axis_transport_flutter/router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/layout_audit.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 class _Phase5MemoryStore extends SessionStore {
@@ -154,6 +156,28 @@ class _Phase5FakeApi extends ApiClient {
 
 void main() {
   setUpAll(() => initializeDateFormatting('fr_FR'));
+
+  group('Audit des largeurs (320, 360, 390 ; texte 1,0 et 1,3)', () {
+    Widget app(Widget home) => ProviderScope(
+          overrides: [apiClientProvider.overrideWithValue(_Phase5FakeApi())],
+          child: MaterialApp(theme: AxisTheme.light(), home: home),
+        );
+    const vehicle = Vehicle(
+      id: 1, name: 'Toyota Corolla TEST', category: 'Berline', capacity: 5, state: 'AVAILABLE',
+      description: 'Climatisée', dailyRate: 25000, dailyRateWithDriver: 35000, driverAvailable: true,
+      baseLocation: Place(id: 1, name: 'Cotonou', address: ''),
+    );
+    final screens = <String, Widget Function()>{
+      'locations': () => app(const RentalsScreen()),
+      'demande de location': () => app(const RentalDetailScreen(vehicle: vehicle, initialWithDriver: false)),
+      'colis (client)': () => app(const ParcelsScreen()),
+    };
+    for (final entry in screens.entries) {
+      testWidgets('${entry.key} : aucun débordement', (tester) async {
+        expect(await layoutOverflows(tester, entry.value), isEmpty);
+      });
+    }
+  });
 
   group('Phase 5 — Location de véhicules (Location.html & LocationDetail.html)', () {
     testWidgets(

@@ -15,6 +15,8 @@ import 'package:axis_transport_flutter/router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/layout_audit.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 class _MockStore extends SessionStore {
@@ -142,6 +144,24 @@ Future<_MockApi> _setupApp(WidgetTester tester, {String? role}) async {
 
 void main() {
   setUpAll(() => initializeDateFormatting('fr_FR'));
+
+  group('Audit des largeurs (320, 360, 390 ; texte 1,0 et 1,3)', () {
+    Widget app(Widget home) => ProviderScope(
+          overrides: [apiClientProvider.overrideWithValue(_MockApi())],
+          child: MaterialApp(theme: AxisTheme.light(), home: home),
+        );
+    final screens = <String, Widget Function()>{
+      'connexion': () => app(const LoginScreen()),
+      'inscription': () => app(const RegisterScreen()),
+      'mot de passe oublié': () => app(const ForgotPasswordScreen()),
+      'invitation': () => app(const InvitationScreen(token: 'valid_token')),
+    };
+    for (final entry in screens.entries) {
+      testWidgets('${entry.key} : aucun débordement', (tester) async {
+        expect(await layoutOverflows(tester, entry.value), isEmpty);
+      });
+    }
+  });
 
   group('Phase 3 — Routage par rôle avec GoRouter', () {
     testWidgets('Client tente d’accéder à une route contrôleur : redirection vers accueil client', (tester) async {

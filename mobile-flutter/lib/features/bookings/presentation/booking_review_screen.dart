@@ -734,16 +734,26 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Prix des billets',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: axis.textSecondary,
+                          Flexible(
+                            child: Text(
+                              'Prix des billets',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: axis.textSecondary,
+                              ),
                             ),
                           ),
-                          Text(
-                            formatMoney(totalToPay, currency),
-                            style: AxisTypography.price.copyWith(
-                              color: axis.ink,
+                          const SizedBox(width: AxisSpacing.s8),
+                          // Montant réduit (jamais coupé) si la place manque.
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: Text(
+                                formatMoney(totalToPay, currency),
+                                style: AxisTypography.price.copyWith(
+                                  color: axis.ink,
+                                ),
+                              ),
                             ),
                           ),
                         ],
