@@ -10,6 +10,7 @@ from apps.core.views import (
     MeView,
     PasswordChangeView,
     PasswordResetConfirmView,
+    PasswordResetLinkView,
     PasswordResetRequestView,
     RegisterView,
 )
@@ -27,6 +28,7 @@ urlpatterns = [
     path("api/v1/auth/password/change/", PasswordChangeView.as_view(), name="v1_password_change"),
     path("api/v1/auth/password-reset/request/", PasswordResetRequestView.as_view(), name="v1_password_reset_request"),
     path("api/v1/auth/password-reset/confirm/", PasswordResetConfirmView.as_view(), name="v1_password_reset_confirm"),
+    path("api/v1/auth/password-reset/link/", PasswordResetLinkView.as_view(), name="v1_password_reset_link"),
     path("api/v1/auth/invite/accept/", AcceptStaffInvitationView.as_view(), name="v1_auth_invite_accept"),
     path("api/auth/invite/accept/", AcceptStaffInvitationView.as_view(), name="auth_invite_accept"),
 

@@ -60,8 +60,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "username", "email", "first_name", "last_name", "phone", "role", "role_display", "is_active", "password"]
-        read_only_fields = ["is_active"]
+        fields = ["id", "username", "email", "first_name", "last_name", "phone", "role", "role_display", "is_active", "must_change_password", "password"]
+        read_only_fields = ["is_active", "must_change_password"]
 
     def validate_password(self, value):
         validate_password(value)
