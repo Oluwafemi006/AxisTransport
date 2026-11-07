@@ -18,13 +18,14 @@ class PassengersScreen extends ConsumerStatefulWidget {
   const PassengersScreen({
     super.key,
     required this.tripId,
-    this.passengerCount = 1,
+    this.passengerCount,
     this.originId,
     this.destinationId,
   });
 
   final int tripId;
-  final int passengerCount;
+  /// Nombre choisi dans la recherche (URL) ; prioritaire sur le brouillon.
+  final int? passengerCount;
   final int? originId;
   final int? destinationId;
 
@@ -58,6 +59,8 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
       if (trip.route.destination?.id == locationId) {
         return (trip.route.destination?.boardingPoints ?? const []).where((p) => p.active).toList();
       }
+      // Ville sans point actif : aucun point (le serveur l'accepte), jamais ceux d'une autre ville.
+      return const [];
     }
     final fallback = isOrigin ? trip.route.origin : trip.route.destination;
     return (fallback?.boardingPoints ?? const []).where((p) => p.active).toList();
@@ -67,9 +70,10 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
   void initState() {
     super.initState();
     final draft = ref.read(bookingDraftProvider);
-    _count = (draft.trip?.id == widget.tripId && draft.passengers.isNotEmpty)
+    final fromDraft = draft.trip?.id == widget.tripId && draft.passengers.isNotEmpty
         ? draft.passengers.length
-        : widget.passengerCount.clamp(1, 8);
+        : null;
+    _count = (widget.passengerCount ?? fromDraft ?? 1).clamp(1, 8);
     _names = List.generate(_count, (_) => TextEditingController());
     _phones = List.generate(_count, (_) => TextEditingController());
     _types = List.generate(_count, (_) => PassengerType.adult);
@@ -84,6 +88,7 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
       _phones.add(TextEditingController());
       _types.add(PassengerType.adult);
     });
+    _saveDraftPassengers();
   }
 
   void _removePassenger(int index) {
@@ -96,6 +101,23 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
       _types.removeAt(index);
       _count--;
     });
+    _saveDraftPassengers();
+  }
+
+  List<Passenger> _currentPassengers() => List.generate(
+    _count,
+    (index) => Passenger(
+      id: 'passenger-${index + 1}',
+      fullName: _names[index].text.trim(),
+      phone: _phones[index].text.trim(),
+      type: _types[index],
+    ),
+  );
+
+  /// Le nombre de passagers modifié ici est aussitôt reporté dans le brouillon.
+  void _saveDraftPassengers() {
+    if (_trip == null) return;
+    ref.read(bookingDraftProvider.notifier).setPassengers(_currentPassengers());
   }
 
   @override
@@ -117,8 +139,9 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
         destinationId: widget.destinationId ?? startDraft.destinationId,
       );
       final draft = ref.read(bookingDraftProvider);
-      if (draft.trip?.id == trip.id && draft.passengers.length == _count) {
-        for (var index = 0; index < _count; index++) {
+      if (draft.trip?.id == trip.id && draft.passengers.isNotEmpty) {
+        final known = draft.passengers.length < _count ? draft.passengers.length : _count;
+        for (var index = 0; index < known; index++) {
           _names[index].text = draft.passengers[index].fullName;
           _phones[index].text = draft.passengers[index].phone;
           _types[index] = draft.passengers[index].type;
@@ -179,6 +202,7 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
         _alightingPointId = initialAlightingId;
         _loading = false;
       });
+      _saveDraftPassengers();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -195,15 +219,7 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
     final trip = _trip!;
     final origPoints = _pointsFor(trip, _originId, isOrigin: true);
     final destPoints = _pointsFor(trip, _destinationId, isOrigin: false);
-    final passengers = List.generate(
-      _count,
-      (index) => Passenger(
-        id: 'passenger-${index + 1}',
-        fullName: _names[index].text.trim(),
-        phone: _phones[index].text.trim(),
-        type: _types[index],
-      ),
-    );
+    final passengers = _currentPassengers();
     ref.read(bookingDraftProvider.notifier).setBoardingPoints(
       boardingPointId: _boardingPointId,
       boardingPointName: origPoints.where((p) => p.id == _boardingPointId).firstOrNull?.name,
@@ -237,44 +253,24 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
             ),
             if (origPoints.isNotEmpty) ...[
               const SizedBox(height: 12),
-              DropdownButtonFormField<int>(
-                initialValue: _boardingPointId,
-                decoration: InputDecoration(
-                  labelText: 'Embarquement ($origName)',
-                ),
-                items: origPoints
-                    .map(
-                      (p) => DropdownMenuItem<int>(
-                        value: p.id,
-                        child: Text(p.name),
-                      ),
-                    )
-                    .toList(),
+              _PointField(
+                fieldKey: const Key('boarding-point'),
+                label: 'Où montez-vous à $origName ?',
+                points: origPoints,
+                value: _boardingPointId,
+                errorText: 'Veuillez choisir un point d\'embarquement.',
                 onChanged: (value) => setState(() => _boardingPointId = value),
-                validator: origPoints.length > 1
-                    ? (value) => value == null ? 'Veuillez choisir un point d\'embarquement.' : null
-                    : null,
               ),
             ],
             if (destPoints.isNotEmpty) ...[
               const SizedBox(height: 12),
-              DropdownButtonFormField<int>(
-                initialValue: _alightingPointId,
-                decoration: InputDecoration(
-                  labelText: 'Débarquement ($destName)',
-                ),
-                items: destPoints
-                    .map(
-                      (p) => DropdownMenuItem<int>(
-                        value: p.id,
-                        child: Text(p.name),
-                      ),
-                    )
-                    .toList(),
+              _PointField(
+                fieldKey: const Key('alighting-point'),
+                label: 'Où descendez-vous à $destName ?',
+                points: destPoints,
+                value: _alightingPointId,
+                errorText: 'Veuillez choisir un point de débarquement.',
                 onChanged: (value) => setState(() => _alightingPointId = value),
-                validator: destPoints.length > 1
-                    ? (value) => value == null ? 'Veuillez choisir un point de débarquement.' : null
-                    : null,
               ),
             ],
           ],
@@ -434,6 +430,51 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+/// Un seul point : son nom, déjà retenu. Plusieurs : liste obligatoire,
+/// sans présélection, dont l'erreur n'apparaît qu'après une action.
+class _PointField extends StatelessWidget {
+  const _PointField({
+    required this.fieldKey,
+    required this.label,
+    required this.points,
+    required this.value,
+    required this.errorText,
+    required this.onChanged,
+  });
+
+  final Key fieldKey;
+  final String label;
+  final List<BoardingPointInfo> points;
+  final int? value;
+  final String errorText;
+  final ValueChanged<int?> onChanged;
+
+  static const _help = 'Choisissez l’arrêt exact';
+
+  @override
+  Widget build(BuildContext context) {
+    if (points.length == 1) {
+      return InputDecorator(
+        key: fieldKey,
+        decoration: InputDecoration(labelText: label),
+        child: Text(points.single.name),
+      );
+    }
+    return DropdownButtonFormField<int>(
+      key: fieldKey,
+      initialValue: value,
+      isExpanded: true,
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      decoration: InputDecoration(labelText: label, helperText: _help),
+      items: points
+          .map((p) => DropdownMenuItem<int>(value: p.id, child: Text(p.name)))
+          .toList(),
+      onChanged: onChanged,
+      validator: (selected) => selected == null ? errorText : null,
     );
   }
 }

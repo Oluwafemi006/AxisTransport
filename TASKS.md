@@ -5,6 +5,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Parcours de réservation : points d'embarquement (libellés, point unique affiché, erreurs après action, plus de point d'une autre ville), nombre de passagers de la recherche prioritaire (app et site), app 1.0.8+10 | `cc/parcours-reservation` | Claude Code | à valider par Eddy |
 | Site client : location complète (formule, dates, envoi, mes demandes) ; contrôleur garde son écran si les départs échouent ; logo du personnel vers son espace ; message réseau en français ; onglets admin signalés comme défilables | `cc/web-location-controleur` | Claude Code | à valider par Eddy |
 | Site client sur téléphone : barre d'onglets en bas (Accueil, Billets, Location, Colis, Profil), comme l'application | `cc/web-onglets-bas` | Claude Code | à valider par Eddy |
 | Site : renouvellement automatique du jeton (une requête à la fois, une nouvelle tentative), déconnexion après 30 min d'inactivité, reconnexion « Session expirée » par-dessus le portail sans perdre les saisies | `cc/site-session-renouvelee` | Claude Code | à valider par Eddy |

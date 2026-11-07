@@ -331,3 +331,18 @@ export function staffSpaceHome(pathname: string): string {
   const space = ["/admin", "/guichet", "/controleur"].find((root) => pathname === root || pathname.startsWith(`${root}/`));
   return space ?? "/";
 }
+
+// Points d'embarquement : libellés en question, avec une courte aide.
+export const BOARDING_POINT_HELP = "Choisissez l’arrêt exact";
+export function boardingFieldLabel(kind: "boarding" | "alighting", city: string): string {
+  const place = city.trim() || "votre ville";
+  return kind === "boarding" ? `Où montez-vous à ${place} ?` : `Où descendez-vous à ${place} ?`;
+}
+
+// Nombre de passagers choisi dans la recherche (1 à 8) : les passagers déjà saisis sont gardés.
+export function resizePassengers<T>(current: T[], count: number, blank: (index: number) => T): T[] {
+  const wanted = Math.min(8, Math.max(1, Math.trunc(count) || 1));
+  if (current.length === wanted) return current;
+  if (current.length > wanted) return current.slice(0, wanted);
+  return [...current, ...Array.from({ length: wanted - current.length }, (_, i) => blank(current.length + i))];
+}

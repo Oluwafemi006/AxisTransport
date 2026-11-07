@@ -4,7 +4,7 @@ import { PasswordInput } from "./password-input";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail } from "@/lib/api";
-import { SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
+import { BOARDING_POINT_HELP, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, boardingFieldLabel, resizePassengers, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { ClientTabBar, type ClientTab } from "./client-tab-bar";
@@ -111,6 +111,7 @@ export function ClientPortal() {
   const [searchOrigin, setSearchOrigin] = useState("");
   const [searchDestination, setSearchDestination] = useState("");
   const [searchDate, setSearchDate] = useState("");
+  const [searchPassengers, setSearchPassengers] = useState(1);
   const [searchMessage, setSearchMessage] = useState("");
   const [preselectedTripId, setPreselectedTripId] = useState("");
 
@@ -312,7 +313,7 @@ export function ClientPortal() {
                   </div>
                   <div className="f">
                     <label>Passagers</label>
-                    <select>
+                    <select value={searchPassengers} onChange={(e) => setSearchPassengers(Number(e.target.value) || 1)}>
                       <option value="1">1 passager</option>
                       <option value="2">2 passagers</option>
                       <option value="3">3 passagers</option>
@@ -520,7 +521,7 @@ export function ClientPortal() {
 
               <p className="sub">Trouvez un départ, choisissez votre siège (facultatif) et recevez votre billet électronique.</p>
               <p className="sub"><a href="/billet/retrouver" style={{ color: 'var(--blue)', fontWeight: 600 }}>Vous avez déjà un billet ? Retrouvez-le avec sa référence et votre téléphone →</a></p>
-              <Tickets user={user} trips={trips} locations={locations} tickets={tickets} bookings={bookings} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} />
+              <Tickets user={user} trips={trips} locations={locations} tickets={tickets} bookings={bookings} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} searchPassengers={searchPassengers} />
 
             </main>
           )}
@@ -612,6 +613,7 @@ function Tickets({
   preselectedTripId = "",
   searchOrigin = "",
   searchDestination = "",
+  searchPassengers = 0,
 }: {
   user: User | null;
   trips: Trip[];
@@ -624,6 +626,8 @@ function Tickets({
   preselectedTripId?: string;
   searchOrigin?: string;
   searchDestination?: string;
+  /** Nombre choisi dans la recherche (0 : aucun) ; prioritaire sur le formulaire. */
+  searchPassengers?: number;
 }) {
   const [tripId, setTripId] = useState(preselectedTripId || "");
   const [originId, setOriginId] = useState(searchOrigin || "");
@@ -763,6 +767,19 @@ function Tickets({
       setAlightingPointId("");
     }
   }, [effectiveDestId, activeAlightingPoints, alightingPointId]);
+  // Le nombre choisi dans la recherche prime ; il reste modifiable ensuite dans le formulaire.
+  useEffect(() => {
+    if (!searchPassengers) return;
+    setPassengers((prev) => resizePassengers(prev, searchPassengers, (index) => ({
+      seatId: null,
+      seatNumber: null,
+      fullName: index === 0 ? defaultUserFullName : "",
+      phone: index === 0 ? (user?.phone || "") : "",
+    })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchPassengers, preselectedTripId]);
+  const boardingCity = locations.find((l) => String(l.id) === effectiveOriginId)?.name || "";
+  const alightingCity = locations.find((l) => String(l.id) === effectiveDestId)?.name || "";
   const onlineMethods = paymentMethods.filter((method) => method.online);
   // Un seul moyen de paiement en ligne : une seule action « Payer [total] ». Plusieurs : le choix reste à l'écran.
   const singleQuote = tripQuotes.length === 1 ? tripQuotes[0] : null;
@@ -1261,35 +1278,41 @@ function Tickets({
             )}
 
             {selectedTrip && (activeBoardingPoints.length > 0 || activeAlightingPoints.length > 0) && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginTop: '10px' }}>
                 {activeBoardingPoints.length > 0 && (
                   <div>
-                    <label style={{ fontSize: '13px' }}>Point d’embarquement</label>
-                    <select
-                      value={boardingPointId}
-                      onChange={(e) => setBoardingPointId(e.target.value)}
-                      required={activeBoardingPoints.length > 1}
-                    >
-                      {activeBoardingPoints.length > 1 && <option value="">Choisir un point…</option>}
-                      {activeBoardingPoints.map((pt) => (
-                        <option key={pt.id} value={pt.id}>{pt.name}</option>
-                      ))}
-                    </select>
+                    <label htmlFor="boarding-point" style={{ fontSize: '13px' }}>{boardingFieldLabel("boarding", boardingCity)}</label>
+                    {activeBoardingPoints.length === 1 ? (
+                      <p id="boarding-point" style={{ margin: '4px 0 0', fontWeight: 600 }}>{activeBoardingPoints[0].name}</p>
+                    ) : (
+                      <>
+                        <select id="boarding-point" value={boardingPointId} onChange={(e) => setBoardingPointId(e.target.value)} required>
+                          <option value="">Choisir un point…</option>
+                          {activeBoardingPoints.map((pt) => (
+                            <option key={pt.id} value={pt.id}>{pt.name}</option>
+                          ))}
+                        </select>
+                        <small style={{ color: 'var(--mute)', display: 'block', marginTop: '4px' }}>{BOARDING_POINT_HELP}</small>
+                      </>
+                    )}
                   </div>
                 )}
                 {activeAlightingPoints.length > 0 && (
                   <div>
-                    <label style={{ fontSize: '13px' }}>Point de débarquement</label>
-                    <select
-                      value={alightingPointId}
-                      onChange={(e) => setAlightingPointId(e.target.value)}
-                      required={activeAlightingPoints.length > 1}
-                    >
-                      {activeAlightingPoints.length > 1 && <option value="">Choisir un point…</option>}
-                      {activeAlightingPoints.map((pt) => (
-                        <option key={pt.id} value={pt.id}>{pt.name}</option>
-                      ))}
-                    </select>
+                    <label htmlFor="alighting-point" style={{ fontSize: '13px' }}>{boardingFieldLabel("alighting", alightingCity)}</label>
+                    {activeAlightingPoints.length === 1 ? (
+                      <p id="alighting-point" style={{ margin: '4px 0 0', fontWeight: 600 }}>{activeAlightingPoints[0].name}</p>
+                    ) : (
+                      <>
+                        <select id="alighting-point" value={alightingPointId} onChange={(e) => setAlightingPointId(e.target.value)} required>
+                          <option value="">Choisir un point…</option>
+                          {activeAlightingPoints.map((pt) => (
+                            <option key={pt.id} value={pt.id}>{pt.name}</option>
+                          ))}
+                        </select>
+                        <small style={{ color: 'var(--mute)', display: 'block', marginTop: '4px' }}>{BOARDING_POINT_HELP}</small>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

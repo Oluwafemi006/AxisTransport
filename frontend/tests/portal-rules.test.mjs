@@ -313,3 +313,21 @@ test("logo du personnel : accueil de l'espace en cours", () => {
   assert.equal(staffSpaceHome("/administration"), "/", "préfixe sans barre : pas un espace");
   assert.equal(staffSpaceHome("/"), "/");
 });
+
+test("points d'embarquement : libellés en question, aide courte", async () => {
+  const { boardingFieldLabel, BOARDING_POINT_HELP } = await import(pathToFileURL(compiled).href);
+  assert.equal(boardingFieldLabel("boarding", "Parakou"), "Où montez-vous à Parakou ?");
+  assert.equal(boardingFieldLabel("alighting", "Cotonou"), "Où descendez-vous à Cotonou ?");
+  assert.equal(BOARDING_POINT_HELP, "Choisissez l’arrêt exact");
+});
+
+test("nombre de passagers de la recherche : saisies gardées, bornes 1 à 8", async () => {
+  const { resizePassengers } = await import(pathToFileURL(compiled).href);
+  const blank = (i) => `TEST vide ${i}`;
+  assert.deepEqual(resizePassengers(["TEST Un"], 3, blank), ["TEST Un", "TEST vide 1", "TEST vide 2"]);
+  assert.deepEqual(resizePassengers(["TEST Un", "TEST Deux", "TEST Trois"], 2, blank), ["TEST Un", "TEST Deux"]);
+  assert.equal(resizePassengers(["TEST Un"], 20, blank).length, 8);
+  assert.equal(resizePassengers(["TEST Un", "TEST Deux"], 0, blank).length, 1);
+  const same = ["TEST Un"];
+  assert.equal(resizePassengers(same, 1, blank), same);
+});

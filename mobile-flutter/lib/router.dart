@@ -226,10 +226,10 @@ GoRouter buildAxisRouter() => GoRouter(
                   path: 'booking/:id/passagers',
                   builder: (context, state) => PassengersScreen(
                     tripId: int.parse(state.pathParameters['id']!),
+                    // Absent de l'URL (liste des départs, « Modifier ») : le brouillon décide.
                     passengerCount: int.tryParse(
-                          state.uri.queryParameters['passagers'] ?? '1',
-                        ) ??
-                        1,
+                      state.uri.queryParameters['passagers'] ?? '',
+                    ),
                     originId: int.tryParse(
                       state.uri.queryParameters['origin'] ?? '',
                     ),
