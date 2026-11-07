@@ -1,3 +1,4 @@
+import '../../../core/widgets/system_insets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -292,7 +293,7 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
           : Form(
               key: _formKey,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                padding: withSystemInsets(context, const EdgeInsets.fromLTRB(20, 12, 20, 32), bottom: true),
                 children: [
                   const _BookingProgress(currentStep: 1),
                   if (trip != null) ...[

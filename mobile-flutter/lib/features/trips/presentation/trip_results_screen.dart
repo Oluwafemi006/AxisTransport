@@ -1,3 +1,4 @@
+import '../../../core/widgets/system_insets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -115,7 +116,7 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
-          padding: const EdgeInsets.only(bottom: AxisSpacing.s24),
+          padding: withSystemInsets(context, const EdgeInsets.only(bottom: AxisSpacing.s24), bottom: true),
           children: [
             // En-tête blanc avec route + sélecteur horizontal de date (Resultats.html)
             Container(
@@ -123,11 +124,16 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
                 color: theme.colorScheme.surface,
                 border: Border(bottom: BorderSide(color: axis.border)),
               ),
-              padding: const EdgeInsets.fromLTRB(
-                AxisSpacing.screen,
-                AxisSpacing.s12,
-                AxisSpacing.screen,
-                AxisSpacing.s14,
+              // Écran ouvert au-dessus des onglets : la marge de la barre d'état est ajoutée ici.
+              padding: withSystemInsets(
+                context,
+                const EdgeInsets.fromLTRB(
+                  AxisSpacing.screen,
+                  AxisSpacing.s12,
+                  AxisSpacing.screen,
+                  AxisSpacing.s14,
+                ),
+                top: true,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

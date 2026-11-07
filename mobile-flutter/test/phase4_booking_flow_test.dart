@@ -508,5 +508,76 @@ void main() {
       expect(find.text('Partager'), findsOneWidget);
     });
   });
+
+  // Affichage bord à bord (Android 15 et plus) : barre d'état de 48 et barre de navigation de 34 simulées.
+  group('Marges du système (barre haute 48, barre basse 34)', () {
+    void simulate(WidgetTester tester, {required double top, required double bottom}) {
+      // 800 × 800 de large, comme les autres tests de ce fichier : seule la marge du système change.
+      tester.view.physicalSize = const Size(2400, 2400);
+      tester.view.devicePixelRatio = 3.0;
+      tester.view.padding = FakeViewPadding(top: top * 3, bottom: bottom * 3);
+      tester.view.viewPadding = FakeViewPadding(top: top * 3, bottom: bottom * 3);
+      addTearDown(tester.view.reset);
+    }
+
+    final search = TripSearch(originId: 1, destinationId: 2, date: DateTime(2026, 10, 30), passengers: 1);
+
+    Future<void> openResults(WidgetTester tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [apiClientProvider.overrideWithValue(_Phase4Api())],
+        child: MaterialApp(theme: AxisTheme.light(), home: TripResultsScreen(search: search)),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('résultats : la flèche de retour passe sous la barre d’état', (tester) async {
+      simulate(tester, top: 48, bottom: 34);
+      await openResults(tester);
+      expect(tester.getTopLeft(find.byTooltip('Retour')).dy, greaterThanOrEqualTo(48));
+    });
+
+    testWidgets('résultats : sans barre, la mise en page ne change pas', (tester) async {
+      simulate(tester, top: 0, bottom: 0);
+      await openResults(tester);
+      expect(tester.getTopLeft(find.byTooltip('Retour')).dy, lessThan(48));
+    });
+
+    ProviderContainer draft({bool withSeat = false}) {
+      final container = ProviderContainer(overrides: [apiClientProvider.overrideWithValue(_Phase4Api())]);
+      addTearDown(container.dispose);
+      container.read(bookingDraftProvider.notifier).start(_sampleTrip);
+      container.read(bookingDraftProvider.notifier).setPassengers(const [
+        Passenger(id: 'p1', fullName: 'Koffi Mensah', phone: '97000000', type: PassengerType.adult),
+      ]);
+      if (withSeat) {
+        container.read(bookingDraftProvider.notifier).assignSeat('p1', const Seat(id: 1, number: '1A', status: 'AVAILABLE'));
+      }
+      return container;
+    }
+
+    Future<double> lowestButtonBottom(WidgetTester tester, Widget home, ProviderContainer container) async {
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: AxisTheme.light(), home: home),
+      ));
+      await tester.pumpAndSettle();
+      final buttons = find.byType(AxisButton);
+      expect(buttons, findsWidgets);
+      return buttons.evaluate().map((element) => tester.getBottomLeft(find.byWidget(element.widget)).dy).reduce((a, b) => a > b ? a : b);
+    }
+
+    testWidgets('sièges : le bouton du bas reste au-dessus de la barre de navigation', (tester) async {
+      simulate(tester, top: 48, bottom: 34);
+      final bottom = await lowestButtonBottom(tester, const SeatSelectionScreen(tripId: 10), draft());
+      expect(bottom, lessThanOrEqualTo(800 - 34));
+    });
+
+    testWidgets('récapitulatif : le bouton du bas reste au-dessus de la barre de navigation', (tester) async {
+      simulate(tester, top: 48, bottom: 34);
+      final bottom = await lowestButtonBottom(tester, const BookingReviewScreen(tripId: 10), draft(withSeat: true));
+      expect(bottom, lessThanOrEqualTo(800 - 34));
+    });
+  });
+
 }
 

@@ -1,3 +1,4 @@
+import '../../../core/widgets/system_insets.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -842,11 +843,10 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                 color: theme.colorScheme.surface,
                 border: Border(top: BorderSide(color: axis.border)),
               ),
-              padding: const EdgeInsets.fromLTRB(
-                AxisSpacing.screen,
-                AxisSpacing.s12,
-                AxisSpacing.screen,
-                AxisSpacing.s16,
+              padding: withSystemInsets(
+                context,
+                const EdgeInsets.fromLTRB(AxisSpacing.screen, AxisSpacing.s12, AxisSpacing.screen, AxisSpacing.s16),
+                bottom: true,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
