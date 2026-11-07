@@ -6,6 +6,7 @@ import 'core/session.dart';
 import 'features/auth/invitation_screen.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/forgot_password_screen.dart';
+import 'features/auth/forced_password_screen.dart';
 import 'features/profile/account_screen.dart';
 import 'features/auth/register_screen.dart';
 import 'features/bookings/presentation/booking_review_screen.dart';
@@ -34,6 +35,9 @@ import 'staff_router.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
+/// Écran imposé tant que le mot de passe provisoire n'est pas remplacé.
+const forcedPasswordPath = '/mot-de-passe-obligatoire';
+
 /// Fonction de redirection globale de GoRouter basée sur le rôle serveur.
 String? globalRoleRedirect(BuildContext context, GoRouterState state) {
   final session = sessionRouterNotifier.session;
@@ -53,6 +57,12 @@ String? globalRoleRedirect(BuildContext context, GoRouterState state) {
 
   // 2. Utilisateur connecté
   final user = session.user!;
+
+  // Mot de passe provisoire : seul l'écran de changement est accessible.
+  if (user.mustChangePassword) {
+    return loc == forcedPasswordPath ? null : forcedPasswordPath;
+  }
+  if (loc == forcedPasswordPath) return user.isStaff ? '/staff' : '/';
 
   // Empêche un utilisateur connecté d'accéder aux écrans de connexion/inscription
   if (isAuthRoute) {
@@ -134,6 +144,11 @@ GoRouter buildAxisRouter() => GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       path: '/aide',
       builder: (context, state) => const HelpScreen(),
+    ),
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: forcedPasswordPath,
+      builder: (context, state) => const ForcedPasswordScreen(),
     ),
     GoRoute(
       parentNavigatorKey: _rootNavigatorKey,

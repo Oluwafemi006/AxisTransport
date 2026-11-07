@@ -13,6 +13,7 @@ class User {
     required this.phone,
     required this.role,
     this.email = '',
+    this.mustChangePassword = false,
   });
 
   final int id;
@@ -22,6 +23,9 @@ class User {
   final String phone;
   final String role;
   final String email;
+
+  /// Mot de passe provisoire saisi par un administrateur : à remplacer avant tout le reste.
+  final bool mustChangePassword;
 
   bool get isClient => role == 'CLIENT';
 
@@ -36,6 +40,7 @@ class User {
     'phone': phone,
     'role': role,
     'email': email,
+    'must_change_password': mustChangePassword,
   };
 
   String get displayName {
@@ -55,6 +60,7 @@ class User {
       phone: json['phone'] as String? ?? '',
       role: json['role'] as String? ?? 'CLIENT',
       email: json['email'] as String? ?? '',
+      mustChangePassword: json['must_change_password'] as bool? ?? false,
     );
   }
 }
