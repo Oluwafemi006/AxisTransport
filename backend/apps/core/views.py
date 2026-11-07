@@ -198,6 +198,24 @@ class PublicContactView(APIView):
         )
 
 
+class PublicPrivacyContactView(APIView):
+    """Coordonnées affichées sur /privacy et /suppression-compte : saisies dans /admin, vides sinon.
+    Jamais d'IFU, de RCCM ni de comptes bancaires."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        values = dict(SystemSetting.objects.filter(key__in=CONTACT_SETTING_KEYS).values_list("key", "value"))
+        agency = AgencyProfile.current()
+        text = lambda value: value.strip() if isinstance(value, str) else ""  # noqa: E731
+        return Response({
+            "legal_name": text(agency.legal_name),
+            "email": text(agency.email),
+            "contact_phone": text(values.get("contact_phone")),
+            "contact_whatsapp": text(values.get("contact_whatsapp")),
+        })
+
+
 # Étapes montrées au client. Les étapes internes de l'agence (dépôt, acceptation, affectation)
 # restent regroupées sous « Enregistré ».
 PARCEL_TRACKING_STEPS = [
