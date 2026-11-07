@@ -49,6 +49,7 @@ ul{padding-left:20px}li{margin:4px 0}
 a{color:#0b3c74}
 .v{display:inline-block;padding:0 6px;border-radius:4px;background:#fef3c7;color:#92400e;font-weight:600;font-size:.9em}
 .links{margin-top:32px;font-size:.9rem}
+.c{display:inline-block;padding:2px 8px;border:2px solid #b91c1c;border-radius:4px;background:#fee2e2;color:#b91c1c;font-weight:800}
 </style>
 </head>
 <body>
@@ -113,21 +114,41 @@ ${contactBlock(contact)}
 <li>Comptes, billets, colis, locations et paiements : aucune durée n’est encore fixée.${toValidate("durée de conservation, en particulier pour la comptabilité")}</li>
 </ul>
 <h2>Vos droits</h2>
-<p>Vous pouvez corriger votre prénom, votre nom, votre téléphone et votre e-mail dans le profil de l’application. Pour supprimer votre compte, consultez la page <a href="/suppression-compte">Suppression de compte</a>.</p>`);
+<p>Vous pouvez corriger votre prénom, votre nom, votre téléphone et votre e-mail dans le profil de l’application. Vous pouvez supprimer votre compte dans l’application (« Profil », puis « Supprimer mon compte ») ; voir la page <a href="/suppression-compte">Suppression de compte</a>.</p>`);
 }
 
+// Emplacement laissé vide tant que la compagnie n'a pas fixé la durée : aucune durée n'est inventée.
+const TO_CONFIRM = `<span class="c">À CONFIRMER</span>`;
+
 export function accountDeletionPage(contact: PrivacyContact): string {
+  const email = contact.email
+    ? `par e-mail à <strong>${escape(contact.email)}</strong>`
+    : `par e-mail à l’adresse de contact de l’agence (${TO_CONFIRM} : adresse non encore saisie)`;
   return page("Suppression de compte", `
-<p>Vous pouvez demander la suppression de votre compte client ${companyName(contact)}, créé depuis l’application ou le site.</p>
-<h2>Comment la demander</h2>
-<p>Contactez l’agence avec le numéro de téléphone ou l’e-mail de votre compte, et indiquez votre identifiant :</p>
-${contactBlock(contact)}
-<p>${toValidate("délai de traitement de la demande").trim()}</p>
-<h2>Ce qui est supprimé</h2>
-<p>Votre prénom, votre nom, votre téléphone, votre e-mail et votre mot de passe. Vous ne pouvez plus vous connecter.</p>
-<h2>Ce qui est conservé</h2>
-<p>Les billets, les colis, les locations et les paiements déjà enregistrés sont conservés pour la comptabilité de l’agence.${toValidate("données exactes conservées et durée de conservation")}</p>
-<p>Un compte qui a un billet à venir, un paiement en attente, un colis en cours ou une location en cours ne peut être supprimé qu’après la fin de ce service.${toValidate("règle à confirmer")}</p>
+<p><strong>Axis Transport</strong> : suppression d’un compte client créé dans l’application ou sur le site.</p>
+<h2>Comment supprimer votre compte</h2>
+<ul>
+<li><strong>Dans l’application</strong> : ouvrez « Profil », puis « Supprimer mon compte », lisez ce qui est supprimé et conservé, saisissez votre mot de passe et confirmez.</li>
+<li><strong>Si vous ne pouvez plus vous connecter</strong> : écrivez ${email}, depuis l’adresse ou avec le numéro de téléphone de votre compte, en indiquant votre identifiant.</li>
+</ul>
+<p>Si vous avez un billet payé pour un voyage qui n’est pas encore parti, la suppression est possible après ce voyage.</p>
+<h2>Données supprimées</h2>
+<ul>
+<li>Votre prénom, votre nom, votre numéro de téléphone, votre adresse e-mail et votre identifiant.</li>
+<li>Votre mot de passe : la connexion devient impossible et vos sessions ouvertes sont fermées.</li>
+<li>Les noms et numéros de téléphone inscrits sur vos billets, réservations et colis.</li>
+<li>Sur votre téléphone : la copie de vos billets et votre session.</li>
+</ul>
+<h2>Données conservées sous forme anonymisée</h2>
+<ul>
+<li>Les billets (trajet, siège, date, montant, statut) et les réservations.</li>
+<li>Les paiements (montant, date, numéro de transaction Mobile Money).</li>
+<li>Les colis et les locations déjà enregistrés, sans nom ni téléphone.</li>
+</ul>
+<p>Ces données ne permettent plus de vous identifier. Elles sont gardées pour la comptabilité de l’agence.</p>
+<h2>Durée de conservation</h2>
+<p>Données anonymisées (billets, paiements, colis, locations) : ${TO_CONFIRM}.</p>
+<p>Sauvegardes de la base de données : 14 jours. Les données d’un compte supprimé peuvent y rester jusqu’à cette échéance.</p>
 <p>Plus de détails : <a href="/privacy">Politique de confidentialité</a>.</p>`);
 }
 

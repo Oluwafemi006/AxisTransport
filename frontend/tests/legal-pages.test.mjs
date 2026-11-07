@@ -34,16 +34,15 @@ test("coordonnées saisies dans /admin affichées ; WhatsApp vide masqué", () =
 });
 
 test("sans coordonnées : « À renseigner », jamais de valeur inventée", () => {
-  for (const html of [privacyPage(EMPTY_CONTACT), accountDeletionPage(EMPTY_CONTACT)]) {
-    assert.match(html, /Coordonnées : À renseigner\./);
-    assert.match(html, /Axis Transport/);
-  }
+  const html = privacyPage(EMPTY_CONTACT);
+  assert.match(html, /Coordonnées : À renseigner\./);
+  assert.match(html, /Axis Transport/);
 });
 
 test("les points ouverts sont marqués « À valider »", () => {
   const privacy = privacyPage(contact);
   for (const point of ["personne responsable", "nom du service", "hébergeur", "durée de conservation"]) assert.match(privacy, new RegExp(`À valider : [^<]*${point}`));
-  assert.match(accountDeletionPage(contact), /À valider : délai de traitement/);
+  assert.match(accountDeletionPage(contact), /<span class="c">À CONFIRMER<\/span>/);
 });
 
 test("ni FedaPay au client autrement que comme prestataire, ni numéro d'enregistrement, ni facture", () => {
@@ -71,4 +70,20 @@ test("API injoignable ou adresse absente : la page s'affiche quand même", async
 test("/confidentialite redirige vers /privacy", () => {
   const config = readFileSync(path.join(here, "../next.config.ts"), "utf8");
   assert.match(config, /source: "\/confidentialite", destination: "\/privacy", permanent: true/);
+});
+
+test("suppression : procédure par l'application ou par e-mail, données supprimées et conservées", () => {
+  const html = accountDeletionPage(contact);
+  assert.match(html, /<strong>Axis Transport<\/strong>/);
+  assert.match(html, /« Supprimer mon compte »/);
+  assert.match(html, /par e-mail à <strong>contact\.test@exemple\.test<\/strong>/);
+  assert.match(html, /<h2>Données supprimées<\/h2>/);
+  assert.match(html, /<h2>Données conservées sous forme anonymisée<\/h2>/);
+  assert.match(html, /Données anonymisées \(billets, paiements, colis, locations\) : <span class="c">À CONFIRMER<\/span>/);
+});
+
+test("suppression : sans e-mail saisi, aucune adresse inventée", () => {
+  const html = accountDeletionPage(EMPTY_CONTACT);
+  assert.match(html, /adresse de contact de l’agence \(<span class="c">À CONFIRMER<\/span> : adresse non encore saisie\)/);
+  assert.match(html, /<strong>Axis Transport<\/strong>/);
 });
