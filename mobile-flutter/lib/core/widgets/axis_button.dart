@@ -125,7 +125,8 @@ class AxisButton extends StatelessWidget {
               child: icon!,
             ),
             const SizedBox(width: AxisSpacing.s8),
-            textWidget,
+            // Écran étroit ou texte agrandi : le libellé passe à la ligne au lieu de déborder.
+            Flexible(child: textWidget),
           ],
         );
       } else {

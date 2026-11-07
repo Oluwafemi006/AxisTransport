@@ -17,6 +17,8 @@ import 'package:axis_transport_flutter/features/trips/presentation/trip_results_
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/layout_audit.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -579,5 +581,48 @@ void main() {
     });
   });
 
-}
 
+  group('Audit des largeurs (320, 360, 390 ; texte 1,0 et 1,3)', () {
+    ProviderContainer draft({bool withSeat = false}) {
+      final container = ProviderContainer(overrides: [apiClientProvider.overrideWithValue(_Phase4Api())]);
+      addTearDown(container.dispose);
+      container.read(bookingDraftProvider.notifier).start(_sampleTrip);
+      container.read(bookingDraftProvider.notifier).setPassengers(const [
+        Passenger(id: 'p1', fullName: 'Koffi Mensah', phone: '97000000', type: PassengerType.adult),
+      ]);
+      if (withSeat) {
+        container.read(bookingDraftProvider.notifier).assignSeat('p1', const Seat(id: 1, number: '1A', status: 'AVAILABLE'));
+      }
+      return container;
+    }
+
+    Widget scoped(Widget home, [ProviderContainer? container]) => container == null
+        ? ProviderScope(
+            overrides: [apiClientProvider.overrideWithValue(_Phase4Api())],
+            child: MaterialApp(theme: AxisTheme.light(), home: home),
+          )
+        : UncontrolledProviderScope(container: container, child: MaterialApp(theme: AxisTheme.light(), home: home));
+
+    final screens = <String, Widget Function()>{
+      'accueil': () => scoped(const Scaffold(body: HomeScreen())),
+      'résultats': () => scoped(TripResultsScreen(search: TripSearch(originId: 1, destinationId: 2, date: DateTime(2026, 10, 30), passengers: 1))),
+      'passagers': () => scoped(const PassengersScreen(tripId: 10, originId: 1, destinationId: 3), draft()),
+      'sièges': () => scoped(const SeatSelectionScreen(tripId: 10), draft()),
+      'récapitulatif': () => scoped(const BookingReviewScreen(tripId: 10), draft(withSeat: true)),
+      'billet': () => scoped(TicketScreen(
+            ticketId: 99,
+            initialTicket: Ticket(
+              id: 99, reference: 'AX-2026-00142', trip: _sampleTrip,
+              seat: const Seat(id: 1, number: '1A', status: 'PAID'),
+              passengerName: 'Koffi Mensah', passengerPhone: '97000000', status: 'ISSUED',
+              statusDisplay: 'Ticket émis', qrToken: 'qr-token-test-99', amount: 7500, currency: 'XOF',
+            ),
+          )),
+    };
+    for (final entry in screens.entries) {
+      testWidgets('${entry.key} : aucun débordement', (tester) async {
+        expect(await layoutOverflows(tester, entry.value), isEmpty);
+      });
+    }
+  });
+}

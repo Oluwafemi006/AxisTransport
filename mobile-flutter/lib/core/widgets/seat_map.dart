@@ -78,8 +78,10 @@ class SeatMap extends StatelessWidget {
           _buildLegend(context),
           const SizedBox(height: AxisSpacing.md),
         ],
-        // Silhouette du car
-        Container(
+        // Silhouette du car : réduite (jamais agrandie) sur un écran plus étroit qu'elle.
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Container(
           padding: const EdgeInsets.symmetric(
             horizontal: AxisSpacing.lg,
             vertical: AxisSpacing.md,
@@ -156,6 +158,7 @@ class SeatMap extends StatelessWidget {
             ],
           ),
         ),
+        ),
       ],
     );
   }
@@ -164,8 +167,10 @@ class SeatMap extends StatelessWidget {
     final tokens = context.axis;
     final theme = Theme.of(context);
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    // Légende : passe à la ligne sur un écran étroit ou avec un texte agrandi.
+    return Wrap(
+      alignment: WrapAlignment.center,
+      runSpacing: AxisSpacing.xs,
       children: [
         _legendItem(
           label: 'Libre',

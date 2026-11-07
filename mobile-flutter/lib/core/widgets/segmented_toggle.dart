@@ -85,7 +85,8 @@ class SegmentedToggle<T> extends StatelessWidget {
                           ),
                           const SizedBox(width: AxisSpacing.xs),
                         ],
-                        Text(
+                        Flexible(
+                          child: Text(
                           option.label,
                           style: theme.textTheme.labelLarge?.copyWith(
                             color: isSelected
@@ -96,6 +97,7 @@ class SegmentedToggle<T> extends StatelessWidget {
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                        ),
                         ),
                       ],
                     ),

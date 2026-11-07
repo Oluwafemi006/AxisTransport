@@ -195,8 +195,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     variant: AxisButtonVariant.primary,
                   ),
                   const SizedBox(height: AxisSpacing.md),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  // Passe à la ligne sur un écran étroit ou avec un texte agrandi.
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
                         'Pas encore de compte ? ',

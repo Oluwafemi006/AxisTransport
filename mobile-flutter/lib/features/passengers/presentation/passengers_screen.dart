@@ -311,13 +311,16 @@ class _PassengersScreenState extends ConsumerState<PassengersScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
+                      Flexible(
+                        child: Text(
                         'Qui voyage ?',
                         style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                           color: AxisColors.navyDark,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
+                      ),
+                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
