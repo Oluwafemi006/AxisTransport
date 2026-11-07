@@ -212,6 +212,18 @@ class ApiClient {
 
   Future<void> logout() => _store.clearTokens();
 
+  /// Suppression du compte client (anonymisation côté serveur), puis effacement des données gardées sur le téléphone.
+  Future<void> deleteAccount(String password) async {
+    await _request<dynamic>(
+      '/auth/me/',
+      data: {'password': password},
+      auth: true,
+      method: 'DELETE',
+    );
+    await _store.cacheTickets(const []);
+    await _store.clearTokens();
+  }
+
   Future<User> me() async {
     final payload = await _request<Map<String, dynamic>>(
       '/auth/me/',

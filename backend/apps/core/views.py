@@ -198,6 +198,24 @@ class PublicContactView(APIView):
         )
 
 
+class PublicPrivacyContactView(APIView):
+    """Coordonnées affichées sur /privacy et /suppression-compte : saisies dans /admin, vides sinon.
+    Jamais d'IFU, de RCCM ni de comptes bancaires."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        values = dict(SystemSetting.objects.filter(key__in=CONTACT_SETTING_KEYS).values_list("key", "value"))
+        agency = AgencyProfile.current()
+        text = lambda value: value.strip() if isinstance(value, str) else ""  # noqa: E731
+        return Response({
+            "legal_name": text(agency.legal_name),
+            "email": text(agency.email),
+            "contact_phone": text(values.get("contact_phone")),
+            "contact_whatsapp": text(values.get("contact_whatsapp")),
+        })
+
+
 # Étapes montrées au client. Les étapes internes de l'agence (dépôt, acceptation, affectation)
 # restent regroupées sous « Enregistré ».
 PARCEL_TRACKING_STEPS = [
@@ -279,6 +297,25 @@ class ParcelTrackingView(APIView):
 
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
+
+    def throttled(self, request, wait):
+        raise TooManyAttempts(wait)
+
+    def get_throttles(self):
+        # Suppression du compte : essais du mot de passe limités comme pour un changement de mot de passe.
+        return [PasswordChangeThrottle()] if self.request.method == "DELETE" else []
+
+    def delete(self, request):
+        """Le client supprime son compte : anonymisation après confirmation par son mot de passe."""
+        from .account_deletion import delete_client_account
+
+        try:
+            delete_client_account(request.user, request.data.get("password"))
+        except PermissionError as error:
+            raise PermissionDenied(str(error))
+        except DjangoValidationError as error:
+            raise ValidationError(error.message_dict if hasattr(error, "error_dict") else {"detail": error.messages})
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     def get(self, request):
         return Response(UserSerializer(request.user).data)

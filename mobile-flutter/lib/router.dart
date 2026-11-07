@@ -17,6 +17,7 @@ import 'features/profile/profile_screen.dart';
 import 'features/rentals/rentals_screen.dart';
 import 'features/profile/connection_settings_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
+import 'features/profile/delete_account_screen.dart';
 import 'features/profile/profile_menu.dart';
 import 'features/sales/sell_ticket_screen.dart';
 import 'features/sold/sold_today_screen.dart';
@@ -84,7 +85,8 @@ String? globalRoleRedirect(BuildContext context, GoRouterState state) {
         loc.startsWith('/colis') ||
         loc.startsWith('/location') ||
         loc.startsWith('/profil') ||
-        loc == '/mon-profil';
+        loc == '/mon-profil' ||
+        loc == '/supprimer-compte';
     if (isClientExclusiveTarget) {
       return '/staff';
     }
@@ -129,6 +131,11 @@ GoRouter buildAxisRouter() => GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       path: '/parametres-connexion',
       builder: (context, state) => const ConnectionSettingsScreen(),
+    ),
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/supprimer-compte',
+      builder: (context, state) => const DeleteAccountScreen(),
     ),
     GoRoute(
       parentNavigatorKey: _rootNavigatorKey,

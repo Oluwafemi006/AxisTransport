@@ -185,6 +185,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ProfileMenuGroup(
           items: [
             ProfileMenuItem(
+              icon: Icons.delete_outline,
+              label: 'Supprimer mon compte',
+              keyName: 'menu-delete-account',
+              onTap: () => context.push('/supprimer-compte'),
+            ),
+            ProfileMenuItem(
               icon: Icons.logout_rounded,
               label: 'Déconnexion',
               keyName: 'menu-logout',

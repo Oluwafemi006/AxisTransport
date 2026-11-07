@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/app_version.dart';
 import '../../core/config.dart';
@@ -107,19 +108,31 @@ class ProfileMenuGroup extends StatelessWidget {
   }
 }
 
-/// À propos : nom et version de l'application.
+/// À propos : nom et version de l'application, liens vers les pages publiques du site (si son adresse est connue).
 class AboutScreen extends StatelessWidget {
-  const AboutScreen({super.key});
+  const AboutScreen({super.key, this.siteUrl});
+  final String? siteUrl;
 
   @override
   Widget build(BuildContext context) {
+    final site = siteUrl ?? siteUrlFromApi();
+    Widget link(String label, String path, String key) => ListTile(
+          key: Key(key),
+          title: Text(label),
+          trailing: const Icon(Icons.open_in_new),
+          onTap: () => launchUrl(Uri.parse('$site$path'), mode: LaunchMode.externalApplication),
+        );
     return Scaffold(
       appBar: AppBar(title: const Text('À propos')),
       body: ListView(
         padding: const EdgeInsets.all(16),
-        children: const [
-          ListTile(title: Text('Application'), subtitle: Text('AXIS Transport')),
-          ListTile(title: Text('Version'), subtitle: Text(appVersion, key: Key('about-version'))),
+        children: [
+          const ListTile(title: Text('Application'), subtitle: Text('AXIS Transport')),
+          const ListTile(title: Text('Version'), subtitle: Text(appVersion, key: Key('about-version'))),
+          if (site.isNotEmpty) ...[
+            link('Politique de confidentialité', '/privacy', 'about-privacy'),
+            link('Suppression de compte', '/suppression-compte', 'about-deletion'),
+          ],
         ],
       ),
     );

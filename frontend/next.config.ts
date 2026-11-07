@@ -9,6 +9,10 @@ if (!process.env.NEXT_PUBLIC_API_URL) {
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Adresse française de la politique de confidentialité ; /privacy est celle saisie dans la Play Console.
+  async redirects() {
+    return [{ source: "/confidentialite", destination: "/privacy", permanent: true }];
+  },
   // Sortie « standalone » pour l'image Docker (server.js autonome). Sur Vercel (variable VERCEL),
   // la plateforme produit sa propre sortie : « standalone » y fait échouer la fin du build.
   ...(process.env.VERCEL ? {} : { output: "standalone" as const }),
