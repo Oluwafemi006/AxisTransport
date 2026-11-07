@@ -50,6 +50,15 @@ void main() {
     expect(find.textContaining('pas encore parti'), findsOneWidget);
   });
 
+  testWidgets('le mot de passe a son œil, masqué par défaut', (tester) async {
+    await _open(tester);
+    bool obscured() => tester.widget<TextField>(find.descendant(of: find.byKey(const Key('delete-password')), matching: find.byType(TextField))).obscureText;
+    expect(obscured(), isTrue);
+    await tester.tap(find.byTooltip('Afficher le mot de passe'));
+    await tester.pump();
+    expect(obscured(), isFalse);
+  });
+
   testWidgets('sans mot de passe : rien n’est envoyé', (tester) async {
     final session = await _open(tester);
     await tester.tap(find.byKey(const Key('delete-confirm')));

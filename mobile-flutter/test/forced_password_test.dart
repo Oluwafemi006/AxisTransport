@@ -50,6 +50,18 @@ void main() {
     return (api, session);
   }
 
+  testWidgets('chaque champ a son œil, masqué par défaut, indépendant des autres', (tester) async {
+    await open(tester);
+    final eyes = find.byTooltip('Afficher le mot de passe');
+    expect(eyes, findsNWidgets(3));
+    bool obscured(String key) => tester.widget<TextField>(find.descendant(of: find.byKey(Key(key)), matching: find.byType(TextField))).obscureText;
+    expect([obscured('forced-current'), obscured('forced-new'), obscured('forced-confirm')], [true, true, true]);
+    await tester.tap(eyes.at(1));
+    await tester.pump();
+    expect([obscured('forced-current'), obscured('forced-new'), obscured('forced-confirm')], [true, false, true]);
+    expect(find.byTooltip('Masquer le mot de passe'), findsOneWidget);
+  });
+
   testWidgets('mots de passe différents : rien n’est envoyé', (tester) async {
     final (api, _) = await open(tester);
     await tester.enterText(find.byKey(const Key('forced-current')), 'TEST-provisoire');
