@@ -1,3 +1,4 @@
+import { PasswordInput } from "./password-input";
 import { FormEvent } from "react";
 
 export interface ActivationFormProps {
@@ -46,10 +47,9 @@ export function ActivationForm({
       <label className="field-label mt-5" htmlFor="password">
         Nouveau mot de passe
       </label>
-      <input
+      <PasswordInput
         id="password"
         name="password"
-        type="password"
         className="field"
         autoComplete="new-password"
         placeholder="8 caractères minimum"
@@ -62,10 +62,9 @@ export function ActivationForm({
       <label className="field-label mt-4" htmlFor="confirmPassword">
         Confirmer le mot de passe
       </label>
-      <input
+      <PasswordInput
         id="confirmPassword"
         name="confirmPassword"
-        type="password"
         className="field"
         autoComplete="new-password"
         value={confirmPassword}
