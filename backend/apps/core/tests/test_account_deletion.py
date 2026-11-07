@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.core.models import (
-    AccountChange, Booking, Parcel, Passenger, PasswordResetCode, PaymentAttempt, PaymentMethod, RentalBooking, Ticket,
+    AccountChange, Booking, Parcel, Passenger, PasswordResetCode, PasswordResetLink, PaymentAttempt, PaymentMethod, RentalBooking, Ticket,
     Transaction, User, Vehicle,
 )
 
@@ -66,6 +66,7 @@ class AccountDeletionTests(APITestCase):
             recipient_phone="0197000096", description="TEST colis", status=Parcel.Status.PICKED_UP,
         )
         PasswordResetCode.objects.create(user=self.user, code_hash="TEST", expires_at=timezone.now())
+        PasswordResetLink.objects.create(user=self.user, token_hash="TEST-empreinte", expires_at=timezone.now())
         self.assertEqual(self.delete().status_code, 204)
 
         self.user.refresh_from_db()
@@ -81,6 +82,7 @@ class AccountDeletionTests(APITestCase):
         self.assertEqual((booking.contact_phone, booking.contact_email, booking.buyer_ifu), ("", "", ""))
         self.assertEqual((parcel.sender_name, parcel.sender_phone, parcel.recipient_phone), ("Client supprimé", "", ""))
         self.assertFalse(PasswordResetCode.objects.filter(user=self.user).exists())
+        self.assertFalse(PasswordResetLink.objects.filter(user=self.user).exists())
         self.assertTrue(AccountChange.objects.filter(target=self.user, detail__contains="supprimé").exists())
         self.client.force_authenticate(None)
         self.assertNotEqual(self.client.post(TOKEN, {"username": "test_suppr", "password": PASSWORD}, format="json").status_code, 200)

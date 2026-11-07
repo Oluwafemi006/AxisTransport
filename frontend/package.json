@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/portal-rules.test.mjs tests/activation-form.test.mjs tests/ticket-print.test.mjs tests/legal-pages.test.mjs"
+    "test": "node --test tests/portal-rules.test.mjs tests/activation-form.test.mjs tests/ticket-print.test.mjs tests/password-flows.test.mjs tests/legal-pages.test.mjs"
   },
   "dependencies": {
     "next": "16.3.4",

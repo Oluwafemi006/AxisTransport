@@ -619,34 +619,48 @@ class PasswordChangeView(FrenchThrottleMixin, APIView):
 
 
 class PasswordResetRequestView(FrenchThrottleMixin, APIView):
-    """Demande de code : réponse identique que le compte existe ou non."""
+    """Demande d'un lien par le client : réponse identique que le compte existe ou non."""
 
     permission_classes = [AllowAny]
     authentication_classes = []
     throttle_classes = [PasswordResetAddressThrottle, PasswordResetEmailThrottle]
 
     def post(self, request):
-        password_reset.request_code(request.data.get("email"))
+        password_reset.request_link(request.data.get("email"))
         return Response({"detail": password_reset.REQUEST_MESSAGE})
 
 
 class PasswordResetConfirmView(FrenchThrottleMixin, APIView):
-    """Saisie du code et du nouveau mot de passe, puis fermeture de toutes les sessions."""
+    """Ancienne saisie du code (versions précédentes de l'application) : les codes ne sont plus envoyés."""
 
     permission_classes = [AllowAny]
     authentication_classes = []
     throttle_classes = [PasswordResetConfirmThrottle]
 
     def post(self, request):
+        return Response({"detail": password_reset.CODE_FLOW_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PasswordResetLinkView(FrenchThrottleMixin, APIView):
+    """Page « nouveau mot de passe » du site : GET vérifie le lien, POST change le mot de passe et ferme les sessions."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [PasswordResetConfirmThrottle]
+
+    def get(self, request):
+        if not password_reset.link_is_valid(request.query_params.get("token")):
+            return Response({"detail": password_reset.INVALID_LINK_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"valid": True})
+
+    def post(self, request):
         password = str(request.data.get("password") or "")
-        # Contrôlé avant le code : cette erreur ne dit rien sur l'adresse ou le code.
         try:
             validate_password(password)
         except DjangoValidationError as error:
             return Response({"password": error.messages}, status=status.HTTP_400_BAD_REQUEST)
-        done = password_reset.confirm_code(request.data.get("email"), request.data.get("code"), password)
-        if not done:
-            return Response({"detail": password_reset.INVALID_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
+        if not password_reset.use_link(request.data.get("token"), password):
+            return Response({"detail": password_reset.INVALID_LINK_MESSAGE}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"detail": "Mot de passe modifié. Connectez-vous avec le nouveau."})
 
 
@@ -720,10 +734,18 @@ class AcceptStaffInvitationView(FrenchThrottleMixin, APIView):
         username = invitation.email
         names = {key: value for key, value in (("first_name", invitation.first_name), ("last_name", invitation.last_name)) if value}
         # Si un utilisateur existe déjà avec cet email ou username
-        user = User.objects.filter(Q(username=username) | Q(email=invitation.email)).first()
+        user = User.objects.filter(Q(username__iexact=username) | Q(email__iexact=invitation.email)).first()
+        if user and user.role == User.Role.CLIENT:
+            # Un compte client ne devient jamais un compte du personnel par une invitation.
+            return Response(
+                {"error": "Cette adresse appartient à un compte client : elle ne peut pas servir à un compte du personnel. "
+                          "Demandez à l'administrateur une invitation avec une autre adresse."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if user:
             user.email = invitation.email
-            user.set_password(password)
+            # Fermeture de toutes les sessions ouvertes du compte existant.
+            password_reset.change_password(user, password)
             user.role = role
             user.is_staff = True
             user.is_active = True
@@ -1298,6 +1320,9 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = serializer.save()
+        if self.request.data.get("password"):
+            # Mot de passe choisi par l'admin : provisoire, à changer à la première connexion.
+            User.objects.filter(pk=user.pk).update(must_change_password=True)
         AccountChange.objects.create(target=user, actor=self.request.user, action=AccountChange.Action.CREATED, detail=user.get_role_display())
 
     def perform_update(self, serializer):
@@ -1369,8 +1394,13 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="reset-password")
     def reset_password(self, request, pk=None):
-        """Seule voie pour le personnel et les clients sans e-mail ; journalisée, sessions fermées."""
+        """Personnel seulement : mot de passe provisoire, à changer à la première connexion ; journalisé, sessions fermées."""
         user = self.get_object()
+        if user.role == User.Role.CLIENT:
+            return Response(
+                {"detail": "Pour un client, envoyez un lien de réinitialisation : il choisit lui-même son mot de passe."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         password = str(request.data.get("password") or "")
         try:
             validate_password(password, user)
@@ -1378,8 +1408,32 @@ class UserViewSet(viewsets.ModelViewSet):
             return Response({"password": error.messages}, status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
             password_reset.change_password(user, password)
+            User.objects.filter(pk=user.pk).update(must_change_password=True)
             PasswordAdminReset.objects.create(target=user, actor=request.user)
-        return Response({"detail": f"Mot de passe de {user.username} modifié."})
+        return Response({"detail": f"Mot de passe provisoire de {user.username} enregistré : à changer à sa prochaine connexion."})
+
+    @action(detail=True, methods=["post"], url_path="reset-link")
+    def reset_link(self, request, pk=None):
+        """Client : lien à usage unique ; le mot de passe n'est jamais vu par l'admin. Lien renvoyé si l'e-mail n'est pas parti."""
+        user = self.get_object()
+        if user.role != User.Role.CLIENT:
+            return Response({"detail": "Le lien de réinitialisation est réservé aux comptes clients."}, status=status.HTTP_400_BAD_REQUEST)
+        if not user.is_active:
+            return Response({"detail": "Ce compte est désactivé : réactivez-le d'abord."}, status=status.HTTP_400_BAD_REQUEST)
+        sent, url = password_reset.send_link(user, created_by=request.user)
+        AccountChange.objects.create(
+            target=user, actor=request.user, action=AccountChange.Action.UPDATED,
+            detail="lien de réinitialisation du mot de passe " + ("envoyé par e-mail" if sent else "à transmettre (e-mail non envoyé)"),
+        )
+        if sent:
+            return Response({"email_sent": True, "link": "", "detail": f"Lien envoyé à {user.email}."})
+        if not url:
+            return Response(
+                {"email_sent": False, "link": "", "detail": "Lien impossible à créer : l'adresse du site (PUBLIC_WEB_URL) n'est pas configurée."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        reason = "le client n'a pas d'e-mail" if not user.email else "l'e-mail n'a pas pu être envoyé"
+        return Response({"email_sent": False, "link": url, "detail": f"Lien créé, mais {reason} : copiez-le et transmettez-le au client."})
 
 
 class TicketViewSet(viewsets.ModelViewSet):
@@ -2664,6 +2718,8 @@ class StaffInvitationViewSet(viewsets.GenericViewSet):
             raise ValidationError({"role": "Rôle attendu : guichetier, contrôleur ou administrateur."})
         if User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email), is_active=True).exclude(role=User.Role.CLIENT).exists():
             raise ValidationError({"email": "Un membre du personnel utilise déjà cette adresse."})
+        if User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email), role=User.Role.CLIENT).exists():
+            raise ValidationError({"email": "Cette adresse appartient à un compte client : choisissez une autre adresse pour ce membre du personnel."})
         group, _ = Group.objects.get_or_create(name=INVITATION_GROUPS[role])
         invitation = StaffInvitation.objects.create(
             email=email,

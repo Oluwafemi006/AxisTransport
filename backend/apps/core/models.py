@@ -28,6 +28,8 @@ class User(AbstractUser):
     phone = models.CharField(max_length=32, blank=True)
     # Tout jeton émis avant cet instant est refusé (fermeture de toutes les sessions).
     password_changed_at = models.DateTimeField(null=True, blank=True, editable=False)
+    # Mot de passe provisoire saisi par un administrateur : à remplacer à la première connexion.
+    must_change_password = models.BooleanField(default=False)
 
     @property
     def is_axis_staff(self):
@@ -42,6 +44,23 @@ class PasswordResetCode(models.Model):
     expires_at = models.DateTimeField()
     attempts = models.PositiveSmallIntegerField(default=0)
     used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+class PasswordResetLink(models.Model):
+    """Lien de réinitialisation d'un client (demandé par lui-même ou envoyé par l'admin) : seule l'empreinte
+    du jeton est gardée ; usage unique ; ne change jamais le rôle. Sert aussi de journal (qui, quand)."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="password_reset_links")
+    token_hash = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+    # Administrateur qui l'a envoyé ; vide quand le client l'a demandé lui-même.
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    email_sent = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

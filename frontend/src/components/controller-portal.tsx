@@ -27,6 +27,8 @@ export function ControllerPortal() {
     try {
       const me = await apiFetch<User>("/auth/me/");
       if (!["CONTROLLER", "ADMIN"].includes(me.role)) { setUser(me); setAccessDenied(true); return; }
+      // Mot de passe provisoire : seul l'écran de changement s'affiche (le serveur refuse le reste).
+      if (me.must_change_password) { setUser(me); return; }
       const allTrips = await apiList<Trip>("/trips/?all=true");
       // Les départs d'un itinéraire désactivé ne sont pas proposés.
       setUser(me); // Départs d'aujourd'hui (heure du Bénin) et à venir seulement, du plus proche au plus lointain.

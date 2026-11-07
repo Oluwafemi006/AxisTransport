@@ -8,7 +8,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .models import (
-    AccountChange, Booking, Parcel, Passenger, PasswordResetCode, PaymentAttempt, RentalBooking, Ticket, Transaction, User,
+    AccountChange, Booking, Parcel, Passenger, PasswordResetCode, PasswordResetLink, PaymentAttempt, RentalBooking, Ticket, Transaction, User,
 )
 from .password_reset import close_sessions
 
@@ -78,6 +78,7 @@ def delete_client_account(user, password):
         pickup_recipient_identity="",
     )
     PasswordResetCode.objects.filter(user=user).delete()
+    PasswordResetLink.objects.filter(user=user).delete()
     user.username = f"supprime-{user.pk}-{uuid.uuid4().hex[:8]}"
     user.first_name = user.last_name = user.phone = user.email = ""
     user.set_unusable_password()

@@ -3,6 +3,7 @@ import 'package:axis_transport_flutter/core/models.dart';
 import 'package:axis_transport_flutter/core/session.dart';
 import 'package:axis_transport_flutter/core/session_store.dart';
 import 'package:axis_transport_flutter/core/widgets/axis_bottom_nav.dart';
+import 'package:axis_transport_flutter/features/auth/forced_password_screen.dart';
 import 'package:axis_transport_flutter/router.dart';
 import 'package:axis_transport_flutter/features/sales/sell_ticket_screen.dart';
 import 'package:axis_transport_flutter/features/staff/presentation/controller_scanner_screen.dart';
@@ -40,9 +41,10 @@ class _Store extends SessionStore {
 
 /// Faux serveur : `role` nul = personne n'est connecté ; `/auth/me/` renvoie ce rôle.
 class _Api extends ApiClient {
-  _Api({this.role}) : super(store: _Store());
+  _Api({this.role, this.mustChange = false}) : super(store: _Store());
 
   String? role;
+  bool mustChange;
 
   _Store get memory => store as _Store;
 
@@ -62,6 +64,7 @@ class _Api extends ApiClient {
       lastName: '',
       phone: '',
       role: role!,
+      mustChangePassword: mustChange,
     );
   }
 
@@ -78,8 +81,8 @@ class _Api extends ApiClient {
   Future<Map<String, dynamic>> saleOptions() async => {'trips': <dynamic>[]};
 }
 
-Future<_Api> _open(WidgetTester tester, {String? role}) async {
-  final api = _Api(role: role);
+Future<_Api> _open(WidgetTester tester, {String? role, bool mustChange = false}) async {
+  final api = _Api(role: role, mustChange: mustChange);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [apiClientProvider.overrideWithValue(api)],
@@ -122,6 +125,18 @@ void main() {
       expect(find.text('Colis'), findsNothing);
       expect(find.text('Où souhaitez-vous aller ?'), findsNothing);
       expect(api.memory.owner, 'staff:7');
+    });
+  }
+
+  for (final role in ['CLIENT', 'CONTROLLER']) {
+    testWidgets('mot de passe provisoire ($role) : seul l’écran de changement s’ouvre', (tester) async {
+      await _open(tester, role: role, mustChange: true);
+      expect(find.byType(ForcedPasswordScreen), findsOneWidget);
+      expect(find.byType(AxisBottomNav), findsNothing);
+      expect(find.text('Scanner'), findsNothing);
+      axisRouter.go(role == 'CLIENT' ? '/billets' : '/scanner');
+      await tester.pumpAndSettle();
+      expect(find.byType(ForcedPasswordScreen), findsOneWidget);
     });
   }
 

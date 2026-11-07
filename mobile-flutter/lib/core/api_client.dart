@@ -190,18 +190,6 @@ class ApiClient {
     return res['detail'] as String;
   }
 
-  Future<String> confirmPasswordReset({
-    required String email,
-    required String code,
-    required String password,
-  }) async {
-    final res = await _request<Map<String, dynamic>>(
-      '/auth/password-reset/confirm/',
-      data: {'email': email, 'code': code, 'password': password},
-    );
-    return res['detail'] as String;
-  }
-
   Future<Map<String, dynamic>> checkStaffInvitation(String token) async {
     return _request<Map<String, dynamic>>(
       '/auth/invite/accept/',

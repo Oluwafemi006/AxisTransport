@@ -219,6 +219,8 @@ EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "contact@axistransportlogistique.com")
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", PUBLIC_WEB_URL).rstrip("/")
+# Durée de validité du lien « choisir un nouveau mot de passe » envoyé aux clients (heures).
+AXIS_PASSWORD_LINK_HOURS = int(os.environ.get("AXIS_PASSWORD_LINK_HOURS", "24"))
 
 # Réservations en ligne non payées en cours, par téléphone (sans compte) ou par compte client.
 AXIS_BOOKING_MAX_HELD = int(os.environ.get("AXIS_BOOKING_MAX_HELD", "2"))

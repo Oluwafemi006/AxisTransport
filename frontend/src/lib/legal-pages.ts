@@ -103,11 +103,11 @@ ${contactBlock(contact)}
 <ul>
 <li><strong>FedaPay</strong>, pour le paiement Mobile Money : nous lui transmettons le montant et la référence de la réservation, du billet ou du colis, jamais votre nom ni votre téléphone. Vous saisissez votre numéro de paiement directement sur sa page.</li>
 <li><strong>Cloudinary</strong>, pour conserver les photos des colis et des véhicules.</li>
-<li><strong>Un service d’envoi d’e-mails</strong>, pour les codes « mot de passe oublié ».${toValidate("nom du service")}</li>
+<li><strong>Un service d’envoi d’e-mails</strong>, pour les liens « mot de passe oublié ».${toValidate("nom du service")}</li>
 <li><strong>L’hébergeur du serveur.</strong>${toValidate("nom et pays de l’hébergeur")}</li>
 </ul>
 <h2>Sécurité</h2>
-<p>Les échanges entre l’application, le site et le serveur passent par une connexion chiffrée (HTTPS). Un code « mot de passe oublié » n’est valable que 15 minutes.</p>
+<p>Les échanges entre l’application, le site et le serveur passent par une connexion chiffrée (HTTPS). Un lien « mot de passe oublié » ne sert qu’une fois et expire après une durée limitée (24 heures par défaut).</p>
 <h2>Durée de conservation</h2>
 <ul>
 <li>Sauvegardes de la base de données : 14 jours.</li>

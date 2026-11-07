@@ -10,6 +10,8 @@ export interface User {
   role: Role;
   role_display: string;
   is_active?: boolean;
+  // Mot de passe provisoire saisi par un administrateur : à remplacer avant tout le reste.
+  must_change_password?: boolean;
 }
 
 export interface BoardingPoint {

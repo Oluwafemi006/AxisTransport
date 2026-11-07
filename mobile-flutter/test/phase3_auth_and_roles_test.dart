@@ -80,17 +80,9 @@ class _MockApi extends ApiClient {
   }
 
   @override
-  Future<String> requestPasswordReset(String email) async =>
-      'TEST code envoyé';
-
-  @override
-  Future<String> confirmPasswordReset({
-    required String email,
-    required String code,
-    required String password,
-  }) async {
-    if (code == '000000') throw ApiException('Code incorrect ou expiré.');
-    return 'TEST mot de passe modifié';
+  Future<String> requestPasswordReset(String email) async {
+    if (email == 'erreur.test@exemple.test') throw ApiException('Trop de tentatives, réessayez dans 5 minutes.');
+    return 'TEST lien envoyé.';
   }
 
   @override
@@ -237,7 +229,7 @@ void main() {
       expect(find.byType(AccountScreen), findsOneWidget);
     });
 
-    testWidgets('Mot de passe oublié : code, erreur serveur, puis succès', (tester) async {
+    testWidgets('Mot de passe oublié : e-mail seulement, erreur serveur, puis lien envoyé', (tester) async {
       tester.view.physicalSize = const Size(1080, 3600);
       tester.view.devicePixelRatio = 1.5;
       addTearDown(tester.view.reset);
@@ -256,32 +248,21 @@ void main() {
             matching: find.byType(TextField),
           );
 
-      await tester.tap(find.text('Recevoir un code'));
+      expect(find.text('Code à 6 chiffres'), findsNothing);
+      await tester.tap(find.text('Recevoir un lien'));
       await tester.pumpAndSettle();
       expect(find.text('Veuillez saisir une adresse e-mail valide.'), findsOneWidget);
 
+      await tester.enterText(fieldOf('E-mail'), 'erreur.test@exemple.test');
+      await tester.tap(find.text('Recevoir un lien'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Trop de tentatives'), findsOneWidget);
+
       await tester.enterText(fieldOf('E-mail'), 'client.test@exemple.test');
-      await tester.tap(find.text('Recevoir un code'));
+      await tester.tap(find.text('Recevoir un lien'));
       await tester.pumpAndSettle();
-      expect(find.text('TEST code envoyé'), findsOneWidget);
-
-      await tester.enterText(fieldOf('Code à 6 chiffres'), '000000');
-      await tester.enterText(fieldOf('Nouveau mot de passe'), 'TEST-Mdp-42');
-      await tester.enterText(fieldOf('Confirmer le mot de passe'), 'TEST-autre');
-      await tester.tap(find.text('Changer le mot de passe'));
-      await tester.pumpAndSettle();
-      expect(find.text('Les deux mots de passe ne correspondent pas.'), findsOneWidget);
-
-      await tester.enterText(fieldOf('Confirmer le mot de passe'), 'TEST-Mdp-42');
-      await tester.tap(find.text('Changer le mot de passe'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('Code incorrect ou expiré.'), findsOneWidget);
-
-      await tester.enterText(fieldOf('Code à 6 chiffres'), '123456');
-      await tester.tap(find.text('Changer le mot de passe'));
-      await tester.pumpAndSettle();
-      expect(find.text('TEST mot de passe modifié'), findsOneWidget);
-      expect(find.text('Se connecter'), findsOneWidget);
+      expect(find.textContaining('TEST lien envoyé.'), findsOneWidget);
+      expect(find.text('Retour à la connexion'), findsOneWidget);
     });
 
     testWidgets('Connexion : validation champs obligatoires et gestion erreur API', (tester) async {
