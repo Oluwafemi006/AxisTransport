@@ -87,3 +87,10 @@ test("suppression : sans e-mail saisi, aucune adresse inventée", () => {
   assert.match(html, /adresse de contact de l’agence \(<span class="c">À CONFIRMER<\/span> : adresse non encore saisie\)/);
   assert.match(html, /<strong>Axis Transport<\/strong>/);
 });
+
+test("suppression : cas de refus et limite des notes d'historique annoncés", () => {
+  const html = accountDeletionPage(contact);
+  for (const words of ["billet payé pour un voyage qui n’est pas encore parti", "colis qui n’est pas encore retiré", "location demandée, confirmée ou en cours", "paiement Mobile Money encore en attente", "notes libres"]) {
+    assert.ok(html.includes(words), words);
+  }
+});

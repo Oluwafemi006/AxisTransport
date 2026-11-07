@@ -76,7 +76,11 @@ class _DeleteAccountScreenState extends ConsumerState<DeleteAccountScreen> {
           Text('Ce qui est conservé', style: theme.textTheme.titleMedium),
           list(keptItems),
           const SizedBox(height: 16),
-          const Text('Si vous avez un billet payé pour un voyage qui n’est pas encore parti, la suppression sera possible après ce voyage. Cette action est définitive.'),
+          const Text(
+            'La suppression attend la fin du service si vous avez un billet payé pour un voyage pas encore parti, '
+            'un colis pas encore retiré, une location demandée, confirmée ou en cours, ou un paiement Mobile Money en attente. '
+            'Les notes écrites par le personnel dans l’historique ne sont pas modifiées. Cette action est définitive.',
+          ),
           const SizedBox(height: 20),
           TextField(
             key: const Key('delete-password'),

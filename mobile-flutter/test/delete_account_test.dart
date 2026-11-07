@@ -25,6 +25,10 @@ class _Session extends SessionNotifier {
 }
 
 Future<_Session> _open(WidgetTester tester, {Object? failure}) async {
+  // Écran de téléphone haut : tout le texte et le bouton tiennent sans défilement.
+  tester.view.physicalSize = const Size(1080, 3200);
+  tester.view.devicePixelRatio = 2.0;
+  addTearDown(tester.view.reset);
   final session = _Session()..failure = failure;
   final router = GoRouter(initialLocation: '/supprimer-compte', routes: [
     GoRoute(path: '/', builder: (_, _) => const Text('Accueil TEST')),

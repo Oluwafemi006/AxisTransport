@@ -7,7 +7,9 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import AccountChange, Booking, Parcel, Passenger, PasswordResetCode, Ticket, User
+from .models import (
+    AccountChange, Booking, Parcel, Passenger, PasswordResetCode, PaymentAttempt, RentalBooking, Ticket, Transaction, User,
+)
 from .password_reset import close_sessions
 
 ANONYMOUS_NAME = "Client supprimé"
@@ -23,6 +25,39 @@ def upcoming_paid_tickets(user):
     )
 
 
+# Colis pas encore remis au destinataire (ni retiré, ni annulé).
+OPEN_PARCEL_STATUSES = tuple(set(Parcel.Status.values) - {Parcel.Status.PICKED_UP, Parcel.Status.CANCELLED})
+# Location pas encore terminée ni annulée : demandée, confirmée ou en cours.
+OPEN_RENTAL_STATUSES = (RentalBooking.Status.REQUESTED, RentalBooking.Status.CONFIRMED, RentalBooking.Status.ACTIVE)
+
+
+def pending_mobile_money(user):
+    """Paiement Mobile Money créé chez le prestataire et pas encore réglé : il pourrait encore émettre un billet."""
+    attempts = PaymentAttempt.objects.filter(
+        Q(booking__customer=user) | Q(ticket__customer=user) | Q(ticket__booking__customer=user),
+        outcome=PaymentAttempt.Outcome.PENDING,
+    )
+    transactions = Transaction.objects.filter(
+        Q(ticket__customer=user) | Q(ticket__booking__customer=user) | Q(parcel__customer=user) | Q(rental__customer=user),
+        status=Transaction.Status.PENDING,
+        payment_method__code__iexact="FEDAPAY",
+    )
+    return attempts.exists() or transactions.exists()
+
+
+def blocking_reason(user):
+    """Premier motif qui empêche la suppression, ou None."""
+    if upcoming_paid_tickets(user).exists():
+        return "Vous avez un billet payé pour un voyage qui n’est pas encore parti. Vous pourrez supprimer votre compte après ce voyage."
+    if Parcel.objects.filter(customer=user, status__in=OPEN_PARCEL_STATUSES).exists():
+        return "Vous avez un colis qui n’est pas encore retiré. Vous pourrez supprimer votre compte après son retrait ou son annulation."
+    if RentalBooking.objects.filter(customer=user, status__in=OPEN_RENTAL_STATUSES).exists():
+        return "Vous avez une location demandée, confirmée ou en cours. Vous pourrez supprimer votre compte quand elle sera terminée ou annulée."
+    if pending_mobile_money(user):
+        return "Un paiement Mobile Money est encore en attente sur votre compte. Réessayez quand il sera réglé ou abandonné."
+    return None
+
+
 @transaction.atomic
 def delete_client_account(user, password):
     if user.role != User.Role.CLIENT:
@@ -30,9 +65,9 @@ def delete_client_account(user, password):
     if not user.check_password(str(password or "")):
         raise ValidationError({"password": "Mot de passe incorrect."})
     user = User.objects.select_for_update().get(pk=user.pk)
-    if upcoming_paid_tickets(user).exists():
-        raise ValidationError({"detail": "Vous avez un billet payé pour un voyage qui n’est pas encore parti. "
-                                         "Vous pourrez supprimer votre compte après ce voyage."})
+    reason = blocking_reason(user)
+    if reason:
+        raise ValidationError({"detail": reason})
     bookings = Booking.objects.filter(customer=user)
     tickets = Ticket.objects.filter(Q(customer=user) | Q(booking__customer=user))
     tickets.update(passenger_name=ANONYMOUS_NAME, passenger_phone="")

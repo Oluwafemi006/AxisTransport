@@ -5,7 +5,10 @@ from django.core.cache import cache
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from apps.core.models import AccountChange, Booking, Parcel, Passenger, PasswordResetCode, Ticket, Transaction, User
+from apps.core.models import (
+    AccountChange, Booking, Parcel, Passenger, PasswordResetCode, PaymentAttempt, PaymentMethod, RentalBooking, Ticket,
+    Transaction, User, Vehicle,
+)
 
 from .factories import build_operational_context
 
@@ -60,7 +63,7 @@ class AccountDeletionTests(APITestCase):
         parcel = Parcel.objects.create(
             origin=self.context["origin"], destination=self.context["destination"], customer=self.user,
             sender_name="TEST Expéditeur", sender_phone="0197000097", recipient_name="TEST Destinataire",
-            recipient_phone="0197000096", description="TEST colis",
+            recipient_phone="0197000096", description="TEST colis", status=Parcel.Status.PICKED_UP,
         )
         PasswordResetCode.objects.create(user=self.user, code_hash="TEST", expires_at=timezone.now())
         self.assertEqual(self.delete().status_code, 204)
@@ -90,6 +93,55 @@ class AccountDeletionTests(APITestCase):
         self.assertEqual(self.client.get(ME).status_code, 401)
         self.client.credentials()
         self.assertNotEqual(self.client.post("/api/v1/auth/token/refresh/", {"refresh": tokens["refresh"]}, format="json").status_code, 200)
+
+    def parcel(self, status):
+        return Parcel.objects.create(
+            origin=self.context["origin"], destination=self.context["destination"], customer=self.user,
+            sender_name="TEST", sender_phone="0197000097", recipient_name="TEST", recipient_phone="0197000096",
+            description="TEST colis", status=status,
+        )
+
+    def rental(self, status):
+        car = Vehicle.objects.create(category=Vehicle.Category.RENTAL, name="TEST voiture suppr")
+        start = timezone.now() + timedelta(days=3)
+        return RentalBooking.objects.create(vehicle=car, customer=self.user, starts_at=start, ends_at=start + timedelta(days=1), status=status)
+
+    def assert_refused(self, words):
+        response = self.delete()
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn(words, str(response.data))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_active)
+
+    def test_parcel_not_picked_up_blocks_deletion_in_every_open_status(self):
+        parcel = self.parcel(Parcel.Status.REGISTERED)
+        for status in (s for s in Parcel.Status.values if s not in {"PICKED_UP", "CANCELLED"}):
+            Parcel.objects.filter(pk=parcel.pk).update(status=status)
+            self.assert_refused("colis")
+        for status in ("PICKED_UP", "CANCELLED"):
+            Parcel.objects.filter(pk=parcel.pk).update(status=status)
+            self.assertNotIn("colis", str(self.client.delete(ME, {"password": "TEST-faux"}, format="json").data))
+
+    def test_open_rental_blocks_deletion_finished_one_does_not(self):
+        rental = self.rental(RentalBooking.Status.REQUESTED)
+        for status in ("REQUESTED", "CONFIRMED", "ACTIVE"):
+            RentalBooking.objects.filter(pk=rental.pk).update(status=status)
+            self.assert_refused("location")
+        RentalBooking.objects.filter(pk=rental.pk).update(status=RentalBooking.Status.COMPLETED)
+        self.assertEqual(self.delete().status_code, 204)
+
+    def test_pending_mobile_money_attempt_blocks_deletion(self):
+        ticket = self.ticket(Ticket.Status.HELD, departure_delta=timedelta(days=2))
+        attempt = PaymentAttempt.objects.create(provider="FEDAPAY", external_id="TEST-1", amount=1000, booking=ticket.booking)
+        self.assert_refused("Mobile Money")
+        PaymentAttempt.objects.filter(pk=attempt.pk).update(outcome=PaymentAttempt.Outcome.ABANDONED)
+        self.assertEqual(self.delete().status_code, 204)
+
+    def test_pending_mobile_money_transaction_blocks_deletion(self):
+        method, _ = PaymentMethod.objects.get_or_create(code="FEDAPAY", defaults={"label": "TEST Mobile Money", "active": True})
+        rental = self.rental(RentalBooking.Status.COMPLETED)
+        Transaction.objects.create(payment_method=method, amount=1000, currency="XOF", rental=rental, status=Transaction.Status.PENDING, external_reference="TEST-2")
+        self.assert_refused("Mobile Money")
 
     def test_staff_accounts_are_refused(self):
         for role in (User.Role.COUNTER, User.Role.CONTROLLER, User.Role.ADMIN):

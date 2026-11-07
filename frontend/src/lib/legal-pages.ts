@@ -131,7 +131,14 @@ export function accountDeletionPage(contact: PrivacyContact): string {
 <li><strong>Dans l’application</strong> : ouvrez « Profil », puis « Supprimer mon compte », lisez ce qui est supprimé et conservé, saisissez votre mot de passe et confirmez.</li>
 <li><strong>Si vous ne pouvez plus vous connecter</strong> : écrivez ${email}, depuis l’adresse ou avec le numéro de téléphone de votre compte, en indiquant votre identifiant.</li>
 </ul>
-<p>Si vous avez un billet payé pour un voyage qui n’est pas encore parti, la suppression est possible après ce voyage.</p>
+<h2>Quand la suppression est refusée</h2>
+<p>La suppression attend la fin du service en cours si vous avez :</p>
+<ul>
+<li>un billet payé pour un voyage qui n’est pas encore parti ;</li>
+<li>un colis qui n’est pas encore retiré (ni annulé) ;</li>
+<li>une location demandée, confirmée ou en cours ;</li>
+<li>un paiement Mobile Money encore en attente.</li>
+</ul>
 <h2>Données supprimées</h2>
 <ul>
 <li>Votre prénom, votre nom, votre numéro de téléphone, votre adresse e-mail et votre identifiant.</li>
@@ -145,7 +152,8 @@ export function accountDeletionPage(contact: PrivacyContact): string {
 <li>Les paiements (montant, date, numéro de transaction Mobile Money).</li>
 <li>Les colis et les locations déjà enregistrés, sans nom ni téléphone.</li>
 </ul>
-<p>Ces données ne permettent plus de vous identifier. Elles sont gardées pour la comptabilité de l’agence.</p>
+<p>Ces données ne permettent plus de vous identifier par votre nom ou vos coordonnées. Elles sont gardées pour la comptabilité de l’agence.</p>
+<p>Limite : les notes libres écrites par le personnel dans l’historique d’un billet ou d’un colis ne sont pas modifiées.</p>
 <h2>Durée de conservation</h2>
 <p>Données anonymisées (billets, paiements, colis, locations) : ${TO_CONFIRM}.</p>
 <p>Sauvegardes de la base de données : 14 jours. Les données d’un compte supprimé peuvent y rester jusqu’à cette échéance.</p>
