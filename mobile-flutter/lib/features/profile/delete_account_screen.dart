@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/session.dart';
+import '../../core/widgets/axis_text_field.dart';
 
 /// Ce qui est supprimé et ce qui est conservé : même règle que le serveur (account_deletion.py).
 const deletedItems = [
@@ -82,11 +83,11 @@ class _DeleteAccountScreenState extends ConsumerState<DeleteAccountScreen> {
             'Les notes écrites par le personnel dans l’historique ne sont pas modifiées. Cette action est définitive.',
           ),
           const SizedBox(height: 20),
-          TextField(
+          AxisTextField(
             key: const Key('delete-password'),
+            label: 'Mot de passe actuel',
             controller: _password,
-            obscureText: true,
-            decoration: const InputDecoration(labelText: 'Mot de passe actuel'),
+            isPassword: true,
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/session.dart';
+import '../../core/widgets/axis_text_field.dart';
 
 /// Mot de passe provisoire saisi par un administrateur : il faut en choisir un nouveau avant d'accéder au reste
 /// (le serveur refuse aussi toute autre demande tant que ce n'est pas fait).
@@ -62,11 +63,11 @@ class _ForcedPasswordScreenState extends ConsumerState<ForcedPasswordScreen> {
         children: [
           const Text('Votre mot de passe actuel est provisoire : remplacez-le pour continuer.'),
           const SizedBox(height: 16),
-          TextField(key: const Key('forced-current'), controller: _current, obscureText: true, decoration: const InputDecoration(labelText: 'Mot de passe provisoire')),
+          AxisTextField(key: const Key('forced-current'), label: 'Mot de passe provisoire', controller: _current, isPassword: true),
           const SizedBox(height: 12),
-          TextField(key: const Key('forced-new'), controller: _password, obscureText: true, decoration: const InputDecoration(labelText: 'Nouveau mot de passe')),
+          AxisTextField(key: const Key('forced-new'), label: 'Nouveau mot de passe', controller: _password, isPassword: true),
           const SizedBox(height: 12),
-          TextField(key: const Key('forced-confirm'), controller: _confirm, obscureText: true, decoration: const InputDecoration(labelText: 'Confirmer le mot de passe')),
+          AxisTextField(key: const Key('forced-confirm'), label: 'Confirmer le mot de passe', controller: _confirm, isPassword: true),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(_error!, key: const Key('forced-error'), style: TextStyle(color: theme.colorScheme.error)),
