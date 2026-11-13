@@ -1940,7 +1940,7 @@ class DashboardView(APIView):
     """
     Accueil administrateur. Sans paramètre : la période est aujourd'hui (heure du Bénin).
     Les définitions (billet vendu, scanné, encaissement brut, colis) sont dans `reporting.py`
-    et partagées avec le bilan ; `all_time` donne le cumul depuis le premier jour connu.
+    et partagées avec le bilan (onglet « Bilan global »), qui seul montre le cumul.
     """
 
     permission_classes = [IsAxisAdmin]
@@ -1958,12 +1958,10 @@ class DashboardView(APIView):
             checked=Count("tickets", filter=Q(tickets__status__in=[Ticket.Status.CHECKED, Ticket.Status.COMPLETED]), distinct=True),
         )
         headline = reporting.headline(start, end)
-        since = reporting.all_time_start()
         return Response(
             {
                 "period": {"start": start, "end": end},
                 "today": {"date": today, **reporting.headline(today, today)},
-                "all_time": {"since": since, **reporting.headline(since, today)},
                 "tickets": {
                     "sold": headline["tickets_sold"],
                     "online": tickets.filter(channel=Ticket.Channel.ONLINE).count(),
@@ -2009,7 +2007,14 @@ class DashboardReportView(APIView):
 
     def get(self, request):
         start, end = _report_period(request, default_start=reporting.default_report_start())
-        return Response({**reporting.report(start, end), "default_start": reporting.default_report_start()})
+        return Response(
+            {
+                **reporting.report(start, end),
+                "default_start": reporting.default_report_start(),
+                # Premier jour connu : permet d'afficher le cumul global complet depuis le bilan.
+                "all_time_start": reporting.all_time_start(),
+            }
+        )
 
 
 class KKiaPayWebhookView(APIView):

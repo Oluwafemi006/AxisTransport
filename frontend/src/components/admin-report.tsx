@@ -18,6 +18,7 @@ export type Headline = {
 type Report = {
   period: { start: string; end: string };
   default_start: string;
+  all_time_start: string;
   headline: Headline;
   revenue: { tickets: number; parcels: number; rentals: number; mobile_money: number; cash_or_other: number; total: number };
   rentals: { requested: number; by_status: Array<{ status: string; label: string; count: number }>; planned_amount: number };
@@ -102,7 +103,14 @@ export function ReportPanel() {
           </div>
           <button type="button" className="btn p" disabled={busy} onClick={submit}>{busy ? "Patientez…" : "Afficher"}</button>
         </div>
-        {report && <p className="text-sm" style={{ color: "var(--mute)", marginTop: 10 }}>Début proposé : création du plus ancien compte administrateur ({dayLabel(report.default_start)}).</p>}
+        {report && (
+          <p className="text-sm" style={{ color: "var(--mute)", marginTop: 10 }}>
+            Début proposé : création du plus ancien compte administrateur ({dayLabel(report.default_start)}).{" "}
+            <button type="button" className="underline" disabled={busy} onClick={() => void load({ start: report.all_time_start, end: today })}>
+              Cumul global depuis le premier jour connu ({dayLabel(report.all_time_start)})
+            </button>
+          </p>
+        )}
         {notice && <Notice notice={notice} />}
       </section>
 

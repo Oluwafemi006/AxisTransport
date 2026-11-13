@@ -67,7 +67,10 @@ class DashboardReportTests(APITestCase):
         self.assertEqual(data["today"]["tickets_sold"], 2)
         self.assertEqual(data["today"]["tickets_scanned"], 1)
         self.assertEqual(data["today"]["gross_revenue"], 2000)
-        self.assertEqual(data["all_time"]["tickets_sold"], 2)
+        self.assertNotIn("all_time", data)
+        report = self.report(start=self.today.isoformat())
+        self.assertEqual(report["headline"]["tickets_sold"], 2)
+        self.assertLessEqual(report["all_time_start"], self.today.isoformat())
 
     def test_refunded_and_cancelled_tickets_are_not_sold_but_revenue_stays_gross(self):
         refunded = self.sell(self.seats[0], "vente-test-0001")
