@@ -69,6 +69,7 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+        NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY: ${NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY:-}
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
     ports:

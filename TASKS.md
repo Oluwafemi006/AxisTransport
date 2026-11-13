@@ -5,6 +5,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| PWA par espace (manifestes et portées `/`, `/admin`, `/guichet`, `/controleur`), service worker limité au contrôleur, paiement FedaPay dans la page (Checkout.js, clé publique `NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY`, repli redirection), vérification automatique au retour au premier plan | `cc/pwa-par-role` | Claude Code | à valider par Eddy |
 | Site : émojis remplacés par des icônes SVG inline (`components/icons.tsx`) | `cc/web-icones` | Claude Code | à valider par Eddy |
 | Correctifs d'audit 1 : plus d'adresse ni d'hôte SMTP réels par défaut, répartition des ventes aux mêmes dates que les cartes, bandeau « espèces » dans /admin, nettoyages, DEPLOY.md conforme à la réalité, traduction française de la connexion | `cc/correctifs-audit-1` | Claude Code | à valider par Eddy |
 | Accueil admin sans « Cumul global » : bloc « Aujourd'hui » seul, bouton vers le bilan, cumul complet accessible depuis « Bilan global » | `cc/accueil-sans-cumul` | Claude Code | à valider par Eddy |

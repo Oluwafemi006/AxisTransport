@@ -7,6 +7,9 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# Clé publique FedaPay (paiement dans la page). Vide : paiement par redirection.
+ARG NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY=
+ENV NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY=$NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
