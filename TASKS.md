@@ -5,6 +5,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Correctifs d'audit 1 : plus d'adresse ni d'hôte SMTP réels par défaut, répartition des ventes aux mêmes dates que les cartes, bandeau « espèces » dans /admin, nettoyages, DEPLOY.md conforme à la réalité, traduction française de la connexion | `cc/correctifs-audit-1` | Claude Code | à valider par Eddy |
 | Accueil admin sans « Cumul global » : bloc « Aujourd'hui » seul, bouton vers le bilan, cumul complet accessible depuis « Bilan global » | `cc/accueil-sans-cumul` | Claude Code | à valider par Eddy |
 | Tableau de bord admin : cartes « Aujourd'hui » et « Cumul global » (définitions partagées dans `reporting.py`), onglet « Bilan global » par période (jours, trajets, agents, canaux) | `cc/tableau-bord-journalier` | Claude Code | à valider par Eddy |
 | Mot de passe : lien de réinitialisation client, mot de passe provisoire du personnel, invitation sans reprise de client, app 1.0.8+10 | `cc/mot-de-passe` | Claude Code | à valider par Eddy |

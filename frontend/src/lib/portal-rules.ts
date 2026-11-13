@@ -25,6 +25,11 @@ export function holdMinutesConfigured(settings: Array<{ key: string; value: unkn
   return Number.isInteger(minutes) && minutes > 0;
 }
 
+// Moyen de paiement encaissé au guichet (espèces…) : actif et non « en ligne ». Sans lui, le guichet ne peut pas encaisser.
+export function offlinePaymentConfigured(methods: Array<{ code: string; active: boolean; online?: boolean }>): boolean {
+  return methods.some((method) => method.active && method.online !== true && !["FEDAPAY", "KKIAPAY"].includes(method.code.toUpperCase()));
+}
+
 // Libellé d'un départ dans la vente au guichet : parcours, date et heure, prix (ou son absence).
 export function counterTripLabel(routeLabel: string, departure: string, price: string | null): string {
   return `${routeLabel} · ${departure} · ${price ?? "sans prix (non vendable)"}`;

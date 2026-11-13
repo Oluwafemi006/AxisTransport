@@ -12,7 +12,7 @@ import type { Headline } from "./admin-report";
 const emptyHeadline: Headline = { tickets_sold: 0, tickets_scanned: 0, tickets_refunded: 0, gross_revenue: 0, parcels: { tracked: 0, cancelled: 0, picked_up: 0 } };
 import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import { actionErrorText, beninDateKey, holdMinutesConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref, type SegmentDirection, type SegmentOffer } from "@/lib/portal-rules";
+import { actionErrorText, beninDateKey, holdMinutesConfigured, offlinePaymentConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref, type SegmentDirection, type SegmentOffer } from "@/lib/portal-rules";
 
 import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, LineState, LineStopRow, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, RentalBooking, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
@@ -106,12 +106,13 @@ export function AdminPortal() {
       />
       {error && <Notice notice={{ text: error, tone: "error" }} className="mb-5" />}
       {dashboard && !holdMinutesConfigured(settings) && <Notice notice={{ text: "Aucune réservation possible : la durée de blocage d’un siège n’est pas saisie. Renseignez-la dans l’onglet « Tarifs & règles », bloc « Blocage d’un siège ».", tone: "error" }} className="mb-5" />}
+      {dashboard && !offlinePaymentConfigured(payments) && <Notice notice={{ text: "Aucune vente en espèces possible au guichet : aucun moyen de paiement hors ligne n’est actif. Ajoutez-le dans l’onglet « Tarifs & règles », bloc « Moyens de paiement ».", tone: "error" }} className="mb-5" />}
       {!dashboard ? <Loading /> : (
         <>
           {tab === "dashboard" && <><BusPositions /><DashboardPanel data={dashboard} trips={trips} onReport={() => setTab("bilan")} /></>}
           {tab === "bilan" && <ReportPanel />}
           {tab === "planning" && <PlanningPanel routes={routes} vehicles={vehicles.filter((v) => v.category === "BUS")} trips={trips} weeklySchedules={weeklySchedules} onChanged={load} />}
-          {tab === "guichet" && <><CounterPanel trips={trips} payments={payments} onChanged={load} /><SoldToday /></>}
+          {tab === "guichet" && <><CounterPanel onChanged={load} /><SoldToday /></>}
           {tab === "billets" && <TicketsPanel settings={settings} onChanged={load} />}
           {tab === "points" && <BoardingPointsPanel locations={locations} onChanged={load} />}
           {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
@@ -744,7 +745,7 @@ function newSaleKey() {
     : `${Date.now()}${Math.random().toString(36).slice(2)}`.slice(0, 40);
 }
 
-export function CounterPanel({ onChanged }: { trips?: Trip[]; payments?: PaymentMethod[]; onChanged: () => Promise<void> }) {
+export function CounterPanel({ onChanged }: { onChanged: () => Promise<void> }) {
   const feedback = useActionFeedback();
   const [saleTrips, setSaleTrips] = useState<SaleTrip[] | null>(null);
   const [routeLabel, setRouteLabel] = useState("");
@@ -1495,7 +1496,7 @@ function VehicleEditor({ vehicle, locations, onChanged }: { vehicle: Vehicle; lo
         <>
           <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
             <div><dt className="field-label">Immatriculation</dt><dd>{vehicle.registration_number || "À renseigner"}</dd></div>
-            <div><dt className="field-label">Capacité</dt><dd>{vehicle.capacity ?? "À confirmer"}</dd></div>
+            <div><dt className="field-label">Capacité</dt><dd>{vehicle.capacity ?? "À renseigner"}</dd></div>
             <div><dt className="field-label">Base</dt><dd>{vehicle.base_location_detail?.name || "À renseigner"}</dd></div>
             <div><dt className="field-label">Tarif location</dt><dd>{vehicle.category === "RENTAL" ? (vehicle.driver_required ? "Avec chauffeur uniquement" : vehicle.rental_daily_rate ? money(vehicle.rental_daily_rate) : "À renseigner") : "—"}</dd></div>
             {vehicle.category === "RENTAL" && <div><dt className="field-label">Avec chauffeur</dt><dd>{vehicle.rental_daily_rate_with_driver ? money(vehicle.rental_daily_rate_with_driver) : "Non proposé"}</dd></div>}

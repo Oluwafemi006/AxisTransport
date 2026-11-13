@@ -27,6 +27,9 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
+    # L'application SimpleJWT elle-même (sans modèle) : sans elle, son catalogue de traductions
+    # (locale/fr) n'est pas chargé et « No active account found… » sort en anglais.
+    "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
     "apps.core",
 ]
@@ -209,14 +212,15 @@ CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
 CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
 CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")
 
-# --- Messagerie SMTP (Gmail) ---
+# --- Messagerie SMTP ---
+# Aucun hôte ni expéditeur par défaut : tout vient des variables (DEPLOY.md, vps.env.example).
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
-EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() == "true"
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "contact@axistransportlogistique.com")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", PUBLIC_WEB_URL).rstrip("/")
 # Durée de validité du lien « choisir un nouveau mot de passe » envoyé aux clients (heures).
