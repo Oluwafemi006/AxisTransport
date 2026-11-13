@@ -295,6 +295,53 @@ void main() {
     );
 
     testWidgets(
+      'Scanner : session perdue (401) ou compte non habilité (403) : jamais « Billet refusé », bouton de reconnexion',
+      (tester) async {
+        tester.view.physicalSize = const Size(1080, 2400);
+        tester.view.devicePixelRatio = 2.0;
+        addTearDown(tester.view.reset);
+
+        final api = _Phase6Api();
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [apiClientProvider.overrideWithValue(api)],
+            child: MaterialApp(
+              theme: AxisTheme.light(),
+              home: const ControllerScannerScreen(enableCamera: false),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Message exact du serveur quand le jeton n'est plus valable.
+        api.scanError = ApiException(
+          'Informations d\'authentification non fournies.',
+          statusCode: 401,
+        );
+        await tester.tap(find.text('Saisir le code à la main'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'AX-2026-0401');
+        await tester.tap(find.text('Valider'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Billet refusé'), findsNothing);
+        expect(find.textContaining('non fournies'), findsNothing);
+        expect(find.textContaining('Session expirée'), findsOneWidget);
+        expect(find.byKey(const Key('scan-reconnect')), findsOneWidget);
+
+        api.scanError = ApiException('Accès interdit.', statusCode: 403);
+        await tester.tap(find.text('Saisir le code à la main'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'AX-2026-0403');
+        await tester.tap(find.text('Valider'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Billet refusé'), findsNothing);
+        expect(find.textContaining('pas autorisé à contrôler'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'Vendre un billet (Vente.html) : SegmentedToggle Espèces / Mobile Money et libellé du bouton',
       (tester) async {
         tester.view.physicalSize = const Size(1080, 2400);
