@@ -12,7 +12,7 @@ SEATS_MESSAGE = "Trop de places sont déjà retenues avec ce numéro. Finalisez 
 
 
 def normalize_phone(value):
-    """Chiffres seuls, sans indicatif du Bénin : « +229 01 63 99 97 55 » et « 0163999755 » sont le même numéro."""
+    """Chiffres seuls, sans indicatif du Bénin : « +229 01 00 00 00 09 » et « 0100000009 » sont le même numéro."""
     digits = "".join(character for character in str(value or "") if character.isdigit())
     if digits.startswith("00229"):
         digits = digits[5:]
