@@ -273,8 +273,11 @@ export function ClientPortal() {
                   <p>Réservez votre place en ligne, payez par Mobile Money et voyagez avec un billet électronique.</p>
                   {banner?.banner_text ? (
                     <div className="axe" style={{ padding: '12px 20px', fontSize: '15px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '10px', lineHeight: 1.4 }}>
-                      <BusIcon size={24} style={{ flex: 'none' }} />
-                      <span>{banner.banner_text}</span>
+                      {/* Icône dans la même bulle que le texte : sinon, sur téléphone, le texte long passe sous l'icône. */}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+                        <BusIcon size={22} style={{ flex: 'none' }} />
+                        <span style={{ background: 'none', border: 'none', padding: 0 }}>{banner.banner_text}</span>
+                      </span>
                     </div>
                   ) : null}
                 </div>
