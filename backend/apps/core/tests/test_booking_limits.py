@@ -37,7 +37,7 @@ class Base(APITestCase):
         SystemSetting.objects.create(key="ticket_hold_minutes", value=10)
         PaymentMethod.objects.create(code="FEDAPAY", label="Mobile Money", active=True)
 
-    def book(self, phone="0163999755", passengers=1, **extra):
+    def book(self, phone="0100000009", passengers=1, **extra):
         return self.client.post(
             BOOKINGS,
             {"trip": self.trip.pk, "contact_phone": phone,
@@ -50,8 +50,8 @@ class Base(APITestCase):
 class HeldLimitTests(Base):
     def test_third_unpaid_booking_with_the_same_phone_is_refused(self):
         self.assertEqual(self.book().status_code, 201)
-        self.assertEqual(self.book("+229 01 63 99 97 55").status_code, 201)
-        third = self.book("22901 63 99 97 55")
+        self.assertEqual(self.book("+229 01 00 00 00 09").status_code, 201)
+        third = self.book("22901 00 00 00 09")
         self.assertEqual(third.status_code, 400)
         self.assertIn("déjà une réservation en attente", str(third.data))
 
@@ -69,7 +69,7 @@ class HeldLimitTests(Base):
         self.assertIn("Trop de places", str(response.data))
 
     def test_two_phones_behind_one_address_each_have_their_own_limit(self):
-        for phone in ("0163999755", "0197000000"):
+        for phone in ("0100000009", "0197000000"):
             self.assertEqual(self.book(phone, REMOTE_ADDR="10.0.0.9").status_code, 201)
             self.assertEqual(self.book(phone, REMOTE_ADDR="10.0.0.9").status_code, 201)
 
@@ -83,8 +83,8 @@ class HeldLimitTests(Base):
         counter = User.objects.create_user(username="test_guichet_lim", password="s", role=User.Role.COUNTER)
         self.client.force_authenticate(counter)
         for _ in range(3):
-            response = self.client.post("/api/v1/bookings/", {"trip": self.trip.pk, "contact_phone": "0163999755",
-                                        "passengers": [{"full_name": "TEST G", "phone": "0163999755"}]}, format="json")
+            response = self.client.post("/api/v1/bookings/", {"trip": self.trip.pk, "contact_phone": "0100000009",
+                                        "passengers": [{"full_name": "TEST G", "phone": "0100000009"}]}, format="json")
             self.assertEqual(response.status_code, 201, response.data)
 
 
@@ -100,10 +100,10 @@ class RateTests(Base):
     def test_creations_per_phone_are_limited(self):
         with rates(booking_address="100/hour", booking_phone="1/hour"):
             self.book()
-            self.assertEqual(self.book("+229 0163999755").status_code, 429)
+            self.assertEqual(self.book("+229 0100000009").status_code, 429)
 
     def test_normalize_phone(self):
-        self.assertEqual({normalize_phone(v) for v in ("0163999755", "+229 01 63 99 97 55", "00229 01 63 99 97 55", "22901 63 99 97 55")}, {"0163999755"})
+        self.assertEqual({normalize_phone(v) for v in ("0100000009", "+229 01 00 00 00 09", "00229 01 00 00 00 09", "22901 00 00 00 09")}, {"0100000009"})
 
 
 class LookupTests(Base):
@@ -116,17 +116,17 @@ class LookupTests(Base):
         return self.client.post(LOOKUP, {"reference": reference, "phone": phone}, format="json", **extra)
 
     def test_good_reference_and_phone_return_only_the_reference(self):
-        response = self.look(self.ticket.reference.lower(), "+229 01 63 99 97 55")
+        response = self.look(self.ticket.reference.lower(), "+229 01 00 00 00 09")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"reference": self.ticket.reference})
 
     def test_same_refusal_for_wrong_phone_or_unknown_reference(self):
         wrong = self.look(self.ticket.reference, "0100000000")
-        unknown = self.look("AX-00000000-DEADBEEF", "0163999755")
+        unknown = self.look("AX-00000000-DEADBEEF", "0100000009")
         self.assertEqual((wrong.status_code, wrong.json()), (unknown.status_code, unknown.json()))
         self.assertEqual(wrong.status_code, 404)
 
     def test_attempts_are_limited_per_reference(self):
         for index in range(5):
             self.look(self.ticket.reference, f"010000000{index}", REMOTE_ADDR=f"10.2.2.{index}")
-        self.assertEqual(self.look(self.ticket.reference, "0163999755", REMOTE_ADDR="10.2.2.9").status_code, 429)
+        self.assertEqual(self.look(self.ticket.reference, "0100000009", REMOTE_ADDR="10.2.2.9").status_code, 429)
