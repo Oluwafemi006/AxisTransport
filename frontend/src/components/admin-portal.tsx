@@ -19,7 +19,6 @@ import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRu
 type AdminTab = "dashboard" | "bilan" | "planning" | "guichet" | "billets" | "points" | "colis" | "locations" | "flotte" | "tarifs" | "villes" | "troncons" | "agence" | "paiements" | "equipe";
 type Dashboard = {
   today: Headline & { date: string };
-  all_time: Headline & { since: string };
   tickets: { sold: number; online: number; counter: number; checked: number; refunded: number; cancelled_or_refunded: number };
   revenue: { total: number; by_payment_method: Array<{ payment_method__label: string; total: number }> };
   parcels: Array<{ status: string; count: number }>;
@@ -71,7 +70,7 @@ export function AdminPortal() {
       const failed: string[] = [];
       const safe = <T,>(label: string, fallback: T, request: Promise<T>) => request.catch(() => { failed.push(label); return fallback; });
       const [dash, allLocations, allRoutes, allTrips, allVehicles, allFares, allFlags, team, allParcels, methods, allSettings, allIncidents, allWeekly] = await Promise.all([
-        safe<Dashboard>("tableau de bord", { today: { ...emptyHeadline, date: beninDateKey() }, all_time: { ...emptyHeadline, since: beninDateKey() }, tickets: { sold: 0, checked: 0, online: 0, counter: 0, refunded: 0, cancelled_or_refunded: 0 }, parcels: [], revenue: { total: 0, by_payment_method: [] }, trips: [] }, apiFetch<Dashboard>("/dashboard/")),
+        safe<Dashboard>("tableau de bord", { today: { ...emptyHeadline, date: beninDateKey() }, tickets: { sold: 0, checked: 0, online: 0, counter: 0, refunded: 0, cancelled_or_refunded: 0 }, parcels: [], revenue: { total: 0, by_payment_method: [] }, trips: [] }, apiFetch<Dashboard>("/dashboard/")),
         safe<Location[]>("villes", [], apiList<Location>("/locations/?all=true")), safe<Route[]>("parcours", [], apiList<Route>("/routes/?all=true")),
         safe<Trip[]>("départs", [], apiList<Trip>("/trips/?all=true")), safe<Vehicle[]>("flotte", [], apiList<Vehicle>("/vehicles/")), safe<FareRule[]>("règles tarifaires", [], apiList<FareRule>("/fare-rules/?all=true")),
         safe<FeatureFlag[]>("fonctions", [], apiList<FeatureFlag>("/feature-flags/")), safe<User[]>("équipe", [], apiList<User>("/users/")), safe<Parcel[]>("colis", [], apiList<Parcel>("/parcels/")),
@@ -109,7 +108,7 @@ export function AdminPortal() {
       {dashboard && !holdMinutesConfigured(settings) && <Notice notice={{ text: "Aucune réservation possible : la durée de blocage d’un siège n’est pas saisie. Renseignez-la dans l’onglet « Tarifs & règles », bloc « Blocage d’un siège ».", tone: "error" }} className="mb-5" />}
       {!dashboard ? <Loading /> : (
         <>
-          {tab === "dashboard" && <><BusPositions /><DashboardPanel data={dashboard} trips={trips} /></>}
+          {tab === "dashboard" && <><BusPositions /><DashboardPanel data={dashboard} trips={trips} onReport={() => setTab("bilan")} /></>}
           {tab === "bilan" && <ReportPanel />}
           {tab === "planning" && <PlanningPanel routes={routes} vehicles={vehicles.filter((v) => v.category === "BUS")} trips={trips} weeklySchedules={weeklySchedules} onChanged={load} />}
           {tab === "guichet" && <><CounterPanel trips={trips} payments={payments} onChanged={load} /><SoldToday /></>}
@@ -151,7 +150,7 @@ function BusPositions() {
   );
 }
 
-function DashboardPanel({ data, trips }: { data: Dashboard | null; trips: Trip[] }) {
+function DashboardPanel({ data, trips, onReport }: { data: Dashboard | null; trips: Trip[]; onReport: () => void }) {
   if (!data) return null;
   // Les départs d'un itinéraire désactivé ne sont pas listés ici ; ils restent visibles dans « Trajets & planning ».
   const now = Date.now();
@@ -162,10 +161,7 @@ function DashboardPanel({ data, trips }: { data: Dashboard | null; trips: Trip[]
     <>
       <SectionHeading eyebrow="Heure du Bénin, de minuit à minuit" title={`Aujourd'hui (${new Date(`${data.today.date}T00:00:00`).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })})`} />
       <HeadlineCards data={data.today} />
-      <div className="mt-5">
-        <SectionHeading eyebrow={`Depuis le ${new Date(`${data.all_time.since}T00:00:00`).toLocaleDateString("fr-FR")}`} title="Cumul global" />
-        <HeadlineCards data={data.all_time} />
-      </div>
+      <p className="mt-4"><button type="button" className="secondary-button" onClick={onReport}>Voir le bilan global</button></p>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.6fr]">
         <section className="card">
           <SectionHeading eyebrow="Du plus proche au plus lointain" title="Prochains départs" />
