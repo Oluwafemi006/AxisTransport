@@ -12,6 +12,7 @@ import { ForcedPasswordChange } from "./forced-password-change";
 import { BusSeatMap } from "./bus-seat-map";
 import { PassengerForm, type PassengerItem } from "./passenger-form";
 import { clearGuestBooking, loadGuestBooking, rememberGuestPayment, saveGuestBooking } from "@/lib/guest-booking";
+import { FEDAPAY_PUBLIC_KEY, PAYMENT_DISMISSED_MESSAGE, PAYMENT_EMBEDDED_UNAVAILABLE_MESSAGE, embeddedPaymentAvailable, openEmbeddedPayment, shouldAutoVerify, unregisterLegacyServiceWorkers } from "@/lib/pwa";
 
 type ClientTab = "accueil" | "billets" | "colis" | "location" | "profil";
 
@@ -88,7 +89,7 @@ export function ClientPortal() {
     }
   }, [loadPrivate]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); void unregisterLegacyServiceWorkers(); }, [load]);
 
   function logout() {
     clearTokens();
@@ -710,6 +711,8 @@ function Tickets({
   const [busy, setBusy] = useState(false);
   // Verrou immédiat contre le double clic : l'état « busy » n'est visible qu'au rendu suivant.
   const locked = useRef(false);
+  // Dernière vérification automatique du paiement (retour au premier plan) ; voir shouldAutoVerify.
+  const lastAutoVerify = useRef<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [message, setMessage] = useState("");
   const selectedTrip = segmentTrips.find((trip) => String(trip.id) === tripId) || trips.find((trip) => String(trip.id) === tripId);
@@ -793,13 +796,34 @@ function Tickets({
         setPendingTickets(found.tickets);
         setBookingQuotes(found.payment_quotes);
         const quote = found.payment_quotes.find((item) => item.payment_method === stored.paymentMethod);
-        if (first.status === "HELD" && quote && stored.transactionId) setCheckout({ ...quote, transaction_id: stored.transactionId, payment_url: stored.paymentUrl ?? null, simulated: false });
+        const restored = first.status === "HELD" && quote && stored.transactionId
+          ? { ...quote, transaction_id: stored.transactionId, payment_url: stored.paymentUrl ?? null, simulated: false }
+          : null;
+        if (restored) setCheckout(restored);
         setMessage(first.status === "ISSUED" ? "Vos billets sont prêts." : "Réservation retrouvée. Finalisez le paiement avant l’expiration.");
+        // Paiement déjà lancé (retour de la page de paiement) : le serveur le vérifie tout de suite.
+        if (restored) { lastAutoVerify.current = Date.now(); void confirmPayment(restored, { id: stored.id, token: stored.token }); }
       })
       .catch((reason) => { if ((reason as { status?: number }).status === 403 || (reason as { status?: number }).status === 404) clearGuestBooking(); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Retour au premier plan avec un paiement en cours : le serveur vérifie le paiement, sans clic.
+  // Pas pendant une action en cours (dialogue de paiement ouvert), ni plus d'une fois toutes les 5 s.
+  useEffect(() => {
+    if (!held || !checkout || !booking || paymentFailed) return;
+    const check = () => {
+      if (document.visibilityState !== "visible" || locked.current) return;
+      if (!shouldAutoVerify(lastAutoVerify.current, Date.now())) return;
+      lastAutoVerify.current = Date.now();
+      void confirmPayment(checkout, booking);
+    };
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+    return () => { document.removeEventListener("visibilitychange", check); window.removeEventListener("focus", check); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [held, checkout, booking, paymentFailed]);
 
   // Revenu par le bouton « retour » du navigateur depuis la page de paiement : la page peut être restaurée telle quelle.
   useEffect(() => {
@@ -1005,19 +1029,42 @@ function Tickets({
     return current;
   }
 
-  // Le serveur crée la transaction et fixe le montant ; le site redirige ensuite vers la page de paiement.
+  // Paiement dans la page (PWA comprise) sur la transaction créée par le serveur ; rien n'est émis ici.
+  // Renvoie true si la page de paiement a été ouverte par redirection (la page courante est quittée).
+  async function startPayment(created: Checkout, current: { id: number; token: string | null }) {
+    if (embeddedPaymentAvailable(FEDAPAY_PUBLIC_KEY, created)) {
+      setMessage("Ouverture du paiement Mobile Money…");
+      const outcome = await openEmbeddedPayment(FEDAPAY_PUBLIC_KEY, created.transaction_id);
+      if (outcome === "completed") { await confirmPayment(created, current); return false; }
+      if (outcome === "dismissed") { lastAutoVerify.current = Date.now(); setMessage(PAYMENT_DISMISSED_MESSAGE); return false; }
+      // Script indisponible : repli par redirection, comme sans clé publique.
+    }
+    if (created.payment_url) {
+      setMessage(PAYMENT_EMBEDDED_UNAVAILABLE_MESSAGE);
+      window.location.assign(created.payment_url);
+      return true;
+    }
+    await confirmPayment(created, current);
+    return false;
+  }
+
+  // Reprise du paiement en cours (même transaction) : dans la page si possible, sinon la page de paiement.
+  async function resumePayment() {
+    if (locked.current || !booking || !checkout) return;
+    locked.current = true;
+    setBusy(true); setMessage("");
+    const redirecting = await startPayment(checkout, booking);
+    if (!redirecting) { locked.current = false; setBusy(false); }
+  }
+
+  // Le serveur crée la transaction et fixe le montant ; le site ouvre ensuite le paiement.
   async function openPayment(current: { id: number; token: string | null }, methodId: number) {
     setPaymentFailed(false);
     try {
       const created = await apiFetch<Checkout>(`/client/bookings/${current.id}/checkout/`, { method: "POST", headers: access(current), body: JSON.stringify({ payment_method: methodId }) }, !current.token);
       setCheckout(created);
       rememberGuestPayment(created.payment_method, created.transaction_id, created.payment_url);
-      if (created.payment_url) {
-        setMessage("Redirection vers la page de paiement…");
-        window.location.assign(created.payment_url);
-        return true;
-      }
-      await confirmPayment(created, current);
+      return await startPayment(created, current);
     } catch (reason) {
       // La réservation existe toujours : le client réessaie le paiement sur la même réservation.
       setPaymentFailed(true);
@@ -1362,7 +1409,9 @@ function Tickets({
                 )}
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   {checkout?.payment_url && !paymentFailed && (
-                    <a className="btn p" href={checkout.payment_url}>Reprendre le paiement</a>
+                    embeddedPaymentAvailable(FEDAPAY_PUBLIC_KEY, checkout)
+                      ? <button type="button" className="btn p" disabled={busy} onClick={() => void resumePayment()}>{busy ? "Patientez…" : "Reprendre le paiement"}</button>
+                      : <a className="btn p" href={checkout.payment_url}>Reprendre le paiement</a>
                   )}
                   {(!checkout?.payment_url || paymentFailed) && payableQuotes.length === 1 && (
                     <button type="button" className="btn p" disabled={busy} onClick={() => void payHeld(payableQuotes[0].payment_method)}>

@@ -65,6 +65,7 @@ export default function PaymentReturnPage() {
             <a href={`/t/${ticket.reference}`} onClick={clearGuestBooking} className="primary-button mt-5 w-full">
               Voir et télécharger mon billet
             </a>
+            <a href="/" className="secondary-button mt-3 w-full">Revenir dans l’espace client</a>
             <p className="mt-3 text-xs text-slate-500">
               {guest ? "Sans compte, ce billet n’est pas conservé sur le site : téléchargez-le maintenant." : "Ce billet est aussi disponible dans votre compte, onglet Billets."}
             </p>
@@ -79,7 +80,8 @@ export default function PaymentReturnPage() {
               {recovery === "waiting" ? "Le paiement n’est pas encore confirmé. Aucun billet n’est émis tant que le paiement n’est pas confirmé." : detail || "La vérification n’a pas abouti."}
             </p>
             <button onClick={retry} className="primary-button mt-5 w-full">Vérifier à nouveau</button>
-            <a href="/" className="secondary-button mt-3 w-full">Revenir à ma réservation</a>
+            <a href="/" className="secondary-button mt-3 w-full">Revenir dans l’espace client</a>
+            <p className="mt-2 text-xs text-slate-500">L’espace client vérifie le paiement automatiquement à votre retour.</p>
           </div>
         )}
 
@@ -96,7 +98,8 @@ export default function PaymentReturnPage() {
             <p className="mt-2 text-xs text-slate-500">L’application vérifie le paiement automatiquement à votre retour.</p>
             <div className="mt-6 border-t border-slate-200 pt-5 text-sm text-slate-600">
               <p className="font-semibold text-slate-800">Vous avez réservé sur le site ?</p>
-              <p className="mt-1">Revenez sur l’onglet Axis Transport resté ouvert et cliquez sur « J’ai payé · vérifier ».</p>
+              <p className="mt-1">Revenez dans l’espace client : le paiement y est vérifié automatiquement.</p>
+              <a href="/" className="secondary-button mt-3 w-full">Revenir dans l’espace client</a>
             </div>
           </>
         )}
