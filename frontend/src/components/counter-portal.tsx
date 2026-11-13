@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { CounterPanel } from "./admin-portal";
 import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
+import { SessionExpiredDialog } from "./session-expired";
+import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
+import { useSessionGuard } from "@/lib/use-session";
 import { AccessDenied, Loading, Notice, SectionHeading, StaffLogin, StaffShell, StaffTitle } from "./ui";
 import type { NoticeState } from "./ui";
 import { apiFetch, apiList, clearTokens, getAccessToken, money } from "@/lib/api";
@@ -16,6 +19,9 @@ export function CounterPortal() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
+  // Session terminée (renouvellement refusé, inactivité) : reconnexion par-dessus le portail, saisies conservées.
+  const [expired, setExpired] = useState(false);
+  useSessionGuard(() => setExpired(true));
 
   const load = useCallback(async () => {
     if (!getAccessToken()) { setLoading(false); return; }
@@ -29,7 +35,7 @@ export function CounterPortal() {
       setUser(me);
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Chargement impossible.");
-      if ((reason as { status?: number }).status === 401) { clearTokens(); setUser(null); }
+      if ((reason as { status?: number }).status === 401) { clearTokens(); setExpired(true); }
     } finally {
       setLoading(false);
     }
@@ -38,16 +44,19 @@ export function CounterPortal() {
   useEffect(() => { void load(); void unregisterLegacyServiceWorkers(); }, [load]);
 
   if (accessDenied) return <AccessDenied area="l’équipe du guichet" />;
-  if (!getAccessToken() || (!loading && !user)) {
+  // Aucun compte chargé : page de connexion. Un compte déjà chargé dont la session expire garde l'écran (boîte ci-dessous).
+  if (!user && (!getAccessToken() || !loading)) {
     return (
-      <StaffLogin error={message}>
-        <LoginCard title="Interface guichet" onSuccess={() => void load()} />
+      <StaffLogin error={expired ? SESSION_EXPIRED_MESSAGE : message}>
+        <LoginCard title="Interface guichet" onSuccess={() => { setExpired(false); void load(); }} />
       </StaffLogin>
     );
   }
 
   // Le panneau reste affiché pendant une actualisation : le démonter ferait perdre la vente en cours.
   return (
+    <>
+    {expired && <SessionExpiredDialog title="Interface guichet" onSuccess={() => { setExpired(false); void load(); }} />}
     <StaffShell user={user}>
       <StaffTitle eyebrow="Guichet" title="Vente de billets" />
       {message && <Notice notice={{ text: message, tone: "error" }} className="mb-5" />}
@@ -55,6 +64,7 @@ export function CounterPortal() {
       {user && <SoldToday />}
       {user && <ParcelPrices />}
     </StaffShell>
+    </>
   );
 }
 

@@ -6,6 +6,9 @@ import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHea
 import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
 import { CloseIcon } from "./icons";
+import { SessionExpiredDialog } from "./session-expired";
+import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
+import { useSessionGuard } from "@/lib/use-session";
 import { HeadlineCards, ReportPanel } from "./admin-report";
 import type { Headline } from "./admin-report";
 
@@ -61,6 +64,9 @@ export function AdminPortal() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
+  // Session terminée (renouvellement refusé, inactivité) : reconnexion par-dessus le portail, saisies conservées.
+  const [expired, setExpired] = useState(false);
+  useSessionGuard(() => setExpired(true));
 
   const load = useCallback(async () => {
     if (!getAccessToken()) { setLoading(false); return; }
@@ -83,23 +89,26 @@ export function AdminPortal() {
       setMe(currentUser); setDashboard(dash); setLocations(allLocations); setRoutes(allRoutes); setTrips(allTrips); setVehicles(allVehicles);
       setFares(allFares); setFlags(allFlags); setUsers(team); setParcels(allParcels); setPayments(methods); setSettings(allSettings); setIncidents(allIncidents);
       setWeeklySchedules(allWeekly);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Chargement impossible."); if ((reason as { status?: number }).status === 401) { clearTokens(); setMe(null); } }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Chargement impossible."); if ((reason as { status?: number }).status === 401) { clearTokens(); setExpired(true); } }
     finally { setLoading(false); }
   }, []);
 
   useEffect(() => { void load(); void unregisterLegacyServiceWorkers(); }, [load]);
 
   if (accessDenied) return <AccessDenied area="l’administration" />;
-  if (!getAccessToken() || (!loading && !me)) {
+  // Aucun compte chargé : page de connexion. Un compte déjà chargé dont la session expire garde l'écran (boîte ci-dessous).
+  if (!me && (!getAccessToken() || !loading)) {
     return (
-      <StaffLogin error={error}>
-        <LoginCard title="Administration Axis" onSuccess={() => void load()} />
+      <StaffLogin error={expired ? SESSION_EXPIRED_MESSAGE : error}>
+        <LoginCard title="Administration Axis" onSuccess={() => { setExpired(false); void load(); }} />
       </StaffLogin>
     );
   }
 
   // Les panneaux restent affichés pendant une actualisation : les démonter ferait perdre les saisies en cours.
   return (
+    <>
+    {expired && <SessionExpiredDialog title="Administration Axis" onSuccess={() => { setExpired(false); void load(); }} />}
     <StaffShell user={me} tabs={tabs} current={tab} onTab={setTab}>
       <StaffTitle
         eyebrow="Back-office"
@@ -129,6 +138,7 @@ export function AdminPortal() {
         </>
       )}
     </StaffShell>
+    </>
   );
 }
 

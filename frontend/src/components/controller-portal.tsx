@@ -3,6 +3,9 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
+import { SessionExpiredDialog } from "./session-expired";
+import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
+import { useSessionGuard } from "@/lib/use-session";
 import { AccessDenied, EmptyState, Loading, Notice, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge } from "./ui";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken } from "@/lib/api";
 import { registerControllerServiceWorker } from "@/lib/pwa";
@@ -21,6 +24,9 @@ export function ControllerPortal() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
+  // Session terminée (renouvellement refusé, inactivité) : reconnexion par-dessus le portail, saisies conservées.
+  const [expired, setExpired] = useState(false);
+  useSessionGuard(() => setExpired(true));
 
   const load = useCallback(async () => {
     if (!getAccessToken()) { setLoading(false); return; }
@@ -37,7 +43,7 @@ export function ControllerPortal() {
       setTrips(allTrips
         .filter((trip) => trip.route_detail.active && !["COMPLETED", "CANCELLED"].includes(trip.status) && beninDateKey(new Date(trip.departure_at)) >= today)
         .sort((a, b) => a.departure_at.localeCompare(b.departure_at)));
-    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Connexion impossible."); if ((reason as { status?: number }).status === 401) { clearTokens(); setUser(null); } }
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Connexion impossible."); if ((reason as { status?: number }).status === 401) { clearTokens(); setExpired(true); } }
     finally { setLoading(false); }
   }, []);
 
@@ -60,15 +66,18 @@ export function ControllerPortal() {
   }
 
   if (accessDenied) return <AccessDenied area="l’équipe de contrôle" />;
-  if (!getAccessToken() || (!loading && !user)) {
+  // Aucun compte chargé : page de connexion. Un compte déjà chargé dont la session expire garde l'écran (boîte ci-dessous).
+  if (!user && (!getAccessToken() || !loading)) {
     return (
-      <StaffLogin error={message}>
-        <LoginCard title="Interface contrôleur" onSuccess={() => void load()} />
+      <StaffLogin error={expired ? SESSION_EXPIRED_MESSAGE : message}>
+        <LoginCard title="Interface contrôleur" onSuccess={() => { setExpired(false); void load(); }} />
       </StaffLogin>
     );
   }
 
   return (
+    <>
+    {expired && <SessionExpiredDialog title="Interface contrôleur" onSuccess={() => { setExpired(false); void load(); }} />}
     <StaffShell user={user}>
       <StaffTitle eyebrow="Contrôle embarquement / à bord" title="Vérifier un billet" />
       {!user ? <Loading /> : (
@@ -106,6 +115,7 @@ export function ControllerPortal() {
         </>
       )}
     </StaffShell>
+    </>
   );
 }
 

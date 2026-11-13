@@ -8,6 +8,8 @@ import { SEGMENT_FARE_MISSING_MESSAGE, beninDateKey, segmentDepartureLabel, segm
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { BusIcon, CarIcon, CheckCircleIcon, CheckIcon, PackageIcon, PhoneIcon, TicketIcon } from "./icons";
+import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
+import { useSessionGuard } from "@/lib/use-session";
 import { ForcedPasswordChange } from "./forced-password-change";
 import { BusSeatMap } from "./bus-seat-map";
 import { PassengerForm, type PassengerItem } from "./passenger-form";
@@ -33,6 +35,8 @@ export function ClientPortal() {
   const [contact, setContact] = useState<Contact>({ contact_phone: "", contact_whatsapp: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Session terminée (renouvellement refusé, inactivité) : espace déconnecté, message, réservation en cours conservée dans le navigateur.
+  useSessionGuard(() => { setUser(null); setTickets([]); setBookings([]); setParcels([]); setRentals([]); setError(SESSION_EXPIRED_MESSAGE); });
 
   const loadPrivate = useCallback(async () => {
     if (!getAccessToken()) return setUser(null);

@@ -1,4 +1,5 @@
 import { nextPagePath, shareInFlight, writeKey } from "./portal-rules";
+import { ACTIVITY_KEY, EXPIRED_KEY, SESSION_EXPIRED_EVENT, refreshedTokens, shouldRefresh } from "./session";
 import type { User } from "./types";
 
 // Adresse de l'API (se termine par /api/v1). Aucune valeur par défaut : voir DEPLOY.md.
@@ -20,14 +21,70 @@ export function getAccessToken() {
   return window.localStorage.getItem("axis_access_token");
 }
 
+export function getRefreshToken() {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem("axis_refresh_token");
+}
+
 export function setTokens(access: string, refresh: string) {
   window.localStorage.setItem("axis_access_token", access);
   window.localStorage.setItem("axis_refresh_token", refresh);
+  window.localStorage.removeItem(EXPIRED_KEY);
+  touchActivity();
 }
 
 export function clearTokens() {
   window.localStorage.removeItem("axis_access_token");
   window.localStorage.removeItem("axis_refresh_token");
+}
+
+// Dernière activité (clic, frappe, requête authentifiée), partagée entre les onglets du même navigateur.
+export function touchActivity() {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(ACTIVITY_KEY, String(Date.now())); } catch { /* stockage indisponible : pas de compteur */ }
+}
+
+// Session fermée par le site (renouvellement refusé ou inactivité) : les portails affichent « Session expirée ».
+export function markSessionExpired() {
+  if (typeof window === "undefined") return;
+  clearTokens();
+  try { window.localStorage.setItem(EXPIRED_KEY, "1"); } catch { /* idem */ }
+  window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+}
+
+export function sessionWasExpired() {
+  if (typeof window === "undefined") return false;
+  try { return window.localStorage.getItem(EXPIRED_KEY) === "1"; } catch { return false; }
+}
+
+// Renouvellement du jeton d'accès : une seule requête à la fois, partagée par tous les appels en attente.
+// Le serveur fait tourner le jeton de renouvellement : le nouveau remplace l'ancien.
+// Résultat : true (renouvelé), false (refusé par le serveur : session terminée), null (réseau : rien n'est décidé).
+let refreshing: Promise<boolean | null> | null = null;
+
+export function refreshAccessToken(): Promise<boolean | null> {
+  if (!refreshing) {
+    refreshing = (async () => {
+      const refresh = getRefreshToken();
+      if (!refresh) return false;
+      try {
+        const response = await fetch(`${API_URL}/auth/token/refresh/`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh }), cache: "no-store",
+        });
+        if (!response.ok) return false;
+        const tokens = refreshedTokens(await response.json().catch(() => null));
+        if (!tokens) return false;
+        setTokens(tokens.access, tokens.refresh ?? refresh);
+        return true;
+      } catch {
+        // Réseau coupé : rien n'est décidé, la requête d'origine échoue et pourra être rejouée.
+        return null;
+      } finally {
+        refreshing = null;
+      }
+    })();
+  }
+  return refreshing;
 }
 
 function errorMessage(payload: unknown) {
@@ -49,16 +106,26 @@ export function apiFetch<T>(path: string, init: RequestInit = {}, authenticated 
   return shareInFlight(pendingWrites, writeKey(init.method, path, init.body), () => send<T>(path, init, authenticated));
 }
 
-async function send<T>(path: string, init: RequestInit, authenticated: boolean): Promise<T> {
+async function send<T>(path: string, init: RequestInit, authenticated: boolean, retried = false): Promise<T> {
   const headers = new Headers(init.headers);
   if (!(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
-  if (authenticated) {
-    const token = getAccessToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
+  const token = authenticated ? getAccessToken() : null;
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+    touchActivity();
   }
   const response = await fetch(`${API_URL}${path}`, { ...init, headers, cache: "no-store" });
   const payload = response.status === 204 ? null : await response.json().catch(() => null);
-  if (!response.ok) throw new ApiError(errorMessage(payload), response.status, payload);
+  if (!response.ok) {
+    // Jeton d'accès périmé : renouvellement (une seule fois), puis la même requête est rejouée.
+    if (shouldRefresh(response.status, Boolean(token), Boolean(getRefreshToken()), retried)) {
+      const renewed = await refreshAccessToken();
+      if (renewed) return send<T>(path, init, authenticated, true);
+      // Renouvellement refusé par le serveur (jeton expiré, session fermée) : la session est terminée.
+      if (renewed === false) markSessionExpired();
+    }
+    throw new ApiError(errorMessage(payload), response.status, payload);
+  }
   return payload as T;
 }
 

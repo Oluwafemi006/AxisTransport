@@ -966,3 +966,11 @@ footer {
     50% { opacity: .55; }
   }
 }
+
+/* Session expirée : reconnexion par-dessus le portail, qui reste monté (saisies conservées). */
+.session-expired {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center;
+  padding: 48px 16px 16px; background: rgba(11, 60, 116, .55); overflow-y: auto;
+}
+.session-expired-box { width: 100%; max-width: 420px; }
+.session-expired .notice { padding: 10px 14px; font-size: 14px; }
