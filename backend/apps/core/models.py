@@ -1421,11 +1421,8 @@ class StaffInvitation(TimeStampedModel):
     def activation_url(self):
         from django.conf import settings
 
-        base_url = (
-            getattr(settings, "FRONTEND_URL", "")
-            or getattr(settings, "PUBLIC_WEB_URL", "")
-            or "https://axistransportlogistique.com"
-        ).rstrip("/")
+        # Sans adresse publique configurée, le lien reste relatif : aucune adresse n'est inventée.
+        base_url = (getattr(settings, "FRONTEND_URL", "") or getattr(settings, "PUBLIC_WEB_URL", "")).rstrip("/")
         return f"{base_url}/activation?token={self.token}"
 
     def send_invitation_email(self):
@@ -1449,11 +1446,8 @@ class StaffInvitation(TimeStampedModel):
             f"Cordialement,\n"
             f"L'équipe AXIS Transport\n"
         )
-        from_email = (
-            getattr(settings, "DEFAULT_FROM_EMAIL", None)
-            or getattr(settings, "EMAIL_HOST_USER", None)
-            or "contact@axistransportlogistique.com"
-        )
+        # Expéditeur : uniquement celui des variables d'environnement (None = réglage Django par défaut).
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None) or getattr(settings, "EMAIL_HOST_USER", None) or None
         send_mail(
             subject=subject,
             message=body,

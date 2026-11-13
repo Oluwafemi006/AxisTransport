@@ -150,3 +150,20 @@ class DashboardReportTests(APITestCase):
             self.assertEqual(self.client.get("/api/v1/dashboard/report/").status_code, 403)
         self.client.force_authenticate(None)
         self.assertEqual(self.client.get("/api/v1/dashboard/report/").status_code, 401)
+
+    def test_sales_split_uses_payment_and_status_change_dates(self):
+        """Répartition des ventes : mêmes dates que les cartes (paiement, changement de statut), pas la création."""
+        sold_yesterday = self.sell(self.seats[0], "vente-test-0001")
+        cancelled = self.sell(self.seats[1], "vente-test-0002")
+        self.sell(self.seats[2], "vente-test-0003")
+        yesterday = timezone.now() - timedelta(days=1)
+        # Réservé et payé hier : vendu hier, même si la ligne du billet est créée aujourd'hui.
+        TicketStatusHistory.objects.filter(ticket=sold_yesterday, to_status=Ticket.Status.PAID).update(changed_at=yesterday)
+        transition_ticket(cancelled, Ticket.Status.CANCELLED, actor=self.admin, note="TEST", manual=True)
+        data = self.dashboard()
+        self.assertEqual(data["tickets"]["sold"], 1)
+        self.assertEqual((data["tickets"]["online"], data["tickets"]["counter"]), (0, 1))
+        self.assertEqual(data["tickets"]["cancelled_or_refunded"], 1)
+        before = self.dashboard(start=(self.today - timedelta(days=1)).isoformat(), end=(self.today - timedelta(days=1)).isoformat())
+        self.assertEqual((before["tickets"]["sold"], before["tickets"]["counter"], before["tickets"]["cancelled_or_refunded"]), (1, 1, 0))
+        self.assertEqual(reporting.sold_tickets_by_channel(self.today - timedelta(days=1), self.today), {"online": 0, "counter": 2})

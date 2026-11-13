@@ -8,12 +8,10 @@ import { AccessDenied, Loading, Notice, SectionHeading, StaffLogin, StaffShell, 
 import type { NoticeState } from "./ui";
 import { apiFetch, apiList, clearTokens, getAccessToken, money } from "@/lib/api";
 import { actionErrorText } from "@/lib/portal-rules";
-import type { Parcel, PaymentMethod, Trip, User } from "@/lib/types";
+import type { Parcel, PaymentMethod, User } from "@/lib/types";
 
 export function CounterPortal() {
   const [user, setUser] = useState<User | null>(null);
-  const [trips, setTrips] = useState<Trip[]>([]);
-  const [payments, setPayments] = useState<PaymentMethod[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -26,13 +24,8 @@ export function CounterPortal() {
       if (!["COUNTER", "ADMIN"].includes(me.role)) { setUser(me); setAccessDenied(true); return; }
       // Mot de passe provisoire : seul l'écran de changement s'affiche (le serveur refuse le reste).
       if (me.must_change_password) { setUser(me); return; }
-      const [allTrips, methods] = await Promise.all([
-        apiList<Trip>("/trips/?all=true"),
-        apiList<PaymentMethod>("/payment-methods/"),
-      ]);
+      // Départs et moyens de paiement sont chargés par CounterPanel lui-même.
       setUser(me);
-      setTrips(allTrips);
-      setPayments(methods);
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Chargement impossible.");
       if ((reason as { status?: number }).status === 401) { clearTokens(); setUser(null); }
@@ -57,7 +50,7 @@ export function CounterPortal() {
     <StaffShell user={user}>
       <StaffTitle eyebrow="Guichet" title="Vente de billets" />
       {message && <Notice notice={{ text: message, tone: "error" }} className="mb-5" />}
-      {user ? <CounterPanel trips={trips} payments={payments} onChanged={load} /> : <Loading />}
+      {user ? <CounterPanel onChanged={load} /> : <Loading />}
       {user && <SoldToday />}
       {user && <ParcelPrices />}
     </StaffShell>

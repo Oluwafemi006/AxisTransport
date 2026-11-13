@@ -71,6 +71,35 @@ def sold_tickets_count(start: date, end: date) -> int:
     return sold_ticket_events(start, end).values("ticket").distinct().count()
 
 
+def sold_tickets_by_channel(start: date, end: date) -> dict:
+    """Billets vendus (même définition et même date que `sold_tickets_count`), par canal de vente."""
+    rows = (
+        sold_ticket_events(start, end)
+        .values("ticket__channel")
+        .annotate(count=Count("ticket", distinct=True))
+    )
+    counts = {row["ticket__channel"]: _int(row["count"]) for row in rows}
+    return {
+        "online": counts.get(Ticket.Channel.ONLINE, 0),
+        "counter": counts.get(Ticket.Channel.COUNTER, 0),
+    }
+
+
+def cancelled_or_refunded_tickets_count(start: date, end: date) -> int:
+    """Billets passés à ANNULÉ ou REMBOURSÉ dans la période, datés par ce passage (comme `refunded_tickets_count`)."""
+    first, after = period_bounds(start, end)
+    return (
+        TicketStatusHistory.objects.filter(
+            to_status__in=(Ticket.Status.CANCELLED, Ticket.Status.REFUNDED),
+            changed_at__gte=first,
+            changed_at__lt=after,
+        )
+        .values("ticket")
+        .distinct()
+        .count()
+    )
+
+
 def scanned_ticket_controls(start: date, end: date):
     first, after = period_bounds(start, end)
     return TicketControl.objects.filter(

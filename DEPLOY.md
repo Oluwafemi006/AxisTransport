@@ -1,13 +1,13 @@
 # Déploiement — Axis Transport
 
-> **À savoir avant de déployer le site sur Vercel.** Le site n'affichera ni villes ni départs tant que
-> l'API n'est pas déployée **en HTTPS**, avec l'adresse Vercel du site dans `DJANGO_CORS_ALLOWED_ORIGINS`.
-> D'ici là, `NEXT_PUBLIC_API_URL` peut porter une valeur d'exemple pour que le build passe ;
-> il faudra la corriger puis redéployer quand l'API sera en ligne.
+> **État réel (13/11/2026, d'après Eddy).** La production tourne sur un VPS Contabo : API, base, site et Caddy
+> (`compose.vps.yaml`), domaine `axistransportlogistique.com` (section 5). Vercel ne sert plus qu'aux
+> démonstrations (section 1, annexe). Ce document a été rédigé sans accès au serveur : aucune étape n'y est
+> cochée comme exécutée ; chacune est **à confirmer sur le VPS** par Eddy.
 
 Ce document ne contient aucun secret. Les valeurs données sont des exemples : `exemple.test` n'est pas un vrai domaine.
 
-## 1. Frontend web sur Vercel
+## 1. Annexe : site de démonstration sur Vercel (la production est sur le VPS, section 5)
 
 | Réglage Vercel | Valeur |
 |---|---|
@@ -33,7 +33,7 @@ Points d'attention :
 - L'adresse Vercel du site doit être ajoutée à `DJANGO_CORS_ALLOWED_ORIGINS` côté backend.
 - En local, `next dev` lit `frontend/.env.development` (API sur `localhost:8000`). Ce fichier n'est jamais utilisé par `next build`.
 
-## 2. Backend (à déployer plus tard)
+## 2. Backend : variables d'environnement
 
 ### Variables qui existent déjà
 
@@ -79,12 +79,12 @@ Points d'attention :
 | `AXIS_CACHE_DIR` | Dossier du cache (compteurs de limite de requêtes). | Dossier accessible en écriture ; par défaut le dossier temporaire du système |
 | `AXIS_NUM_PROXIES` | Nombre de proxys devant l'API, pour lire la vraie adresse IP du client. | `1` derrière un seul proxy |
 | `AXIS_PAYMENT_SIMULATION` | Paiement simulé. Sans effet quand `DJANGO_DEBUG` est faux. | absente |
-| `EMAIL_HOST` | Hôte SMTP pour l'envoi d'e-mails (invitations du personnel, codes « mot de passe oublié »). | `smtp.gmail.com` |
+| `EMAIL_HOST` | Hôte SMTP pour l'envoi d'e-mails (invitations du personnel, codes « mot de passe oublié »). **Aucune valeur par défaut** : vide, aucun e-mail ne part (l'écran le dit). | `smtp.exemple.test` |
 | `EMAIL_PORT` | Port SMTP. | `587` |
 | `EMAIL_USE_TLS` | Activation du chiffrement TLS. | `true` |
-| `EMAIL_HOST_USER` | Compte d'expédition Gmail pour les invitations. | `contact@exemple.test` |
-| `EMAIL_HOST_PASSWORD` | Mot de passe d'application Gmail (16 caractères générés par Google). | Mot de passe d'application |
-| `DEFAULT_FROM_EMAIL` | Adresse de l'expéditeur des e-mails. Par défaut `EMAIL_HOST_USER`. | `contact@exemple.test` |
+| `EMAIL_HOST_USER` | Compte d'expédition sur ce serveur SMTP. | `contact@exemple.test` |
+| `EMAIL_HOST_PASSWORD` | Mot de passe (ou mot de passe d'application) de ce compte. | secret |
+| `DEFAULT_FROM_EMAIL` | Adresse de l'expéditeur des e-mails. Par défaut `EMAIL_HOST_USER` ; aucune adresse réelle n'est écrite dans le code. | `contact@exemple.test` |
 | `FRONTEND_URL` | Adresse publique du site web utilisée pour les liens d'activation. Par défaut `PUBLIC_WEB_URL`. | `https://axis.exemple.test` |
 | `USE_SQLITE` | Base SQLite pour les tests. | absente |
 
@@ -287,11 +287,11 @@ L'application « Axis Transport » (`mobile-flutter`, identifiant Android `com.a
 3. Un paiement de test aboutit et le billet s'affiche.
 4. Le webhook FedaPay répond 200 à un événement signé, 400 sans signature.
 
-## 5. VPS : tout le projet sur un serveur (procédure écrite, jamais exécutée)
+## 5. VPS : tout le projet sur un serveur (production, VPS Contabo)
 
 Tout tourne sur le VPS : API, PostgreSQL, site Next.js, et un proxy Caddy devant. Vercel (offre Hobby, usage non commercial) ne sert plus qu'aux démonstrations.
 
-**Statut de cette section** : rédigée sans accès au serveur. Aucune commande n'a été lancée sur le VPS. Seule la syntaxe de `compose.vps.yaml` et des deux fichiers Caddy a été validée sur un PC. Tout le reste est à vérifier sur place ; la liste est au point 5.13.
+**Statut de cette section** : la production est en ligne sur ce VPS (déploiement fait par Eddy, variante B, domaine `axistransportlogistique.com`). Le texte a été rédigé sans accès au serveur : seule la syntaxe de `compose.vps.yaml` et des deux fichiers Caddy a été validée sur un PC. Rien n'est coché ici comme exécuté ; chaque étape est à confirmer sur le VPS (liste au point 5.13).
 
 Notations : `<IP>` = adresse du serveur, `<DOMAINE>` = nom de domaine (pas encore choisi ; il n'est écrit nulle part dans le code, il vient de la variable `AXIS_DOMAIN`), `<UTILISATEUR>` = compte non-root créé au point 5.2.
 
@@ -636,7 +636,7 @@ crontab -e                                    # puis ajouter la ligne :
 ~/axis/deploy/restore-test.sh                 # ou : deploy/restore-test.sh ~/sauvegardes/<fichier>.dump
 ```
 
-Les deux scripts ont été essayés sur la base PostgreSQL du PC de développement (sauvegarde, rotation, restauration à part). Ils n'ont jamais tourné sur le VPS.
+Les deux scripts ont été essayés sur la base PostgreSQL du PC de développement (sauvegarde, rotation, restauration à part). Leur exécution sur le VPS et la ligne cron sont **à confirmer sur le VPS** (`crontab -l`, `ls ~/sauvegardes`).
 
 Limites : la sauvegarde reste sur le même serveur (une copie hors du serveur est à décider : où, par qui) ; les fichiers envoyés (volume `vps_media`) ne sont pas sauvegardés par ce script.
 
@@ -662,7 +662,7 @@ Limite connue : `FEDAPAY_CALLBACK_URL` n'a qu'une valeur. Un paiement lancé dep
 Prérequis : le domaine est acheté, et les enregistrements DNS de `<DOMAINE>` et de `api.<DOMAINE>` pointent vers `<IP>` (à vérifier avec `dig +short <DOMAINE>` et `dig +short api.<DOMAINE>`).
 
 1. `sudo ufw allow 443/tcp` (déjà fait au point 5.2 si la liste complète a été appliquée).
-2. Sauvegarde : `~/axis/backup.sh`.
+2. Sauvegarde : `~/axis/deploy/backup.sh`.
 3. Dans `.env.vps`, changer exactement ces lignes :
 
    | Variable | Nouvelle valeur |
@@ -723,7 +723,7 @@ Pour un essai sur la variante A seulement : `--dart-define=AXIS_API_URL=http://<
   ```
   Si la mise à jour contenait une migration, le code précédent peut ne pas comprendre la base modifiée : restaurer alors aussi la sauvegarde faite juste avant (point suivant).
   Avec la copie par archive (5.3), garder l'archive précédente et la redéployer dans un dossier à part.
-- **Une migration a modifié la base** : restaurer la sauvegarde faite juste avant (toujours lancer `~/axis/backup.sh` avant une mise à jour) :
+- **Une migration a modifié la base** : restaurer la sauvegarde faite juste avant (toujours lancer `~/axis/deploy/backup.sh` avant une mise à jour) :
   ```bash
   C="docker compose --env-file .env.vps -f compose.vps.yaml"
   $C stop backend holds payments
@@ -767,7 +767,7 @@ $C exec backend python manage.py shell -c "from apps.core.models import SystemSe
 
 Un tronçon sans tarif renvoie désormais une erreur 400 `segment_fare_missing`, sans prix de repli : contrôler l'avertissement de l'onglet « Tarifs par tronçon » après le déploiement.
 
-### 5.13 Non vérifiable sans le serveur réel
+### 5.13 À confirmer sur le VPS (non vérifiable depuis le dépôt)
 
 - Les caractéristiques du VPS (mémoire, processeurs, disque) et donc sa capacité à construire et faire tourner le projet.
 - La construction des images sur le serveur, en particulier celle du site.

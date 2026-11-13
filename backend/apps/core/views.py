@@ -1950,8 +1950,8 @@ class DashboardView(APIView):
         start, end = _report_period(request, default_start=today)
         if not request.query_params.get("end"):
             end = start
-        tickets = Ticket.objects.filter(created_at__date__range=(start, end))
         transactions = reporting.succeeded_transactions(start, end)
+        channels = reporting.sold_tickets_by_channel(start, end)
         trips = Trip.objects.filter(departure_at__date__range=(start, end)).annotate(
             revenue=Sum("tickets__transactions__amount", filter=Q(tickets__transactions__status=Transaction.Status.SUCCEEDED)),
             sold=Count("tickets", filter=Q(tickets__status__in=reporting.SOLD_STATUSES), distinct=True),
@@ -1964,13 +1964,13 @@ class DashboardView(APIView):
                 "today": {"date": today, **reporting.headline(today, today)},
                 "tickets": {
                     "sold": headline["tickets_sold"],
-                    "online": tickets.filter(channel=Ticket.Channel.ONLINE).count(),
-                    "counter": tickets.filter(channel=Ticket.Channel.COUNTER).count(),
+                    # Mêmes dates de référence que les cartes : vente datée par le paiement,
+                    # annulation ou remboursement datés par le changement de statut.
+                    "online": channels["online"],
+                    "counter": channels["counter"],
                     "checked": headline["tickets_scanned"],
                     "refunded": headline["tickets_refunded"],
-                    "cancelled_or_refunded": tickets.filter(
-                        status__in=[Ticket.Status.CANCELLED, Ticket.Status.REFUNDED]
-                    ).count(),
+                    "cancelled_or_refunded": reporting.cancelled_or_refunded_tickets_count(start, end),
                 },
                 "parcels": list(
                     Parcel.objects.filter(created_at__date__range=(start, end))

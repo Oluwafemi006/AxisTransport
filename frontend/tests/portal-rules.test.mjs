@@ -13,7 +13,7 @@ const source = readFileSync(path.join(here, "../src/lib/portal-rules.ts"), "utf8
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
 const compiled = path.join(mkdtempSync(path.join(tmpdir(), "axis-portal-rules-")), "portal-rules.mjs");
 writeFileSync(compiled, outputText);
-const { placeChoices, segmentDepartureLabel, segmentSearchDate, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE, writeKey, shareInFlight } = await import(pathToFileURL(compiled).href);
+const { offlinePaymentConfigured, placeChoices, segmentDepartureLabel, segmentSearchDate, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE, writeKey, shareInFlight } = await import(pathToFileURL(compiled).href);
 
 const places = [{ id: 1, name: "Cotonou" }, { id: 2, name: "Parakou" }];
 
@@ -260,4 +260,13 @@ test("bilan global : période valide, fin après début, pas de date future", as
   assert.equal(reportPeriodError("2026-11-10", "2026-11-01", "2026-11-13"), "La date de fin doit être postérieure ou égale à la date de début.");
   assert.equal(reportPeriodError("2026-11-01", "2026-11-14", "2026-11-13"), "La date de fin ne peut pas dépasser aujourd'hui.");
   assert.equal(reportPeriodError("", "2026-11-13", "2026-11-13"), "Indiquez une date de début et une date de fin.");
+});
+
+test("moyen hors ligne (espèces) : actif et non en ligne ; FedaPay seul ne suffit pas", () => {
+  assert.equal(offlinePaymentConfigured([]), false);
+  assert.equal(offlinePaymentConfigured([{ code: "FEDAPAY", active: true, online: true }]), false);
+  assert.equal(offlinePaymentConfigured([{ code: "fedapay", active: true }]), false, "code connu, même sans drapeau");
+  assert.equal(offlinePaymentConfigured([{ code: "especes", active: false }]), false, "inactif");
+  assert.equal(offlinePaymentConfigured([{ code: "especes", active: true }]), true);
+  assert.equal(offlinePaymentConfigured([{ code: "especes", active: true, online: false }]), true);
 });
