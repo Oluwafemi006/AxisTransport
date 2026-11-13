@@ -252,3 +252,12 @@ test("admin : ajout d'un moyen de paiement confirmé, avertissement sur « Ajout
   assert.match(addMethod, /if \(!label\)/);
   assert.match(admin, /Ce tarif ne change pas le prix de vente d’un billet/);
 });
+
+test("bilan global : période valide, fin après début, pas de date future", async () => {
+  const { reportPeriodError } = await import(pathToFileURL(compiled).href);
+  assert.equal(reportPeriodError("2026-11-01", "2026-11-10", "2026-11-13"), null);
+  assert.equal(reportPeriodError("2026-11-01", "2026-11-13", "2026-11-13"), null);
+  assert.equal(reportPeriodError("2026-11-10", "2026-11-01", "2026-11-13"), "La date de fin doit être postérieure ou égale à la date de début.");
+  assert.equal(reportPeriodError("2026-11-01", "2026-11-14", "2026-11-13"), "La date de fin ne peut pas dépasser aujourd'hui.");
+  assert.equal(reportPeriodError("", "2026-11-13", "2026-11-13"), "Indiquez une date de début et une date de fin.");
+});

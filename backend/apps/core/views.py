@@ -27,7 +27,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from . import password_reset
+from . import password_reset, reporting
 from .models import (
     RentalChange,
     LineChange,
@@ -1922,37 +1922,54 @@ class TransactionViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsCounterOrAdmin]
 
 
+def _report_period(request, *, default_start):
+    """Bornes AAAA-MM-JJ de la requête ; par défaut du jour donné à aujourd'hui (heure du Bénin)."""
+    start_raw = request.query_params.get("start")
+    end_raw = request.query_params.get("end")
+    try:
+        start = datetime.fromisoformat(start_raw).date() if start_raw else default_start
+        end = datetime.fromisoformat(end_raw).date() if end_raw else timezone.localdate()
+    except ValueError as exc:
+        raise ValidationError("Les dates doivent respecter le format AAAA-MM-JJ.") from exc
+    if end < start:
+        raise ValidationError("La date de fin doit être postérieure ou égale à la date de début.")
+    return start, end
+
+
 class DashboardView(APIView):
+    """
+    Accueil administrateur. Sans paramètre : la période est aujourd'hui (heure du Bénin).
+    Les définitions (billet vendu, scanné, encaissement brut, colis) sont dans `reporting.py`
+    et partagées avec le bilan ; `all_time` donne le cumul depuis le premier jour connu.
+    """
+
     permission_classes = [IsAxisAdmin]
 
     def get(self, request):
-        start_raw = request.query_params.get("start")
-        end_raw = request.query_params.get("end")
-        try:
-            start = datetime.fromisoformat(start_raw).date() if start_raw else timezone.localdate()
-            end = datetime.fromisoformat(end_raw).date() if end_raw else start
-        except ValueError as exc:
-            raise ValidationError("Les dates doivent respecter le format AAAA-MM-JJ.") from exc
-
+        today = timezone.localdate()
+        start, end = _report_period(request, default_start=today)
+        if not request.query_params.get("end"):
+            end = start
         tickets = Ticket.objects.filter(created_at__date__range=(start, end))
-        transactions = Transaction.objects.filter(
-            status=Transaction.Status.SUCCEEDED, created_at__date__range=(start, end)
-        )
+        transactions = reporting.succeeded_transactions(start, end)
         trips = Trip.objects.filter(departure_at__date__range=(start, end)).annotate(
             revenue=Sum("tickets__transactions__amount", filter=Q(tickets__transactions__status=Transaction.Status.SUCCEEDED)),
-            sold=Count("tickets", filter=Q(tickets__status__in=[Ticket.Status.PAID, Ticket.Status.ISSUED, Ticket.Status.CHECKED, Ticket.Status.COMPLETED]), distinct=True),
+            sold=Count("tickets", filter=Q(tickets__status__in=reporting.SOLD_STATUSES), distinct=True),
             checked=Count("tickets", filter=Q(tickets__status__in=[Ticket.Status.CHECKED, Ticket.Status.COMPLETED]), distinct=True),
         )
+        headline = reporting.headline(start, end)
+        since = reporting.all_time_start()
         return Response(
             {
                 "period": {"start": start, "end": end},
+                "today": {"date": today, **reporting.headline(today, today)},
+                "all_time": {"since": since, **reporting.headline(since, today)},
                 "tickets": {
-                    "sold": tickets.exclude(
-                        status__in=[Ticket.Status.HELD, Ticket.Status.EXPIRED, Ticket.Status.CANCELLED]
-                    ).count(),
+                    "sold": headline["tickets_sold"],
                     "online": tickets.filter(channel=Ticket.Channel.ONLINE).count(),
                     "counter": tickets.filter(channel=Ticket.Channel.COUNTER).count(),
-                    "checked": tickets.filter(status__in=[Ticket.Status.CHECKED, Ticket.Status.COMPLETED]).count(),
+                    "checked": headline["tickets_scanned"],
+                    "refunded": headline["tickets_refunded"],
                     "cancelled_or_refunded": tickets.filter(
                         status__in=[Ticket.Status.CANCELLED, Ticket.Status.REFUNDED]
                     ).count(),
@@ -1963,8 +1980,9 @@ class DashboardView(APIView):
                     .annotate(count=Count("id"))
                     .order_by("status")
                 ),
+                "parcels_summary": headline["parcels"],
                 "revenue": {
-                    "total": transactions.aggregate(total=Sum("amount"))["total"] or 0,
+                    "total": headline["gross_revenue"],
                     "by_payment_method": list(
                         transactions.values("payment_method__label").annotate(total=Sum("amount"))
                     ),
@@ -1982,6 +2000,17 @@ class DashboardView(APIView):
                 ],
             }
         )
+
+
+class DashboardReportView(APIView):
+    """Bilan global sur une période : mêmes définitions que l'accueil (`reporting.py`), administrateur seulement."""
+
+    permission_classes = [IsAxisAdmin]
+
+    def get(self, request):
+        start, end = _report_period(request, default_start=reporting.default_report_start())
+        return Response({**reporting.report(start, end), "default_start": reporting.default_report_start()})
+
 
 class KKiaPayWebhookView(APIView):
     """KKiaPay n'est pas implémenté : le webhook refuse tout et n'émet jamais de billet."""
