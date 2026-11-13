@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone, useActionFeedback } from "./ui";
 import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
+import { CloseIcon } from "./icons";
 import { HeadlineCards, ReportPanel } from "./admin-report";
 import type { Headline } from "./admin-report";
 
@@ -469,8 +470,8 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
               <h4 className="font-semibold text-slate-800">
                 Modifier l’horaire du {editingSchedule.day_of_week_display}
               </h4>
-              <button type="button" onClick={() => setEditingSchedule(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                Fermer ✕
+              <button type="button" onClick={() => setEditingSchedule(null)} className="text-sm text-slate-500 hover:text-slate-800 inline-flex items-center gap-1">
+                Fermer <CloseIcon size={14} />
               </button>
             </div>
             <form onSubmit={saveSchedule} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

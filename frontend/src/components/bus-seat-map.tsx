@@ -1,6 +1,7 @@
 "use client";
 
 import { Seat } from "@/lib/types";
+import { SteeringWheelIcon } from "./icons";
 import { groupSeatsYutong } from "@/lib/portal-rules";
 
 export interface BusSeatMapProps {
@@ -58,7 +59,7 @@ export function BusSeatMap({
           }}
         >
           <span>AVANT DU CAR</span>
-          <span style={{ fontSize: "16px" }}>🚌 CHAUFFEUR</span>
+          <span style={{ fontSize: "16px", display: "inline-flex", alignItems: "center", gap: "6px" }}><SteeringWheelIcon size={18} /> CHAUFFEUR</span>
         </div>
 
         {/* Grille des rangées Yutong : 2 sièges | allée | 2 sièges */}

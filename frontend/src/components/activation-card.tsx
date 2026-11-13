@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { PhoneIcon } from "./icons";
 import Link from "next/link";
 import { Brand } from "@/components/brand";
 import { ActivationForm } from "@/components/activation-form";
@@ -122,7 +123,7 @@ export function ActivationCard({ token }: { token?: string | null }) {
           </div>
 
           <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-sm font-bold text-slate-800">📱 Application mobile AXIS Transport</p>
+            <p className="text-sm font-bold text-slate-800 flex items-center gap-2"><PhoneIcon size={18} /> Application mobile AXIS Transport</p>
             <p className="mt-1 text-xs text-slate-600">
               Pour la vente de billets au guichet et le contrôle des passagers sur le terrain, installez l’application mobile Axis Transport.
             </p>

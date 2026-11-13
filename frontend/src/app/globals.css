@@ -493,7 +493,7 @@ h2 {
   background: #fff;
   display: grid;
   place-items: center;
-  font-size: 22px;
+  color: var(--navy);
   margin-bottom: 10px;
 }
 

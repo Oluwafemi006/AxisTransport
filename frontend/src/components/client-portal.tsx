@@ -7,6 +7,7 @@ import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccess
 import { SEGMENT_FARE_MISSING_MESSAGE, beninDateKey, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
+import { BusIcon, CarIcon, CheckCircleIcon, CheckIcon, PackageIcon, PhoneIcon, TicketIcon } from "./icons";
 import { ForcedPasswordChange } from "./forced-password-change";
 import { BusSeatMap } from "./bus-seat-map";
 import { PassengerForm, type PassengerItem } from "./passenger-form";
@@ -272,7 +273,7 @@ export function ClientPortal() {
                   <p>Réservez votre place en ligne, payez par Mobile Money et voyagez avec un billet électronique.</p>
                   {banner?.banner_text ? (
                     <div className="axe" style={{ padding: '12px 20px', fontSize: '15px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '10px', lineHeight: 1.4 }}>
-                      <span style={{ fontSize: '20px' }}>🚌</span>
+                      <BusIcon size={24} style={{ flex: 'none' }} />
                       <span>{banner.banner_text}</span>
                     </div>
                   ) : null}
@@ -454,17 +455,17 @@ export function ClientPortal() {
                     <p>Un parcours simple, de la réservation au contrôle du billet.</p>
                   </div>
                   <div>
-                    <div className="ic">🎫</div>
+                    <div className="ic"><TicketIcon /></div>
                     <h3>Billet électronique</h3>
                     <p>Recevez votre billet avec QR code sur votre téléphone.</p>
                   </div>
                   <div>
-                    <div className="ic">📱</div>
+                    <div className="ic"><PhoneIcon /></div>
                     <h3>Paiement Mobile Money</h3>
                     <p>Payez en ligne, votre place est confirmée aussitôt.</p>
                   </div>
                   <div>
-                    <div className="ic">📦</div>
+                    <div className="ic"><PackageIcon /></div>
                     <h3>Suivi de colis</h3>
                     <p>Suivez votre colis étape par étape jusqu'au retrait.</p>
                   </div>
@@ -491,8 +492,7 @@ export function ClientPortal() {
                       </div>
                     </div>
                     <div className="card" onClick={() => setTab("location")}>
-                      {/* Using emoji as fallback since image failed */}
-                      <div className="pic">🚗</div>
+                      <div className="pic" style={{ display: 'grid', placeItems: 'center', color: 'var(--navy)' }}><CarIcon size={40} /></div>
                       <div>
                         <h3>Location de véhicules</h3>
                         <p>Véhicules et tarifs à confirmer avec Axis.</p>
@@ -1380,7 +1380,7 @@ function Tickets({
         
         {issued && pending && (
            <div style={{ background: 'var(--okbg)', color: 'var(--ok)', padding: '20px', borderRadius: '12px', marginTop: '20px', border: '1px solid #c3e6d3', textAlign: 'center' }}>
-             <p style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '10px' }}>🎉 Voyage confirmé !</p>
+             <p style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><CheckCircleIcon size={22} /> Voyage confirmé !</p>
              <p style={{ marginBottom: '16px' }}>
                {pendingTickets.length > 1
                  ? `${pendingTickets.length} billets ont été émis avec succès.`
@@ -1627,7 +1627,7 @@ function Parcels() {
           <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {result.steps.map((step) => (
               <li key={step.key} style={{ display: 'flex', alignItems: 'center', gap: '12px', opacity: step.done ? 1 : 0.45 }}>
-                <span style={{ width: '22px', height: '22px', borderRadius: '50%', display: 'inline-grid', placeItems: 'center', fontSize: '12px', color: '#fff', background: step.done ? 'var(--ok)' : 'var(--line)' }}>{step.done ? "✓" : ""}</span>
+                <span style={{ width: '22px', height: '22px', borderRadius: '50%', display: 'inline-grid', placeItems: 'center', fontSize: '12px', color: '#fff', background: step.done ? 'var(--ok)' : 'var(--line)' }}>{step.done ? <CheckIcon size={14} /> : ""}</span>
                 <span style={{ fontWeight: step.current ? 'bold' : 'normal' }}>{step.label}</span>
                 {step.reached_at && <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--mute)' }}>{formatDate(step.reached_at)}</span>}
               </li>
