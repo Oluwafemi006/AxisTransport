@@ -13,6 +13,7 @@ import type { Headline } from "./admin-report";
 const emptyHeadline: Headline = { tickets_sold: 0, tickets_scanned: 0, tickets_refunded: 0, gross_revenue: 0, parcels: { tracked: 0, cancelled: 0, picked_up: 0 } };
 import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
+import { unregisterLegacyServiceWorkers } from "@/lib/pwa";
 import { actionErrorText, beninDateKey, holdMinutesConfigured, offlinePaymentConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref, type SegmentDirection, type SegmentOffer } from "@/lib/portal-rules";
 
 import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, LineState, LineStopRow, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, RentalBooking, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
@@ -86,7 +87,7 @@ export function AdminPortal() {
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); void unregisterLegacyServiceWorkers(); }, [load]);
 
   if (accessDenied) return <AccessDenied area="l’administration" />;
   if (!getAccessToken() || (!loading && !me)) {

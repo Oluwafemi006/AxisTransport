@@ -5,6 +5,7 @@ import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
 import { AccessDenied, EmptyState, Loading, Notice, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge } from "./ui";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken } from "@/lib/api";
+import { registerControllerServiceWorker } from "@/lib/pwa";
 import { beninDateKey } from "@/lib/portal-rules";
 import type { Seat, Ticket, Trip, User } from "@/lib/types";
 
@@ -46,7 +47,7 @@ export function ControllerPortal() {
     setSeats(seatData); setTickets(ticketData);
   }, []);
 
-  useEffect(() => { void load(); if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js"); }, [load]);
+  useEffect(() => { void load(); void registerControllerServiceWorker(); }, [load]);
   useEffect(() => { void loadTrip(tripId); }, [tripId, loadTrip]);
 
   async function validate(value: string, method: "QR" | "MANUAL") {

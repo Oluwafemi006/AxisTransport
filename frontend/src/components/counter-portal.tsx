@@ -7,6 +7,7 @@ import { LoginCard } from "./login-card";
 import { AccessDenied, Loading, Notice, SectionHeading, StaffLogin, StaffShell, StaffTitle } from "./ui";
 import type { NoticeState } from "./ui";
 import { apiFetch, apiList, clearTokens, getAccessToken, money } from "@/lib/api";
+import { unregisterLegacyServiceWorkers } from "@/lib/pwa";
 import { actionErrorText } from "@/lib/portal-rules";
 import type { Parcel, PaymentMethod, User } from "@/lib/types";
 
@@ -34,7 +35,7 @@ export function CounterPortal() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); void unregisterLegacyServiceWorkers(); }, [load]);
 
   if (accessDenied) return <AccessDenied area="l’équipe du guichet" />;
   if (!getAccessToken() || (!loading && !user)) {
