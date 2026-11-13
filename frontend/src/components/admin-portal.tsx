@@ -5,15 +5,22 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone, useActionFeedback } from "./ui";
 import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
+import { HeadlineCards, ReportPanel } from "./admin-report";
+import type { Headline } from "./admin-report";
+
+// Valeur de repli quand l'API du tableau de bord échoue : zéros, jamais une valeur inventée.
+const emptyHeadline: Headline = { tickets_sold: 0, tickets_scanned: 0, tickets_refunded: 0, gross_revenue: 0, parcels: { tracked: 0, cancelled: 0, picked_up: 0 } };
 import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import { actionErrorText, holdMinutesConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref, type SegmentDirection, type SegmentOffer } from "@/lib/portal-rules";
+import { actionErrorText, beninDateKey, holdMinutesConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref, type SegmentDirection, type SegmentOffer } from "@/lib/portal-rules";
 
 import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, LineState, LineStopRow, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, RentalBooking, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
-type AdminTab = "dashboard" | "planning" | "guichet" | "billets" | "points" | "colis" | "locations" | "flotte" | "tarifs" | "villes" | "troncons" | "agence" | "paiements" | "equipe";
+type AdminTab = "dashboard" | "bilan" | "planning" | "guichet" | "billets" | "points" | "colis" | "locations" | "flotte" | "tarifs" | "villes" | "troncons" | "agence" | "paiements" | "equipe";
 type Dashboard = {
-  tickets: { sold: number; online: number; counter: number; checked: number; cancelled_or_refunded: number };
+  today: Headline & { date: string };
+  all_time: Headline & { since: string };
+  tickets: { sold: number; online: number; counter: number; checked: number; refunded: number; cancelled_or_refunded: number };
   revenue: { total: number; by_payment_method: Array<{ payment_method__label: string; total: number }> };
   parcels: Array<{ status: string; count: number }>;
   trips: Array<{ id: number; label: string; sold: number; checked: number; capacity: number | null; revenue: number }>;
@@ -25,7 +32,7 @@ const nextParcelStatus: Record<string, string> = {
 };
 
 const tabs: Array<[AdminTab, string]> = [
-  ["dashboard", "Tableau de bord"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["billets", "Billets"], ["points", "Points d’embarquement"], ["colis", "Colis"], ["locations", "Locations"],
+  ["dashboard", "Tableau de bord"], ["bilan", "Bilan global"], ["planning", "Trajets & planning"], ["guichet", "Vente au guichet"], ["billets", "Billets"], ["points", "Points d’embarquement"], ["colis", "Colis"], ["locations", "Locations"],
   ["flotte", "Flotte"], ["tarifs", "Tarifs & règles"], ["villes", "Villes & ligne"], ["troncons", "Tarifs par tronçon"], ["agence", "Agence et taxes"], ["paiements", "Incidents de paiement"], ["equipe", "Équipe & rôles"],
 ];
 
@@ -64,7 +71,7 @@ export function AdminPortal() {
       const failed: string[] = [];
       const safe = <T,>(label: string, fallback: T, request: Promise<T>) => request.catch(() => { failed.push(label); return fallback; });
       const [dash, allLocations, allRoutes, allTrips, allVehicles, allFares, allFlags, team, allParcels, methods, allSettings, allIncidents, allWeekly] = await Promise.all([
-        safe<Dashboard>("tableau de bord", { tickets: { sold: 0, checked: 0, online: 0, counter: 0, cancelled_or_refunded: 0 }, parcels: [], revenue: { total: "0" } } as unknown as Dashboard, apiFetch<Dashboard>("/dashboard/")),
+        safe<Dashboard>("tableau de bord", { today: { ...emptyHeadline, date: beninDateKey() }, all_time: { ...emptyHeadline, since: beninDateKey() }, tickets: { sold: 0, checked: 0, online: 0, counter: 0, refunded: 0, cancelled_or_refunded: 0 }, parcels: [], revenue: { total: 0, by_payment_method: [] }, trips: [] }, apiFetch<Dashboard>("/dashboard/")),
         safe<Location[]>("villes", [], apiList<Location>("/locations/?all=true")), safe<Route[]>("parcours", [], apiList<Route>("/routes/?all=true")),
         safe<Trip[]>("départs", [], apiList<Trip>("/trips/?all=true")), safe<Vehicle[]>("flotte", [], apiList<Vehicle>("/vehicles/")), safe<FareRule[]>("règles tarifaires", [], apiList<FareRule>("/fare-rules/?all=true")),
         safe<FeatureFlag[]>("fonctions", [], apiList<FeatureFlag>("/feature-flags/")), safe<User[]>("équipe", [], apiList<User>("/users/")), safe<Parcel[]>("colis", [], apiList<Parcel>("/parcels/")),
@@ -103,6 +110,7 @@ export function AdminPortal() {
       {!dashboard ? <Loading /> : (
         <>
           {tab === "dashboard" && <><BusPositions /><DashboardPanel data={dashboard} trips={trips} /></>}
+          {tab === "bilan" && <ReportPanel />}
           {tab === "planning" && <PlanningPanel routes={routes} vehicles={vehicles.filter((v) => v.category === "BUS")} trips={trips} weeklySchedules={weeklySchedules} onChanged={load} />}
           {tab === "guichet" && <><CounterPanel trips={trips} payments={payments} onChanged={load} /><SoldToday /></>}
           {tab === "billets" && <TicketsPanel settings={settings} onChanged={load} />}
@@ -145,7 +153,6 @@ function BusPositions() {
 
 function DashboardPanel({ data, trips }: { data: Dashboard | null; trips: Trip[] }) {
   if (!data) return null;
-  const cards = [[data.tickets.sold, "Billets vendus"], [data.tickets.checked, "Passagers contrôlés"], [data.parcels.reduce((sum, item) => sum + item.count, 0), "Colis suivis"], [money(data.revenue.total), "Encaissements"]];
   // Les départs d'un itinéraire désactivé ne sont pas listés ici ; ils restent visibles dans « Trajets & planning ».
   const now = Date.now();
   const listed = trips
@@ -153,13 +160,11 @@ function DashboardPanel({ data, trips }: { data: Dashboard | null; trips: Trip[]
     .sort((a, b) => a.departure_at.localeCompare(b.departure_at));
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {cards.map(([value, label]) => (
-          <div key={label} className="card">
-            <p className="field-label">{label}</p>
-            <p className="stat-value">{value}</p>
-          </div>
-        ))}
+      <SectionHeading eyebrow="Heure du Bénin, de minuit à minuit" title={`Aujourd'hui (${new Date(`${data.today.date}T00:00:00`).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })})`} />
+      <HeadlineCards data={data.today} />
+      <div className="mt-5">
+        <SectionHeading eyebrow={`Depuis le ${new Date(`${data.all_time.since}T00:00:00`).toLocaleDateString("fr-FR")}`} title="Cumul global" />
+        <HeadlineCards data={data.all_time} />
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.6fr]">
         <section className="card">

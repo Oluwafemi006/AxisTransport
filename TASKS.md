@@ -5,6 +5,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Tableau de bord admin : cartes « Aujourd'hui » et « Cumul global » (définitions partagées dans `reporting.py`), onglet « Bilan global » par période (jours, trajets, agents, canaux) | `cc/tableau-bord-journalier` | Claude Code | à valider par Eddy |
 | Mot de passe : lien de réinitialisation client, mot de passe provisoire du personnel, invitation sans reprise de client, app 1.0.8+10 | `cc/mot-de-passe` | Claude Code | à valider par Eddy |
 | Conformité Play : pages /privacy et /suppression-compte (HTML sans script), redirection /confidentialite ; suppression de compte (anonymisation) dans l'app, app 1.0.7+9 | `cc/conformite-play` | Claude Code | à valider par Eddy |
 | Profil client modifiable (nom, téléphone, e-mail) et barre du bas masquée sur les écrans secondaires, app 1.0.6+8 | `cc/profil-client` | Claude Code | à valider par Eddy |

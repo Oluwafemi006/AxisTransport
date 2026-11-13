@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     BoardingPointViewSet,
     BookingViewSet,
+    DashboardReportView,
     DashboardView,
     FareRuleViewSet,
     FeatureFlagViewSet,
@@ -67,6 +68,7 @@ urlpatterns = [
     path("auth/me/", MeView.as_view()),
     path("auth/register/", RegisterView.as_view()),
     path("dashboard/", DashboardView.as_view()),
+    path("dashboard/report/", DashboardReportView.as_view()),
     path("agency-profile/", AgencyProfileView.as_view()),
     path("line/", LineView.as_view()),
     path("bus-positions/", BusPositionView.as_view()),

@@ -255,3 +255,12 @@ export function shareInFlight<T>(pending: Map<string, Promise<unknown>>, key: st
   pending.set(key, request);
   return request;
 }
+
+// Bilan global : période AAAA-MM-JJ valide, pas de fin avant le début, pas de date future.
+export function reportPeriodError(start: string, end: string, today: string = beninDateKey()): string | null {
+  const valid = /^\d{4}-\d{2}-\d{2}$/;
+  if (!valid.test(start) || !valid.test(end)) return "Indiquez une date de début et une date de fin.";
+  if (end < start) return "La date de fin doit être postérieure ou égale à la date de début.";
+  if (end > today) return "La date de fin ne peut pas dépasser aujourd'hui.";
+  return null;
+}
