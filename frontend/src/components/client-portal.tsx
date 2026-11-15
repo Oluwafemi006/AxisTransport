@@ -7,6 +7,7 @@ import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccess
 import { SEGMENT_FARE_MISSING_MESSAGE, beninDateKey, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
+import { ClientTabBar, type ClientTab } from "./client-tab-bar";
 import { BusIcon, CarIcon, CheckCircleIcon, CheckIcon, PackageIcon, PhoneIcon, TicketIcon } from "./icons";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
 import { useSessionGuard } from "@/lib/use-session";
@@ -16,7 +17,6 @@ import { PassengerForm, type PassengerItem } from "./passenger-form";
 import { clearGuestBooking, loadGuestBooking, rememberGuestPayment, saveGuestBooking } from "@/lib/guest-booking";
 import { FEDAPAY_PUBLIC_KEY, PAYMENT_DISMISSED_MESSAGE, PAYMENT_EMBEDDED_UNAVAILABLE_MESSAGE, embeddedPaymentAvailable, openEmbeddedPayment, shouldAutoVerify, unregisterLegacyServiceWorkers } from "@/lib/pwa";
 
-type ClientTab = "accueil" | "billets" | "colis" | "location" | "profil";
 
 export function ClientPortal() {
   const [tab, setTab] = useState<ClientTab>("accueil");
@@ -223,7 +223,7 @@ export function ClientPortal() {
   if (user?.must_change_password) return <ForcedPasswordChange onDone={() => window.location.reload()} />;
 
   return (
-    <>
+    <div className="client-site">
       <div className="top">
         <div className="wrap">
           <span>{banner?.banner_text ? banner.banner_text.split('.')[0] : "Voyages interurbains au Bénin"}</span>
@@ -585,7 +585,8 @@ export function ClientPortal() {
           <div className="copy">© {new Date().getFullYear()} AXIS Transport · <a href="/privacy">Politique de confidentialité</a> · <a href="/suppression-compte">Suppression de compte</a></div>
         </div>
       </footer>
-    </>
+      <ClientTabBar current={tab} onSelect={setTab} />
+    </div>
   );
 }
 

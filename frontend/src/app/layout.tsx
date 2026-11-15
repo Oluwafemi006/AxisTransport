@@ -15,6 +15,8 @@ export const viewport: Viewport = {
   themeColor: "#0b3c74",
   width: "device-width",
   initialScale: 1,
+  // iPhone : expose la zone de sécurité du bas (barre d'accueil) à env(safe-area-inset-bottom).
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
