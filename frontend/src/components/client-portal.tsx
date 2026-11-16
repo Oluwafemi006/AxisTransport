@@ -4,10 +4,11 @@ import { PasswordInput } from "./password-input";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail } from "@/lib/api";
-import { SEGMENT_FARE_MISSING_MESSAGE, beninDateKey, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
+import { SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { ClientTabBar, type ClientTab } from "./client-tab-bar";
+import { Rentals } from "./client-rentals";
 import { BusIcon, CarIcon, CheckCircleIcon, CheckIcon, PackageIcon, PhoneIcon, TicketIcon } from "./icons";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
 import { useSessionGuard } from "@/lib/use-session";
@@ -87,7 +88,8 @@ export function ClientPortal() {
       apiFetch<Contact>("/client/contact/", {}, false).then(setContact).catch(() => undefined);
       await loadPrivate();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "L’API Axis est indisponible.");
+      // Jamais le texte technique du navigateur (« Failed to fetch ») : message de l'application (home_screen.dart:54).
+      setError(actionErrorText(reason, "Impossible de récupérer les trajets pour le moment."));
     } finally {
       setLoading(false);
     }
@@ -1692,61 +1694,6 @@ function Parcels() {
           </ol>
         </div>
       )}
-    </div>
-  );
-}
-
-function Rentals({ user, vehicles, rentals, onAuthenticated, onChanged }: { user: User | null; vehicles: Vehicle[]; rentals: RentalBooking[]; onAuthenticated: () => Promise<void>; onChanged: () => Promise<void> }) {
-  // Simplified rentals UI
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }} className="responsive-grid">
-      <div className="card">
-        <h3>Véhicules disponibles</h3>
-        <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
-        {vehicles.length === 0 ? <p style={{ color: 'var(--mute)' }}>Aucun véhicule publié.</p> : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {vehicles.map(v => (
-              <div key={v.id} style={{ border: '1px solid var(--line)', padding: '16px', borderRadius: '12px', opacity: v.rentable === false ? 0.7 : 1 }}>
-                {/* Photo du véhicule, ou image de secours si elle manque. */}
-                {v.photo_url
-                  ? <img src={v.photo_url} alt={v.name} style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '8px', marginBottom: '12px' }} />
-                  : <div aria-label="Pas de photo" style={{ width: '100%', height: '160px', borderRadius: '8px', marginBottom: '12px', background: 'var(--bg)', display: 'grid', placeItems: 'center', color: 'var(--mute)' }}>Pas de photo</div>}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <h4 style={{ color: 'var(--navy)' }}>{v.name}</h4>
-                    {(v.brand || v.model_name) && <p style={{ fontSize: '13px' }}>{[v.brand, v.model_name].filter(Boolean).join(" ")}</p>}
-                    <p style={{ fontSize: '13px', color: 'var(--mute)' }}>
-                      {[v.capacity ? `${v.capacity} places` : "", v.transmission_display, v.fuel_display].filter(Boolean).join(" · ")}
-                    </p>
-                    <p style={{ fontSize: '13px', color: 'var(--mute)' }}>
-                      {v.driver_required
-                        ? (v.rental_daily_rate_with_driver ? `Avec chauffeur uniquement : ${money(v.rental_daily_rate_with_driver)} / jour` : "Avec chauffeur uniquement")
-                        : [v.rental_daily_rate ? `${money(v.rental_daily_rate)} / jour` : "", v.rental_daily_rate_with_driver ? `avec chauffeur : ${money(v.rental_daily_rate_with_driver)} / jour` : ""].filter(Boolean).join(" · ")}
-                    </p>
-                  </div>
-                  {v.rentable === false
-                    ? <span className="pill ex">Indisponible</span>
-                    : <button className="btn s p">Louer</button>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="card">
-        <h3>Vos demandes</h3>
-        <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
-        {!user ? <LoginCard title="Connectez-vous" allowRegistration onSuccess={() => void onAuthenticated()} /> : rentals.length === 0 ? <p style={{ color: 'var(--mute)' }}>Aucune demande en cours.</p> : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {rentals.map(r => (
-              <div key={r.id} style={{ background: 'var(--bg)', padding: '12px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between' }}>
-                <span>{r.vehicle_detail.name}</span>
-                <span className="pill ex">{r.status_display}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

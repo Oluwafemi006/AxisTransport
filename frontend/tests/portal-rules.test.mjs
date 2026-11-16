@@ -13,7 +13,7 @@ const source = readFileSync(path.join(here, "../src/lib/portal-rules.ts"), "utf8
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
 const compiled = path.join(mkdtempSync(path.join(tmpdir(), "axis-portal-rules-")), "portal-rules.mjs");
 writeFileSync(compiled, outputText);
-const { offlinePaymentConfigured, placeChoices, segmentDepartureLabel, segmentSearchDate, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE, writeKey, shareInFlight } = await import(pathToFileURL(compiled).href);
+const { staffSpaceHome, beninDateTimeToIso, rentalPeriodError, rentalDays, rentalFormulas, rentalDailyRate, rentalStatusTone, offlinePaymentConfigured, placeChoices, segmentDepartureLabel, segmentSearchDate, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE, writeKey, shareInFlight } = await import(pathToFileURL(compiled).href);
 
 const places = [{ id: 1, name: "Cotonou" }, { id: 2, name: "Parakou" }];
 
@@ -269,4 +269,47 @@ test("moyen hors ligne (espèces) : actif et non en ligne ; FedaPay seul ne suff
   assert.equal(offlinePaymentConfigured([{ code: "especes", active: false }]), false, "inactif");
   assert.equal(offlinePaymentConfigured([{ code: "especes", active: true }]), true);
   assert.equal(offlinePaymentConfigured([{ code: "especes", active: true, online: false }]), true);
+});
+
+test("location : période en heure du Bénin, messages de l'application", () => {
+  const today = "2026-11-16";
+  assert.equal(rentalPeriodError("2026-11-17T08:00", "2026-11-19T08:00", today), null);
+  assert.equal(rentalPeriodError("2026-11-16T07:00", "2026-11-16T09:00", today), null, "aujourd'hui accepté");
+  assert.equal(rentalPeriodError("2026-11-15T08:00", "2026-11-19T08:00", today), "La date de début ne peut pas être dans le passé.");
+  assert.equal(rentalPeriodError("2026-11-17T08:00", "2026-11-17T08:00", today), "La fin de location doit être après le début.");
+  assert.equal(rentalPeriodError("", "2026-11-17T08:00", today), "Choisissez la date et l’heure de prise et de retour du véhicule.");
+  assert.equal(beninDateTimeToIso("2026-11-17T08:00"), "2026-11-17T08:00:00+01:00");
+  assert.equal(beninDateTimeToIso("17/11/2026"), null);
+});
+
+test("location : durée en jours entamés, au moins 1", () => {
+  assert.equal(rentalDays("2026-11-17T08:00", "2026-11-19T08:00"), 2);
+  assert.equal(rentalDays("2026-11-17T08:00", "2026-11-19T09:00"), 3);
+  assert.equal(rentalDays("2026-11-17T08:00", "2026-11-17T10:00"), 1);
+  assert.equal(rentalDays("2026-11-17T08:00", "2026-11-16T10:00"), 1);
+});
+
+test("location : formules et tarifs viennent de la Flotte, sans tarif de repli", () => {
+  const both = { rental_daily_rate: "TEST-1", rental_daily_rate_with_driver: "TEST-2", driver_available: true, driver_required: false };
+  assert.deepEqual(rentalFormulas(both), { selfDrive: true, withDriver: true, defaultWithDriver: false });
+  assert.deepEqual(rentalFormulas({ ...both, driver_required: true }), { selfDrive: false, withDriver: true, defaultWithDriver: true });
+  assert.deepEqual(rentalFormulas({ ...both, driver_available: false }), { selfDrive: true, withDriver: false, defaultWithDriver: false });
+  assert.equal(rentalDailyRate(both, false), "TEST-1");
+  assert.equal(rentalDailyRate(both, true), "TEST-2");
+  assert.equal(rentalDailyRate({ ...both, rental_daily_rate_with_driver: null }, true), null, "pas de repli sur le tarif sans chauffeur");
+});
+
+test("location : couleur du statut comme l'application", () => {
+  assert.equal(rentalStatusTone("CONFIRMED"), "ok");
+  assert.equal(rentalStatusTone("ACTIVE"), "ok");
+  assert.equal(rentalStatusTone("CANCELLED"), "danger");
+  assert.equal(rentalStatusTone("REQUESTED"), "warn");
+});
+
+test("logo du personnel : accueil de l'espace en cours", () => {
+  assert.equal(staffSpaceHome("/admin"), "/admin");
+  assert.equal(staffSpaceHome("/guichet/colis/12"), "/guichet");
+  assert.equal(staffSpaceHome("/controleur"), "/controleur");
+  assert.equal(staffSpaceHome("/administration"), "/", "préfixe sans barre : pas un espace");
+  assert.equal(staffSpaceHome("/"), "/");
 });

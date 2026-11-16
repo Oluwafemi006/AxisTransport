@@ -269,3 +269,65 @@ export function reportPeriodError(start: string, end: string, today: string = be
   if (end > today) return "La date de fin ne peut pas dépasser aujourd'hui.";
   return null;
 }
+
+// ─── Location de véhicules (mêmes règles et messages que mobile-flutter/lib/features/rentals/rentals_screen.dart) ───
+
+// Saisie d'un champ « date et heure » du navigateur : AAAA-MM-JJTHH:MM, lue comme heure du Bénin (UTC+1, sans heure d'été).
+const LOCAL_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+export function beninDateTimeToIso(value: string): string | null {
+  return LOCAL_DATETIME.test(value) ? `${value}:00+01:00` : null;
+}
+
+// Période de location : début pas avant aujourd'hui (jour du Bénin), fin après le début. null = période valable.
+export function rentalPeriodError(startsAt: string, endsAt: string, today: string = beninDateKey()): string | null {
+  if (!LOCAL_DATETIME.test(startsAt) || !LOCAL_DATETIME.test(endsAt)) return "Choisissez la date et l’heure de prise et de retour du véhicule.";
+  if (startsAt.slice(0, 10) < today) return "La date de début ne peut pas être dans le passé.";
+  if (endsAt <= startsAt) return "La fin de location doit être après le début.";
+  return null;
+}
+
+// Durée affichée (jours entamés, au moins 1), comme l'application. Aucun montant n'est calculé ici.
+export function rentalDays(startsAt: string, endsAt: string): number {
+  const start = Date.parse(`${startsAt}:00Z`);
+  const end = Date.parse(`${endsAt}:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return 1;
+  return Math.max(1, Math.ceil((end - start) / 3_600_000 / 24));
+}
+
+export interface RentalVehicleOffer {
+  rental_daily_rate: string | null;
+  rental_daily_rate_with_driver?: string | null;
+  driver_available: boolean;
+  driver_required?: boolean;
+}
+
+// Formules proposées pour un véhicule, d'après la Flotte (serveur) : sans chauffeur interdit si le chauffeur est obligatoire.
+export function rentalFormulas(vehicle: RentalVehicleOffer) {
+  const required = vehicle.driver_required === true;
+  return {
+    selfDrive: !required,
+    withDriver: required || vehicle.driver_available,
+    defaultWithDriver: required,
+  };
+}
+
+// Tarif par jour de la formule, tel que saisi dans la Flotte ; null s'il n'est pas renseigné (jamais de tarif de repli).
+export function rentalDailyRate(vehicle: RentalVehicleOffer, withDriver: boolean): string | null {
+  const rate = withDriver ? vehicle.rental_daily_rate_with_driver : vehicle.rental_daily_rate;
+  return rate === undefined || rate === null || rate === "" ? null : rate;
+}
+
+// Couleur de la pastille de statut, comme l'application : confirmée ou en cours = vert, annulée ou refusée = rouge, sinon orange.
+export function rentalStatusTone(status: string): "ok" | "danger" | "warn" {
+  const value = status.toUpperCase();
+  if (value.includes("CONFIRM") || value.includes("APPROVED") || value.includes("ACTIVE")) return "ok";
+  if (value.includes("CANCEL") || value.includes("REJECT")) return "danger";
+  return "warn";
+}
+
+// Accueil de l'espace du personnel qui contient `pathname` (/admin, /guichet, /controleur), sinon le site client.
+export function staffSpaceHome(pathname: string): string {
+  const space = ["/admin", "/guichet", "/controleur"].find((root) => pathname === root || pathname.startsWith(`${root}/`));
+  return space ?? "/";
+}
