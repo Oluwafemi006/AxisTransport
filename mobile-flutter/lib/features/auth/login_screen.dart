@@ -87,7 +87,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const AuthHeader(
-            title: 'Bon retour, connectez-vous',
+            title: 'Bon retour,\nconnectez-vous',
             subtitle: 'Voyager, expédier, louer.',
           ),
           Expanded(
