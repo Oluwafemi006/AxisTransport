@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { apiFetch, formatDate, money } from "@/lib/api";
 import { beninDateKey, beninDateTimeToIso, rentalDailyRate, rentalDays, rentalFormulas, rentalPeriodError, rentalStatusTone } from "@/lib/portal-rules";
 import type { RentalBooking, User, Vehicle } from "@/lib/types";
@@ -49,7 +49,7 @@ export function Rentals({ user, vehicles, rentals, onAuthenticated, onChanged }:
         vehicle={selected}
         user={user}
         onAuthenticated={onAuthenticated}
-        onBack={() => setSelected(null)}
+        onBack={() => { setSelected(null); window.scrollTo({ top: 0 }); }}
         onSent={async (message) => { setSelected(null); setNotice(message); await onChanged(); }}
       />
     );
@@ -139,6 +139,9 @@ function RentalRequest({ vehicle, user, onAuthenticated, onBack, onSent }: {
   const periodError = rentalPeriodError(startsAt, endsAt, today);
   const days = rentalDays(startsAt, endsAt);
   const rate = rentalDailyRate(vehicle, withDriver);
+  // Constaté sur téléphone : la page gardait sa position et l'on arrivait au milieu de la fiche.
+  const sheet = useRef<HTMLDivElement>(null);
+  useEffect(() => { sheet.current?.scrollIntoView({ block: "start" }); }, []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -157,7 +160,7 @@ function RentalRequest({ vehicle, user, onAuthenticated, onBack, onSent }: {
   }
 
   return (
-    <div className="card rental-sheet">
+    <div ref={sheet} className="card rental-sheet">
       <button type="button" className="text-button" onClick={onBack}>← Véhicules</button>
       {vehicle.photo_url && <img src={vehicle.photo_url} alt={vehicle.name} className="rental-photo" style={{ marginTop: "12px" }} />}
       <h3 style={{ marginTop: "12px" }}>{vehicle.name}</h3>

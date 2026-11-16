@@ -1008,7 +1008,7 @@ footer {
 .pill.rental-warn { background: var(--warnbg); color: var(--warn); }
 .pill.rental-danger { background: #FDE8E8; color: #B42318; }
 .rental-notice { background: var(--okbg); color: var(--ok); padding: 12px 14px; border-radius: 10px; margin-bottom: 16px; font-weight: 600; }
-.rental-sheet { max-width: 640px; margin: 0 auto; }
+.rental-sheet { max-width: 640px; margin: 0 auto; scroll-margin-top: 96px; }
 .rental-label { font-size: 12px; font-weight: 700; letter-spacing: .06em; color: var(--mute); margin: 20px 0 8px; }
 .rental-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .rental-choice { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer; min-width: 0; }
