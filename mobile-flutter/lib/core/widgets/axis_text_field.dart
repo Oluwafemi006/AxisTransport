@@ -28,6 +28,7 @@ class AxisTextField extends StatefulWidget {
     this.prefixIcon,
     this.suffixIcon,
     this.maxLines = 1,
+    this.borderRadius,
   });
 
   final String label;
@@ -47,6 +48,8 @@ class AxisTextField extends StatefulWidget {
   final Widget? prefixIcon;
   final Widget? suffixIcon;
   final int maxLines;
+  /// Arrondi propre à ce champ (sinon celui du thème) ; couleurs et épaisseurs du thème conservées.
+  final double? borderRadius;
 
   @override
   State<AxisTextField> createState() => _AxisTextFieldState();
@@ -54,6 +57,13 @@ class AxisTextField extends StatefulWidget {
 
 class _AxisTextFieldState extends State<AxisTextField> {
   bool _obscured = true;
+
+  // Bordure du thème avec l'arrondi demandé ; null = bordure du thème inchangée.
+  InputBorder? _rounded(InputBorder? border) {
+    final radius = widget.borderRadius;
+    if (radius == null || border is! OutlineInputBorder) return null;
+    return border.copyWith(borderRadius: BorderRadius.circular(radius));
+  }
 
   @override
   void initState() {
@@ -141,6 +151,12 @@ class _AxisTextFieldState extends State<AxisTextField> {
                 ? const BoxConstraints(minWidth: 0, minHeight: 0)
                 : null,
             suffixIcon: suffix,
+            border: _rounded(theme.inputDecorationTheme.border),
+            enabledBorder: _rounded(theme.inputDecorationTheme.enabledBorder),
+            disabledBorder: _rounded(theme.inputDecorationTheme.disabledBorder),
+            focusedBorder: _rounded(theme.inputDecorationTheme.focusedBorder),
+            errorBorder: _rounded(theme.inputDecorationTheme.errorBorder),
+            focusedErrorBorder: _rounded(theme.inputDecorationTheme.focusedErrorBorder),
           ),
         ),
       ],

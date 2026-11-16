@@ -5,6 +5,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| App : en-tête bleu fixe commun à la connexion et à l'inscription, « Bon retour, connectez-vous », champs arrondis à 30 et indicatifs, formulaire centré ; test des barres du système sur tout le parcours de commande | `cc/app-connexion-commande` | Claude Code | à valider par Eddy |
 | App : points d'embarquement — une ville sans point (Savè, Glazoué, Dassa…) n'en reçoit plus d'une autre ; test des 16 trajets de la ligne ; branche remise à jour sur main | `cc/parcours-reservation` | Claude Code | à valider par Eddy |
 | Parcours de réservation : points d'embarquement (libellés, point unique affiché, erreurs après action, plus de point d'une autre ville), nombre de passagers de la recherche prioritaire (app et site), app 1.0.8+10 | `cc/parcours-reservation` | Claude Code | à valider par Eddy |
 | Site client : location complète (formule, dates, envoi, mes demandes) ; contrôleur garde son écran si les départs échouent ; logo du personnel vers son espace ; message réseau en français ; onglets admin signalés comme défilables | `cc/web-location-controleur` | Claude Code | à valider par Eddy |

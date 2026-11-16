@@ -56,6 +56,8 @@ abstract final class AxisRadius {
 
   /// En-tête arrondi de l'écran de connexion.
   static const double authHeader = 28;
+  // Champs des écrans de connexion et d'inscription (remarque de relecture : rayon de 30).
+  static const double authField = 30;
 
   /// Avant arrondi de la silhouette du car (plan de sièges).
   static const double busFront = 40;

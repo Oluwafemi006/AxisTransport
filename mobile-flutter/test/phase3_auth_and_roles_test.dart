@@ -207,7 +207,7 @@ void main() {
       axisRouter.go('/');
       await tester.pumpAndSettle();
 
-      expect(find.text('Connexion'), findsOneWidget);
+      expect(find.text('Bon retour, connectez-vous'), findsOneWidget);
       expect(find.text('Se connecter'), findsOneWidget);
       expect(find.text('Créer un compte'), findsOneWidget);
     });
