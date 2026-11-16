@@ -76,6 +76,7 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
     }
   }
 
+  // Pendant le chargement, une ville pas encore connue n'est pas « À renseigner » : elle s'affiche dès son arrivée.
   String _placeName(int id) {
     for (final place in _places) {
       if (place.id == id) return place.name;
@@ -87,7 +88,7 @@ class _TripResultsScreenState extends ConsumerState<TripResultsScreen> {
         if (stop.id == id) return stop.name;
       }
     }
-    return 'À renseigner';
+    return _loading ? '…' : 'À renseigner';
   }
 
   List<Trip> get _sortedTrips {

@@ -579,6 +579,19 @@ void main() {
       final bottom = await lowestButtonBottom(tester, const BookingReviewScreen(tripId: 10), draft(withSeat: true));
       expect(bottom, lessThanOrEqualTo(800 - 34));
     });
+
+    // Constaté sur téléphone (TECNO KM5) : le titre passait sous l'heure et l'encoche.
+    testWidgets('sièges : le titre passe sous la barre d’état', (tester) async {
+      simulate(tester, top: 48, bottom: 34);
+      await lowestButtonBottom(tester, const SeatSelectionScreen(tripId: 10), draft());
+      expect(tester.getTopLeft(find.text('Choisissez votre siège').first).dy, greaterThanOrEqualTo(48));
+    });
+
+    testWidgets('récapitulatif : le titre passe sous la barre d’état', (tester) async {
+      simulate(tester, top: 48, bottom: 34);
+      await lowestButtonBottom(tester, const BookingReviewScreen(tripId: 10), draft(withSeat: true));
+      expect(tester.getTopLeft(find.text('Récapitulatif').first).dy, greaterThanOrEqualTo(48));
+    });
   });
 
 

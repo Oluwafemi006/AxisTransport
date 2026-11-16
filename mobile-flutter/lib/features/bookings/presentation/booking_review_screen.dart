@@ -290,16 +290,21 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
       body: Column(
         children: [
           // En-tête blanc + barre d'avancement en 4 segments (Recap.html)
+          // Marge de la barre d'état ajoutée : l'écran s'affiche bord à bord, le titre passait dessous.
           Container(
             decoration: BoxDecoration(
               color: theme.colorScheme.surface,
               border: Border(bottom: BorderSide(color: axis.border)),
             ),
-            padding: const EdgeInsets.fromLTRB(
-              AxisSpacing.screen,
-              AxisSpacing.s12,
-              AxisSpacing.screen,
-              AxisSpacing.s12,
+            padding: withSystemInsets(
+              context,
+              const EdgeInsets.fromLTRB(
+                AxisSpacing.screen,
+                AxisSpacing.s12,
+                AxisSpacing.screen,
+                AxisSpacing.s12,
+              ),
+              top: true,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
