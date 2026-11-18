@@ -1,3 +1,4 @@
+import '../../../core/widgets/system_insets.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -289,16 +290,21 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
       body: Column(
         children: [
           // En-tête blanc + barre d'avancement en 4 segments (Recap.html)
+          // Marge de la barre d'état ajoutée : l'écran s'affiche bord à bord, le titre passait dessous.
           Container(
             decoration: BoxDecoration(
               color: theme.colorScheme.surface,
               border: Border(bottom: BorderSide(color: axis.border)),
             ),
-            padding: const EdgeInsets.fromLTRB(
-              AxisSpacing.screen,
-              AxisSpacing.s12,
-              AxisSpacing.screen,
-              AxisSpacing.s12,
+            padding: withSystemInsets(
+              context,
+              const EdgeInsets.fromLTRB(
+                AxisSpacing.screen,
+                AxisSpacing.s12,
+                AxisSpacing.screen,
+                AxisSpacing.s12,
+              ),
+              top: true,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -733,16 +739,26 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Prix des billets',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: axis.textSecondary,
+                          Flexible(
+                            child: Text(
+                              'Prix des billets',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: axis.textSecondary,
+                              ),
                             ),
                           ),
-                          Text(
-                            formatMoney(totalToPay, currency),
-                            style: AxisTypography.price.copyWith(
-                              color: axis.ink,
+                          const SizedBox(width: AxisSpacing.s8),
+                          // Montant réduit (jamais coupé) si la place manque.
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: Text(
+                                formatMoney(totalToPay, currency),
+                                style: AxisTypography.price.copyWith(
+                                  color: axis.ink,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -842,11 +858,10 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                 color: theme.colorScheme.surface,
                 border: Border(top: BorderSide(color: axis.border)),
               ),
-              padding: const EdgeInsets.fromLTRB(
-                AxisSpacing.screen,
-                AxisSpacing.s12,
-                AxisSpacing.screen,
-                AxisSpacing.s16,
+              padding: withSystemInsets(
+                context,
+                const EdgeInsets.fromLTRB(AxisSpacing.screen, AxisSpacing.s12, AxisSpacing.screen, AxisSpacing.s16),
+                bottom: true,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,

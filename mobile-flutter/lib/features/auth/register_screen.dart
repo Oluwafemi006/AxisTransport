@@ -7,6 +7,7 @@ import '../../core/theme/axis_spacing.dart';
 import '../../core/theme/axis_tokens.dart';
 import '../../core/widgets/axis_button.dart';
 import '../../core/widgets/axis_text_field.dart';
+import 'auth_header.dart';
 
 /// Écran d'inscription client selon la maquette Inscription.html.
 ///
@@ -51,15 +52,21 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final confirm = _confirmPassword.text;
 
     if (firstName.isEmpty || lastName.isEmpty) {
-      setState(() => _errorMessage = 'Veuillez renseigner votre nom et prénom.');
+      setState(
+        () => _errorMessage = 'Veuillez renseigner votre nom et prénom.',
+      );
       return;
     }
     if (phone.isEmpty) {
-      setState(() => _errorMessage = 'Veuillez renseigner votre numéro de téléphone.');
+      setState(
+        () => _errorMessage = 'Veuillez renseigner votre numéro de téléphone.',
+      );
       return;
     }
     if (email.isEmpty || !email.contains('@')) {
-      setState(() => _errorMessage = 'Veuillez saisir une adresse e-mail valide.');
+      setState(
+        () => _errorMessage = 'Veuillez saisir une adresse e-mail valide.',
+      );
       return;
     }
     if (_username.text.trim().isEmpty) {
@@ -67,7 +74,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       return;
     }
     if (password.length < 8) {
-      setState(() => _errorMessage = 'Le mot de passe doit comporter au moins 8 caractères.');
+      setState(
+        () => _errorMessage =
+            'Le mot de passe doit comporter au moins 8 caractères.',
+      );
       return;
     }
     if (password != confirm) {
@@ -84,14 +94,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       final username = _username.text.trim();
       final formattedPhone = phone.startsWith('+229') ? phone : '+229$phone';
 
-      await ref.read(sessionProvider.notifier).register(
-        username: username,
-        password: password,
-        firstName: firstName,
-        lastName: lastName,
-        phone: formattedPhone,
-        email: email,
-      );
+      await ref
+          .read(sessionProvider.notifier)
+          .register(
+            username: username,
+            password: password,
+            firstName: firstName,
+            lastName: lastName,
+            phone: formattedPhone,
+            email: email,
+          );
 
       if (mounted) {
         // Une fois connecté, GoRouter redirige automatiquement vers l'accueil client.
@@ -103,7 +115,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       }
     } catch (error) {
       if (mounted) {
-        setState(() => _errorMessage = error.toString().replaceFirst('Exception: ', ''));
+        setState(
+          () =>
+              _errorMessage = error.toString().replaceFirst('Exception: ', ''),
+        );
       }
     } finally {
       if (mounted) {
@@ -119,222 +134,191 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // En-tête avec bouton retour
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
+      // En-tête bleu fixe, comme la connexion ; seul le formulaire défile.
+      body: Column(
+        children: [
+          AuthHeader(
+            title: 'Créer un compte',
+            subtitle: 'Le même compte sur l’app et sur le site.',
+            onBack: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/connexion');
+              }
+            },
+          ),
+          // Formulaire
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.fromLTRB(
                 AxisSpacing.screen,
-                AxisSpacing.sm,
+                AxisSpacing.md,
                 AxisSpacing.screen,
-                AxisSpacing.xs,
+                AxisSpacing.md + MediaQuery.paddingOf(context).bottom,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Tooltip(
-                    message: 'Retour',
-                    child: Semantics(
-                      label: 'Retour',
-                      button: true,
-                      child: Material(
-                        color: tokens.surfaceSoft,
-                        borderRadius: BorderRadius.circular(AxisRadius.small),
-                        child: InkWell(
-                          onTap: () {
-                            if (context.canPop()) {
-                              context.pop();
-                            } else {
-                              context.go('/connexion');
-                            }
-                          },
-                          borderRadius: BorderRadius.circular(AxisRadius.small),
-                          child: const SizedBox(
-                            width: AxisSizes.minTarget,
-                            height: AxisSizes.minTarget,
-                            child: Icon(Icons.arrow_back_rounded, size: 22),
-                          ),
-                        ),
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: AxisTextField(
+                        borderRadius: AxisRadius.authField,
+                        label: 'Nom',
+                        controller: _lastName,
+                        textInputAction: TextInputAction.next,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AxisSpacing.sm),
-                  Text(
-                    'Créer un compte',
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: tokens.ink,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Le même compte sur l’app et sur le site.',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: tokens.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Formulaire
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AxisSpacing.screen,
-                  vertical: AxisSpacing.xs,
-                ),
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: AxisTextField(
-                          label: 'Nom',
-                          controller: _lastName,
-                          textInputAction: TextInputAction.next,
-                        ),
-                      ),
-                      const SizedBox(width: AxisSpacing.xs),
-                      Expanded(
-                        child: AxisTextField(
-                          label: 'Prénom',
-                          controller: _firstName,
-                          textInputAction: TextInputAction.next,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AxisSpacing.sm),
-                  AxisTextField(
-                    label: 'Téléphone',
-                    controller: _phone,
-                    isPhone: true,
-                    hintText: '01 XX XX XX XX',
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: AxisSpacing.sm),
-                  AxisTextField(
-                    label: 'E-mail',
-                    controller: _email,
-                    hintText: 'exemple@mail.com',
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: AxisSpacing.sm),
-                  // La connexion n'accepte que l'identifiant (API) : le client le choisit et le connaît.
-                  AxisTextField(
-                    label: 'Identifiant',
-                    controller: _username,
-                    helperText: 'Servira à vous connecter',
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: AxisSpacing.sm),
-                  AxisTextField(
-                    label: 'Mot de passe',
-                    controller: _password,
-                    isPassword: true,
-                    helperText: '8 caractères minimum',
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: AxisSpacing.sm),
-                  AxisTextField(
-                    label: 'Confirmer le mot de passe',
-                    controller: _confirmPassword,
-                    isPassword: true,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _submit(),
-                  ),
-                ],
-              ),
-            ),
-            // Pied de page avec bouton d'action et lien retour
-            Container(
-              padding: const EdgeInsets.fromLTRB(
-                AxisSpacing.screen,
-                AxisSpacing.sm,
-                AxisSpacing.screen,
-                AxisSpacing.lg,
-              ),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                border: Border(top: BorderSide(color: tokens.border)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_errorMessage != null) ...[
-                    Container(
-                      padding: const EdgeInsets.all(AxisSpacing.sm),
-                      margin: const EdgeInsets.only(bottom: AxisSpacing.sm),
-                      decoration: BoxDecoration(
-                        color: tokens.danger.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(AxisRadius.sm),
-                        border: Border.all(
-                          color: tokens.danger.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.error_outline, color: tokens.danger, size: 20),
-                          const SizedBox(width: AxisSpacing.xs),
-                          Expanded(
-                            child: Text(
-                              _errorMessage!,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: tokens.danger,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
+                    const SizedBox(width: AxisSpacing.xs),
+                    Expanded(
+                      child: AxisTextField(
+                        borderRadius: AxisRadius.authField,
+                        label: 'Prénom',
+                        controller: _firstName,
+                        textInputAction: TextInputAction.next,
                       ),
                     ),
                   ],
-                  AxisButton(
-                    label: 'Créer mon compte',
-                    onPressed: _busy ? null : _submit,
-                    loading: _busy,
-                    variant: AxisButtonVariant.primary,
-                  ),
-                  const SizedBox(height: AxisSpacing.sm),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Déjà un compte ? ',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: tokens.textSecondary,
-                        ),
+                ),
+                const SizedBox(height: AxisSpacing.sm),
+                AxisTextField(
+                  borderRadius: AxisRadius.authField,
+                  label: 'Téléphone',
+                  controller: _phone,
+                  isPhone: true,
+                  hintText: '01 XX XX XX XX',
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: AxisSpacing.sm),
+                AxisTextField(
+                  borderRadius: AxisRadius.authField,
+                  label: 'E-mail',
+                  controller: _email,
+                  hintText: 'exemple@mail.com',
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: AxisSpacing.sm),
+                // La connexion n'accepte que l'identifiant (API) : le client le choisit et le connaît.
+                AxisTextField(
+                  borderRadius: AxisRadius.authField,
+                  label: 'Identifiant',
+                  controller: _username,
+                  helperText: 'Servira à vous connecter',
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: AxisSpacing.sm),
+                AxisTextField(
+                  borderRadius: AxisRadius.authField,
+                  label: 'Mot de passe',
+                  controller: _password,
+                  isPassword: true,
+                  helperText: '8 caractères minimum',
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: AxisSpacing.sm),
+                AxisTextField(
+                  borderRadius: AxisRadius.authField,
+                  label: 'Confirmer le mot de passe',
+                  controller: _confirmPassword,
+                  isPassword: true,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _submit(),
+                ),
+              ],
+            ),
+          ),
+          // Pied de page avec bouton d'action et lien retour
+          Container(
+            padding: const EdgeInsets.fromLTRB(
+              AxisSpacing.screen,
+              AxisSpacing.sm,
+              AxisSpacing.screen,
+              AxisSpacing.lg,
+            ),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              border: Border(top: BorderSide(color: tokens.border)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_errorMessage != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(AxisSpacing.sm),
+                    margin: const EdgeInsets.only(bottom: AxisSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: tokens.danger.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(AxisRadius.sm),
+                      border: Border.all(
+                        color: tokens.danger.withValues(alpha: 0.3),
                       ),
-                      TextButton(
-                        onPressed: () {
-                          if (context.canPop()) {
-                            context.pop();
-                          } else {
-                            context.go('/connexion');
-                          }
-                        },
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(0, AxisSizes.minTarget),
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          color: tokens.danger,
+                          size: 20,
                         ),
-                        child: Text(
-                          'Se connecter',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.primary,
-                            fontWeight: FontWeight.w800,
+                        const SizedBox(width: AxisSpacing.xs),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: tokens.danger,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
-              ),
+                AxisButton(
+                  label: 'Créer mon compte',
+                  onPressed: _busy ? null : _submit,
+                  loading: _busy,
+                  variant: AxisButtonVariant.primary,
+                ),
+                const SizedBox(height: AxisSpacing.sm),
+                // Passe à la ligne sur un écran étroit (débordait de 56 px à 390 px).
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      'Déjà un compte ? ',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: tokens.textSecondary,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        if (context.canPop()) {
+                          context.pop();
+                        } else {
+                          context.go('/connexion');
+                        }
+                      },
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(0, AxisSizes.minTarget),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                      ),
+                      child: Text(
+                        'Se connecter',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
-

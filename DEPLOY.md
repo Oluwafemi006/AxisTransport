@@ -21,8 +21,9 @@ Ce document ne contient aucun secret. Les valeurs données sont des exemples : `
 | Nom | Rôle | Exemple |
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | Adresse de l'API, **terminée par `/api/v1`**, sans barre finale. Obligatoire : le build échoue si elle manque. | `https://api.exemple.test/api/v1` |
+| `NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY` | Clé **publique** FedaPay (jamais la clé secrète), du même environnement que `FEDAPAY_ENVIRONMENT`. Facultative : vide, le paiement passe par la page FedaPay (redirection) ; renseignée, le paiement s'ouvre dans la page du site et de la PWA. Voir section 2 sexies. | clé publique **live** |
 
-C'est la seule variable. Elle est lue au moment du build : après l'avoir changée, il faut redéployer.
+Ces deux variables sont lues au moment du build : après les avoir changées, il faut redéployer (reconstruire le site).
 
 `VERCEL` est définie automatiquement par Vercel : il n'y a rien à saisir. Quand elle est présente,
 `next.config.ts` n'active pas la sortie `standalone`, réservée à l'image Docker.
@@ -272,6 +273,43 @@ L'application « Axis Transport » (`mobile-flutter`, identifiant Android `com.a
 | Signature avec la clé de débogage (`signingConfig = signingConfigs.getByName("debug")` dans `mobile-flutter/android/app/build.gradle.kts`) | Une vraie clé de signature est nécessaire |
 | Permission caméra déclarée pour tous les utilisateurs | Demandée seulement à l'ouverture du scanner (personnel) ; visible sur la fiche Play Store |
 
+## 2 sexies. PWA par espace et paiement dans la page (lot cc/pwa-par-role)
+
+Le site s'installe comme application (PWA) **séparément pour chaque espace**. Chaque page déclare son manifeste et sa portée :
+
+| Espace | Page d'installation | Manifeste | Portée (`scope`) | Nom sur l'écran d'accueil |
+|---|---|---|---|---|
+| Client | `/` | `/manifest.webmanifest` | `/` | Axis |
+| Administration | `/admin` | `/manifest-admin.webmanifest` | `/admin` | Axis Admin |
+| Guichet | `/guichet` | `/manifest-guichet.webmanifest` | `/guichet` | Axis Guichet |
+| Contrôleur | `/controleur` | `/manifest-controleur.webmanifest` | `/controleur` | Axis Contrôle |
+
+Conséquence de la portée `/` de l'espace client : elle **englobe** les trois autres. Installée depuis `/`, l'application
+client peut aussi afficher `/admin`, `/guichet` ou `/controleur` si l'on y navigue (lien ou adresse) ; l'inverse n'est pas
+vrai : depuis l'application « Axis Admin », une page hors de `/admin` s'ouvre dans le navigateur. Les quatre applications
+ont des identifiants (`id`) distincts et peuvent être installées côte à côte sur le même téléphone. Même icône pour les quatre
+(aucune icône par espace n'a été décidée).
+
+- **Service worker** : un seul, celui de l'espace contrôleur, enregistré avec la portée `/controleur`. Hors ligne, il ne renvoie
+  la page du contrôleur qu'à une navigation de cet espace. Les anciens enregistrements à portée `/` (version précédente) sont
+  retirés automatiquement à l'ouverture de n'importe quel portail.
+- **iPhone (Safari)** : pas d'invite d'installation ; Partager → « Sur l'écran d'accueil ». Safari ignore le manifeste et lit les
+  balises `apple-mobile-web-app-*` déclarées par chaque page. Comportement réel non vérifié sur iPhone (voir rapport de la tâche).
+- **Paiement Mobile Money dans la page** : avec `NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY`, le site ouvre la boîte de dialogue FedaPay
+  (Checkout.js, `https://cdn.fedapay.com/checkout.js?v=1.1.7`) **sur la transaction créée par notre serveur** (`transaction.id`) :
+  le montant reste fixé par le serveur, et le billet n'est émis que par le serveur après vérification (`/pay/`, webhook ou
+  rattrapage), exactement comme avant. À la fermeture du dialogue, le site demande la vérification au serveur ; rien n'est décidé
+  dans le navigateur. Sans clé publique, ou si le script FedaPay ne se charge pas, le site redirige vers la page FedaPay comme avant.
+- **Retour au premier plan** : quand un paiement est en cours (réservation tenue, transaction créée), l'espace client demande la
+  vérification au serveur dès que la page revient au premier plan (et au chargement, au retour de la page FedaPay), au plus une fois
+  toutes les 5 secondes. Le bouton « J'ai payé · vérifier » reste disponible.
+- **Côté FedaPay (à faire par Eddy, hors dépôt)** : 1) relever la clé **publique** de l'environnement choisi dans le tableau de bord
+  FedaPay (API) ; 2) autoriser le domaine du site (`axistransportlogistique.com`) pour Checkout JS dans le compte FedaPay
+  (« Autorisation de domaine », exigée à la première connexion, sinon le dialogue renvoie vers la création de compte FedaPay) ;
+  3) écrire la clé dans `.env.vps` sur la ligne `NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY=` ; 4) reconstruire le site : la variable est lue à la
+  compilation (`$C build frontend && $C up -d frontend`). Non vérifié dans le dépôt : si Checkout.js exige en plus l'option
+  `environment` (`sandbox`/`live`) quand la clé publique seule ne suffit pas ; à constater au premier essai sandbox.
+
 ## 3. À ne jamais faire en production
 
 - **Ne jamais lancer `seed_demo`.** Elle crée des comptes au mot de passe connu, un tarif et des voyages fictifs. Elle refuse de tourner quand `DJANGO_DEBUG` est faux : ne pas activer le debug pour la contourner.
@@ -284,7 +322,7 @@ L'application « Axis Transport » (`mobile-flutter`, identifiant Android `com.a
 
 1. `GET https://api.exemple.test/api/v1/health/` répond `{"status": "ok"}`.
 2. La page d'accueil du site affiche les villes (sinon : vérifier `NEXT_PUBLIC_API_URL` et CORS).
-3. Un paiement de test aboutit et le billet s'affiche.
+3. Un paiement de test aboutit et le billet s'affiche. Avec `NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY`, le dialogue FedaPay s'ouvre dans la page ; sans elle, redirection.
 4. Le webhook FedaPay répond 200 à un événement signé, 400 sans signature.
 
 ## 5. VPS : tout le projet sur un serveur (production, VPS Contabo)
@@ -382,6 +420,7 @@ Attendu : l'éditeur s'ouvre. Saisir les valeurs sur le serveur (noms ci-dessous
 | `AXIS_NUM_PROXIES` | déjà `1` | un seul proxy (Caddy) devant l'API |
 | `POSTGRES_PASSWORD` | **Eddy (secret)** | lettres et chiffres seulement |
 | `NEXT_PUBLIC_API_URL` | Eddy | `https://api.axistransportlogistique.com/api/v1` (avec `/api/v1` : le site y ajoute directement `/client/…`) |
+| `NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY` | Eddy | clé **publique** FedaPay du même environnement ; vide = paiement par redirection (section 2 sexies) |
 | `AXIS_ADMIN_USERNAME`, `AXIS_ADMIN_PASSWORD`, `AXIS_ADMIN_EMAIL` | **laisser vides** | l'admin se crée à l'étape 10 |
 | `FEDAPAY_ENVIRONMENT` | Eddy | `sandbox` pour le scénario de test (5 ter), `live` à l'ouverture réelle |
 | `FEDAPAY_SECRET_KEY` | **Eddy (secret)** | clé du même environnement |
@@ -596,6 +635,7 @@ Toutes les variables (S = secret, saisi sur le serveur) :
 | `AXIS_NUM_PROXIES` | `1` | `1` |
 | `POSTGRES_PASSWORD` (S) | lettres et chiffres | un autre mot de passe (voir 5.9) |
 | `NEXT_PUBLIC_API_URL` | `http://<IP>/api/v1` | `https://api.<DOMAINE>/api/v1` |
+| `NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY` | clé publique sandbox, ou vide | clé publique du même environnement, ou vide |
 | `AXIS_ADMIN_USERNAME`, `AXIS_ADMIN_EMAIL` | compte réel | compte réel |
 | `AXIS_ADMIN_PASSWORD` (S) | mot de passe fort | mot de passe fort, différent |
 | `FEDAPAY_ENVIRONMENT` | `sandbox` | `sandbox`, puis `live` |

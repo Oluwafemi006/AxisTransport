@@ -69,6 +69,7 @@ class _ControllerScannerScreenState
   ScanResultData? _resultData;
   String? _scannedCode;
   String? _networkError;
+  String? _sessionError;
 
   @override
   void initState() {
@@ -91,6 +92,23 @@ class _ControllerScannerScreenState
       _scannedCode = null;
       _networkError = null;
     });
+  }
+
+  /// Session perdue (401) ou compte non habilité (403) : le serveur n'a pas examiné le billet.
+  /// Afficher « Billet refusé » ferait refuser à tort un passager en règle.
+  bool _isSessionError(ApiException error) =>
+      error.statusCode == 401 || error.statusCode == 403;
+
+  /// Message demandé par Eddy : la session de l'agent, pas le billet, est en cause.
+  static const sessionExpiredMessage =
+      'Session expirée : votre compte n\'est plus connecté. Reconnectez-vous, puis rescannez ce billet. Le billet n\'a pas été examiné.';
+  static const notAllowedMessage =
+      'Ce compte n\'est pas autorisé à contrôler les billets. Le billet n\'a pas été examiné.';
+
+  Future<void> _reconnect() async {
+    await ref.read(sessionProvider.notifier).logout();
+    if (!mounted) return;
+    context.go('/connexion');
   }
 
   bool _isAlreadyUsedError(ApiException error) {
@@ -119,6 +137,7 @@ class _ControllerScannerScreenState
     setState(() {
       _isProcessing = true;
       _networkError = null;
+      _sessionError = null;
     });
 
     final apiClient = ref.read(apiClientProvider);
@@ -181,6 +200,18 @@ class _ControllerScannerScreenState
           _scannedCode = code;
           _networkError =
               'Hors connexion : impossible de vérifier ce billet sans réseau. Vérifiez votre connexion et réessayez.';
+        });
+        return;
+      }
+
+      if (_isSessionError(error)) {
+        setState(() {
+          _isProcessing = false;
+          _resultData = null;
+          _scannedCode = code;
+          _sessionError = error.statusCode == 401
+              ? sessionExpiredMessage
+              : notAllowedMessage;
         });
         return;
       }
@@ -375,6 +406,56 @@ class _ControllerScannerScreenState
                     ],
                   ),
                 ),
+
+                // Bandeau session perdue ou compte non habilité : bouton de reconnexion, jamais « Billet refusé ».
+                if (_sessionError != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AxisSpacing.md,
+                      vertical: AxisSpacing.xs,
+                    ),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(AxisSpacing.sm),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(AxisRadius.md),
+                        border: Border.all(color: axis.danger),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.lock_outline_rounded,
+                                size: 16,
+                                color: axis.danger,
+                              ),
+                              const SizedBox(width: AxisSpacing.xs),
+                              Expanded(
+                                child: Text(
+                                  _sessionError!,
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: axis.danger,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AxisSpacing.xs),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              key: const Key('scan-reconnect'),
+                              onPressed: _reconnect,
+                              child: const Text('Se reconnecter'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
 
                 // Bandeau d'erreur réseau (si hors connexion sans cache local des billets du trajet)
                 if (_networkError != null)

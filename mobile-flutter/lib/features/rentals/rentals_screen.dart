@@ -1,3 +1,4 @@
+import '../../core/widgets/system_insets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -936,7 +937,7 @@ class _RentalDetailScreenState extends ConsumerState<RentalDetailScreen> {
                           ),
                         ),
                         Positioned(
-                          top: AxisSpacing.s16,
+                          top: AxisSpacing.s16 + MediaQuery.paddingOf(context).top,
                           left: AxisSpacing.screen,
                           child: Container(
                             decoration: BoxDecoration(
@@ -1232,11 +1233,10 @@ class _RentalDetailScreenState extends ConsumerState<RentalDetailScreen> {
 
           // ── Pied de page : estimation + bouton d'envoi ────────────────────
           Container(
-            padding: const EdgeInsets.fromLTRB(
-              AxisSpacing.screen,
-              AxisSpacing.s12,
-              AxisSpacing.screen,
-              AxisSpacing.s20,
+            padding: withSystemInsets(
+              context,
+              const EdgeInsets.fromLTRB(AxisSpacing.screen, AxisSpacing.s12, AxisSpacing.screen, AxisSpacing.s20),
+              bottom: true,
             ),
             decoration: BoxDecoration(
               color: theme.colorScheme.surface,

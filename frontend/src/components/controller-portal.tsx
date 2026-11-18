@@ -3,9 +3,13 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
+import { SessionExpiredDialog } from "./session-expired";
+import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
+import { useSessionGuard } from "@/lib/use-session";
 import { AccessDenied, EmptyState, Loading, Notice, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge } from "./ui";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken } from "@/lib/api";
-import { beninDateKey } from "@/lib/portal-rules";
+import { registerControllerServiceWorker } from "@/lib/pwa";
+import { actionErrorText, beninDateKey } from "@/lib/portal-rules";
 import type { Seat, Ticket, Trip, User } from "@/lib/types";
 
 type ScanResult = { ticket: Ticket; control_id: number };
@@ -13,6 +17,8 @@ type ScanResult = { ticket: Ticket; control_id: number };
 export function ControllerPortal() {
   const [user, setUser] = useState<User | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
+  // Échec du chargement des départs : l'agent garde son écran, avec un message et « Réessayer ».
+  const [tripsError, setTripsError] = useState("");
   const [tripId, setTripId] = useState("");
   const [seats, setSeats] = useState<Seat[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -20,6 +26,26 @@ export function ControllerPortal() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
+  // Session terminée (renouvellement refusé, inactivité) : reconnexion par-dessus le portail, saisies conservées.
+  const [expired, setExpired] = useState(false);
+  useSessionGuard(() => setExpired(true));
+
+  // Départs d'aujourd'hui (heure du Bénin) et à venir seulement, du plus proche au plus lointain ;
+  // les départs d'un itinéraire désactivé ne sont pas proposés.
+  const loadTrips = useCallback(async () => {
+    setTripsError("");
+    try {
+      const allTrips = await apiList<Trip>("/trips/?all=true");
+      const today = beninDateKey();
+      setTrips(allTrips
+        .filter((trip) => trip.route_detail.active && !["COMPLETED", "CANCELLED"].includes(trip.status) && beninDateKey(new Date(trip.departure_at)) >= today)
+        .sort((a, b) => a.departure_at.localeCompare(b.departure_at)));
+    } catch (reason) {
+      // Vraie session expirée : la couche API ouvre déjà la reconnexion ; sinon, message et « Réessayer ».
+      if ((reason as { status?: number }).status === 401) { clearTokens(); setExpired(true); return; }
+      setTripsError(actionErrorText(reason, "Les départs n’ont pas pu être chargés."));
+    }
+  }, []);
 
   const load = useCallback(async () => {
     if (!getAccessToken()) { setLoading(false); return; }
@@ -29,16 +55,12 @@ export function ControllerPortal() {
       if (!["CONTROLLER", "ADMIN"].includes(me.role)) { setUser(me); setAccessDenied(true); return; }
       // Mot de passe provisoire : seul l'écran de changement s'affiche (le serveur refuse le reste).
       if (me.must_change_password) { setUser(me); return; }
-      const allTrips = await apiList<Trip>("/trips/?all=true");
-      // Les départs d'un itinéraire désactivé ne sont pas proposés.
-      setUser(me); // Départs d'aujourd'hui (heure du Bénin) et à venir seulement, du plus proche au plus lointain.
-      const today = beninDateKey();
-      setTrips(allTrips
-        .filter((trip) => trip.route_detail.active && !["COMPLETED", "CANCELLED"].includes(trip.status) && beninDateKey(new Date(trip.departure_at)) >= today)
-        .sort((a, b) => a.departure_at.localeCompare(b.departure_at)));
-    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Connexion impossible."); if ((reason as { status?: number }).status === 401) { clearTokens(); setUser(null); } }
+      // Le compte est retenu avant les départs : un échec de leur chargement ne renvoie plus à la connexion.
+      setUser(me);
+      await loadTrips();
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : "Connexion impossible."); if ((reason as { status?: number }).status === 401) { clearTokens(); setExpired(true); } }
     finally { setLoading(false); }
-  }, []);
+  }, [loadTrips]);
 
   const loadTrip = useCallback(async (id: string) => {
     if (!id) { setSeats([]); setTickets([]); return; }
@@ -46,7 +68,7 @@ export function ControllerPortal() {
     setSeats(seatData); setTickets(ticketData);
   }, []);
 
-  useEffect(() => { void load(); if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js"); }, [load]);
+  useEffect(() => { void load(); void registerControllerServiceWorker(); }, [load]);
   useEffect(() => { void loadTrip(tripId); }, [tripId, loadTrip]);
 
   async function validate(value: string, method: "QR" | "MANUAL") {
@@ -59,15 +81,18 @@ export function ControllerPortal() {
   }
 
   if (accessDenied) return <AccessDenied area="l’équipe de contrôle" />;
-  if (!getAccessToken() || (!loading && !user)) {
+  // Aucun compte chargé : page de connexion. Un compte déjà chargé dont la session expire garde l'écran (boîte ci-dessous).
+  if (!user && (!getAccessToken() || !loading)) {
     return (
-      <StaffLogin error={message}>
-        <LoginCard title="Interface contrôleur" onSuccess={() => void load()} />
+      <StaffLogin error={expired ? SESSION_EXPIRED_MESSAGE : message}>
+        <LoginCard title="Interface contrôleur" onSuccess={() => { setExpired(false); void load(); }} />
       </StaffLogin>
     );
   }
 
   return (
+    <>
+    {expired && <SessionExpiredDialog title="Interface contrôleur" onSuccess={() => { setExpired(false); void load(); }} />}
     <StaffShell user={user}>
       <StaffTitle eyebrow="Contrôle embarquement / à bord" title="Vérifier un billet" />
       {!user ? <Loading /> : (
@@ -78,6 +103,12 @@ export function ControllerPortal() {
               <option value="">Choisir le voyage</option>
               {trips.map((trip) => <option key={trip.id} value={trip.id}>{trip.route_detail.label} · {formatDate(trip.departure_at)}</option>)}
             </select>
+            {tripsError && (
+              <div className="mt-3">
+                <Notice notice={{ text: tripsError, tone: "error" }} className="mt-0" />
+                <button type="button" className="btn s mt-3" onClick={() => void loadTrips()}>Réessayer</button>
+              </div>
+            )}
           </section>
           <div className="mt-5 grid gap-5 md:grid-cols-2">
             <Scanner disabled={!tripId} onValue={(value) => void validate(extractToken(value), "QR")} />
@@ -105,6 +136,7 @@ export function ControllerPortal() {
         </>
       )}
     </StaffShell>
+    </>
   );
 }
 

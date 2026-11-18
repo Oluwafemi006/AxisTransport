@@ -102,6 +102,8 @@ services:
       args:
         # Lue au moment du build : après l'avoir changée, il faut reconstruire le site.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL doit être définie dans .env.vps}
+        # Clé publique FedaPay (paiement dans la page, PWA). Vide : redirection vers la page FedaPay.
+        NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY: ${NEXT_PUBLIC_FEDAPAY_PUBLIC_KEY:-}
     restart: unless-stopped
     depends_on:
       - backend

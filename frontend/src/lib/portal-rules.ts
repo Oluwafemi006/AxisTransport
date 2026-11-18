@@ -269,3 +269,123 @@ export function reportPeriodError(start: string, end: string, today: string = be
   if (end > today) return "La date de fin ne peut pas dépasser aujourd'hui.";
   return null;
 }
+
+// ─── Location de véhicules (mêmes règles et messages que mobile-flutter/lib/features/rentals/rentals_screen.dart) ───
+
+// Saisie d'un champ « date et heure » du navigateur : AAAA-MM-JJTHH:MM, lue comme heure du Bénin (UTC+1, sans heure d'été).
+const LOCAL_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+export function beninDateTimeToIso(value: string): string | null {
+  return LOCAL_DATETIME.test(value) ? `${value}:00+01:00` : null;
+}
+
+// Période de location : début pas avant aujourd'hui (jour du Bénin), fin après le début. null = période valable.
+export function rentalPeriodError(startsAt: string, endsAt: string, today: string = beninDateKey()): string | null {
+  if (!LOCAL_DATETIME.test(startsAt) || !LOCAL_DATETIME.test(endsAt)) return "Choisissez la date et l’heure de prise et de retour du véhicule.";
+  if (startsAt.slice(0, 10) < today) return "La date de début ne peut pas être dans le passé.";
+  if (endsAt <= startsAt) return "La fin de location doit être après le début.";
+  return null;
+}
+
+// Durée affichée (jours entamés, au moins 1), comme l'application. Aucun montant n'est calculé ici.
+export function rentalDays(startsAt: string, endsAt: string): number {
+  const start = Date.parse(`${startsAt}:00Z`);
+  const end = Date.parse(`${endsAt}:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return 1;
+  return Math.max(1, Math.ceil((end - start) / 3_600_000 / 24));
+}
+
+export interface RentalVehicleOffer {
+  rental_daily_rate: string | null;
+  rental_daily_rate_with_driver?: string | null;
+  driver_available: boolean;
+  driver_required?: boolean;
+}
+
+// Formules proposées pour un véhicule, d'après la Flotte (serveur) : sans chauffeur interdit si le chauffeur est obligatoire.
+export function rentalFormulas(vehicle: RentalVehicleOffer) {
+  const required = vehicle.driver_required === true;
+  return {
+    selfDrive: !required,
+    withDriver: required || vehicle.driver_available,
+    defaultWithDriver: required,
+  };
+}
+
+// Tarif par jour de la formule, tel que saisi dans la Flotte ; null s'il n'est pas renseigné (jamais de tarif de repli).
+export function rentalDailyRate(vehicle: RentalVehicleOffer, withDriver: boolean): string | null {
+  const rate = withDriver ? vehicle.rental_daily_rate_with_driver : vehicle.rental_daily_rate;
+  return rate === undefined || rate === null || rate === "" ? null : rate;
+}
+
+// Couleur de la pastille de statut, comme l'application : confirmée ou en cours = vert, annulée ou refusée = rouge, sinon orange.
+export function rentalStatusTone(status: string): "ok" | "danger" | "warn" {
+  const value = status.toUpperCase();
+  if (value.includes("CONFIRM") || value.includes("APPROVED") || value.includes("ACTIVE")) return "ok";
+  if (value.includes("CANCEL") || value.includes("REJECT")) return "danger";
+  return "warn";
+}
+
+// Accueil de l'espace du personnel qui contient `pathname` (/admin, /guichet, /controleur), sinon le site client.
+export function staffSpaceHome(pathname: string): string {
+  const space = ["/admin", "/guichet", "/controleur"].find((root) => pathname === root || pathname.startsWith(`${root}/`));
+  return space ?? "/";
+}
+
+// Points d'embarquement : libellés en question, avec une courte aide.
+export const BOARDING_POINT_HELP = "Choisissez l’arrêt exact";
+export function boardingFieldLabel(kind: "boarding" | "alighting", city: string): string {
+  const place = city.trim() || "votre ville";
+  return kind === "boarding" ? `Où montez-vous à ${place} ?` : `Où descendez-vous à ${place} ?`;
+}
+
+// Nombre de passagers choisi dans la recherche (1 à 8) : les passagers déjà saisis sont gardés.
+export function resizePassengers<T>(current: T[], count: number, blank: (index: number) => T): T[] {
+  const wanted = Math.min(8, Math.max(1, Math.trunc(count) || 1));
+  if (current.length === wanted) return current;
+  if (current.length > wanted) return current.slice(0, wanted);
+  return [...current, ...Array.from({ length: wanted - current.length }, (_, i) => blank(current.length + i))];
+}
+
+// ─── Dates et heures : toujours à l'heure du Bénin, quel que soit le réglage de l'appareil ───
+
+export const BENIN_TIME_ZONE = "Africa/Porto-Novo";
+
+// Instant venant du serveur (ISO avec fuseau) affiché à l'heure du Bénin.
+export function formatBeninDateTime(value: string, options: Intl.DateTimeFormatOptions = { dateStyle: "medium", timeStyle: "short" }): string {
+  return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: BENIN_TIME_ZONE }).format(new Date(value));
+}
+
+// Jour calendaire AAAA-MM-JJ (déjà un jour du Bénin) : affiché tel quel, sans glisser d'un jour selon le fuseau de l'appareil.
+export function formatDayKey(key: string, options: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: "UTC" }).format(new Date(`${key}T12:00:00Z`));
+}
+
+// ─── Numéro WhatsApp du client : indicatif choisi + numéro local (voyageurs d'autres pays) ───
+
+// Indicatifs proposés au guichet ; « Autre » permet d'en saisir n'importe lequel. Liste à ajuster par l'agence.
+export const PHONE_COUNTRY_CODES: Array<{ code: string; label: string }> = [
+  { code: "+229", label: "Bénin (+229)" },
+  { code: "+228", label: "Togo (+228)" },
+  { code: "+234", label: "Nigeria (+234)" },
+  { code: "+227", label: "Niger (+227)" },
+  { code: "+226", label: "Burkina Faso (+226)" },
+  { code: "+233", label: "Ghana (+233)" },
+  { code: "+225", label: "Côte d’Ivoire (+225)" },
+  { code: "+221", label: "Sénégal (+221)" },
+  { code: "+223", label: "Mali (+223)" },
+  { code: "+237", label: "Cameroun (+237)" },
+  { code: "+241", label: "Gabon (+241)" },
+  { code: "+33", label: "France (+33)" },
+];
+
+// Numéro international à partir de l'indicatif et du numéro saisi. Un numéro déjà international (+…) est gardé.
+// Bénin : le numéro à 10 chiffres garde son 01 (numérotation de 2024). Ailleurs, le 0 initial national est retiré.
+// null si l'indicatif ou le numéro ne sont pas valables.
+export function internationalNumber(code: string, local: string): string | null {
+  const compact = local.replace(/[\s.\-()]/g, "");
+  if (/^(\+|00)\d{6,15}$/.test(compact)) return compact.startsWith("00") ? `+${compact.slice(2)}` : compact;
+  if (!/^\+\d{1,4}$/.test(code) || !/^\d{4,14}$/.test(compact)) return null;
+  const national = code === "+229" ? compact : compact.replace(/^0/, "");
+  return `${code}${national}`;
+}

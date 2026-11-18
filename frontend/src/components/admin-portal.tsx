@@ -1,10 +1,14 @@
 "use client";
 
 import { PasswordInput } from "./password-input";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { AccessDenied, EmptyState, Loading, Notice, type NoticeState, SectionHeading, StaffLogin, StaffShell, StaffTitle, StatusBadge, ticketTone, tripTone, useActionFeedback } from "./ui";
 import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
+import { CloseIcon } from "./icons";
+import { SessionExpiredDialog } from "./session-expired";
+import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
+import { useSessionGuard } from "@/lib/use-session";
 import { HeadlineCards, ReportPanel } from "./admin-report";
 import type { Headline } from "./admin-report";
 
@@ -12,7 +16,9 @@ import type { Headline } from "./admin-report";
 const emptyHeadline: Headline = { tickets_sold: 0, tickets_scanned: 0, tickets_refunded: 0, gross_revenue: 0, parcels: { tracked: 0, cancelled: 0, picked_up: 0 } };
 import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
-import { actionErrorText, beninDateKey, holdMinutesConfigured, offlinePaymentConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref, type SegmentDirection, type SegmentOffer } from "@/lib/portal-rules";
+import { unregisterLegacyServiceWorkers } from "@/lib/pwa";
+import { SALE_RESULT_KEY, clearPendingSale, loadPendingSale, parseSaleResult, savePendingSale, type StaffSpace } from "@/lib/staff-sale";
+import { PHONE_COUNTRY_CODES, internationalNumber, actionErrorText, beninDateKey, formatDayKey, holdMinutesConfigured, offlinePaymentConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref, type SegmentDirection, type SegmentOffer } from "@/lib/portal-rules";
 
 import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, LineState, LineStopRow, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, RentalBooking, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
@@ -59,6 +65,9 @@ export function AdminPortal() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
+  // Session terminée (renouvellement refusé, inactivité) : reconnexion par-dessus le portail, saisies conservées.
+  const [expired, setExpired] = useState(false);
+  useSessionGuard(() => setExpired(true));
 
   const load = useCallback(async () => {
     if (!getAccessToken()) { setLoading(false); return; }
@@ -81,23 +90,26 @@ export function AdminPortal() {
       setMe(currentUser); setDashboard(dash); setLocations(allLocations); setRoutes(allRoutes); setTrips(allTrips); setVehicles(allVehicles);
       setFares(allFares); setFlags(allFlags); setUsers(team); setParcels(allParcels); setPayments(methods); setSettings(allSettings); setIncidents(allIncidents);
       setWeeklySchedules(allWeekly);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Chargement impossible."); if ((reason as { status?: number }).status === 401) { clearTokens(); setMe(null); } }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Chargement impossible."); if ((reason as { status?: number }).status === 401) { clearTokens(); setExpired(true); } }
     finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); void unregisterLegacyServiceWorkers(); }, [load]);
 
   if (accessDenied) return <AccessDenied area="l’administration" />;
-  if (!getAccessToken() || (!loading && !me)) {
+  // Aucun compte chargé : page de connexion. Un compte déjà chargé dont la session expire garde l'écran (boîte ci-dessous).
+  if (!me && (!getAccessToken() || !loading)) {
     return (
-      <StaffLogin error={error}>
-        <LoginCard title="Administration Axis" onSuccess={() => void load()} />
+      <StaffLogin error={expired ? SESSION_EXPIRED_MESSAGE : error}>
+        <LoginCard title="Administration Axis" onSuccess={() => { setExpired(false); void load(); }} />
       </StaffLogin>
     );
   }
 
   // Les panneaux restent affichés pendant une actualisation : les démonter ferait perdre les saisies en cours.
   return (
+    <>
+    {expired && <SessionExpiredDialog title="Administration Axis" onSuccess={() => { setExpired(false); void load(); }} />}
     <StaffShell user={me} tabs={tabs} current={tab} onTab={setTab}>
       <StaffTitle
         eyebrow="Back-office"
@@ -112,7 +124,7 @@ export function AdminPortal() {
           {tab === "dashboard" && <><BusPositions /><DashboardPanel data={dashboard} trips={trips} onReport={() => setTab("bilan")} /></>}
           {tab === "bilan" && <ReportPanel />}
           {tab === "planning" && <PlanningPanel routes={routes} vehicles={vehicles.filter((v) => v.category === "BUS")} trips={trips} weeklySchedules={weeklySchedules} onChanged={load} />}
-          {tab === "guichet" && <><CounterPanel onChanged={load} /><SoldToday /></>}
+          {tab === "guichet" && <><CounterPanel onChanged={load} space="admin" onHome={() => setTab("dashboard")} /><SoldToday /></>}
           {tab === "billets" && <TicketsPanel settings={settings} onChanged={load} />}
           {tab === "points" && <BoardingPointsPanel locations={locations} onChanged={load} />}
           {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
@@ -127,6 +139,7 @@ export function AdminPortal() {
         </>
       )}
     </StaffShell>
+    </>
   );
 }
 
@@ -160,7 +173,7 @@ function DashboardPanel({ data, trips, onReport }: { data: Dashboard | null; tri
     .sort((a, b) => a.departure_at.localeCompare(b.departure_at));
   return (
     <>
-      <SectionHeading eyebrow="Heure du Bénin, de minuit à minuit" title={`Aujourd'hui (${new Date(`${data.today.date}T00:00:00`).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })})`} />
+      <SectionHeading eyebrow="Heure du Bénin, de minuit à minuit" title={`Aujourd'hui (${formatDayKey(data.today.date, { weekday: "long", day: "numeric", month: "long" })})`} />
       <HeadlineCards data={data.today} />
       <p className="mt-4"><button type="button" className="secondary-button" onClick={onReport}>Voir le bilan global</button></p>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.6fr]">
@@ -469,8 +482,8 @@ function PlanningPanel({ routes, vehicles, trips, weeklySchedules, onChanged }: 
               <h4 className="font-semibold text-slate-800">
                 Modifier l’horaire du {editingSchedule.day_of_week_display}
               </h4>
-              <button type="button" onClick={() => setEditingSchedule(null)} className="text-sm text-slate-500 hover:text-slate-800">
-                Fermer ✕
+              <button type="button" onClick={() => setEditingSchedule(null)} className="text-sm text-slate-500 hover:text-slate-800 inline-flex items-center gap-1">
+                Fermer <CloseIcon size={14} />
               </button>
             </div>
             <form onSubmit={saveSchedule} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -738,6 +751,7 @@ type SaleSegment = { origin_id: number; origin: string; destination_id: number; 
 type SaleTrip = Trip & { segments: SaleSegment[]; departed?: boolean };
 type SaleCheckout = { transaction_id: string; payment_url: string | null; payment_method: number; total: number | string; currency: string };
 type SaleResult = { booking: Booking; checkout?: SaleCheckout | null; payment_error?: string };
+type PendingSaleRow = { booking: Booking; transaction_id: string; payment_method: number };
 
 function newSaleKey() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -745,7 +759,8 @@ function newSaleKey() {
     : `${Date.now()}${Math.random().toString(36).slice(2)}`.slice(0, 40);
 }
 
-export function CounterPanel({ onChanged }: { onChanged: () => Promise<void> }) {
+// `space` : espace d'où part la vente (FedaPay y renvoie l'agent). `onHome` : retour à l'accueil de l'espace.
+export function CounterPanel({ onChanged, space, onHome }: { onChanged: () => Promise<void>; space: StaffSpace; onHome?: () => void }) {
   const feedback = useActionFeedback();
   const [saleTrips, setSaleTrips] = useState<SaleTrip[] | null>(null);
   const [routeLabel, setRouteLabel] = useState("");
@@ -761,8 +776,21 @@ export function CounterPanel({ onChanged }: { onChanged: () => Promise<void> }) 
   const [result, setResult] = useState<SaleResult | null>(null);
   // Numéro WhatsApp du client, facultatif : prérempli avec son téléphone, sert seulement à lui envoyer son billet.
   const [whatsapp, setWhatsapp] = useState("");
+  // Indicatif du pays du client (voyageurs d'autres pays) ; « autre » : indicatif saisi par l'agent.
+  const [whatsappCode, setWhatsappCode] = useState("+229");
+  const [otherCode, setOtherCode] = useState("+");
   const [busy, setBusy] = useState(false);
   const [saleKey, setSaleKey] = useState<string | null>(null);
+  // Ventes Mobile Money de l'agent encore en attente (onglet fermé, paiement abandonné), lues sur le serveur.
+  const [pendingSales, setPendingSales] = useState<PendingSaleRow[]>([]);
+  // Dernière vente annulée : le bouton « Accueil » reste proposé.
+  const [cancelled, setCancelled] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  const loadPendingSales = useCallback(async () => {
+    try { setPendingSales(await apiFetch<PendingSaleRow[]>("/staff/sales/pending/")); } catch { /* liste facultative */ }
+  }, []);
+  useEffect(() => { void loadPendingSales(); }, [loadPendingSales]);
 
   const loadOptions = useCallback(async () => {
     try {
@@ -846,6 +874,7 @@ export function CounterPanel({ onChanged }: { onChanged: () => Promise<void> }) 
           passenger_name: name.trim(),
           passenger_phone: phone.trim(),
           payment_method: quote.payment_method,
+          espace: space,
           origin: String(pair.origin_id),
           destination: String(pair.destination_id),
           boarding_point_id: boardingPointId ? Number(boardingPointId) : undefined,
@@ -853,6 +882,11 @@ export function CounterPanel({ onChanged }: { onChanged: () => Promise<void> }) 
         }),
       });
       setResult(payload);
+      setCancelled(false);
+      // Paiement ouvert dans un autre onglet : la vente est gardée ici pour la page de retour et pour « Reprendre ».
+      if (payload.checkout && payload.booking.status === "HELD") {
+        savePendingSale({ bookingId: payload.booking.id, paymentMethod: payload.checkout.payment_method, transactionId: payload.checkout.transaction_id, paymentUrl: payload.checkout.payment_url, space });
+      }
       if (payload.payment_error) feedback.failure(null, `Le paiement n’a pas pu démarrer : ${payload.payment_error}`);
       else if (payload.booking.status === "CONFIRMED") { feedback.success(`Billet ${payload.booking.tickets[0]?.reference ?? ""} émis.`); setWhatsapp(phone.trim()); clearForm(); }
       // Pas d'ouverture automatique : après un appel au serveur, Safari et Chrome mobile la bloquent.
@@ -868,7 +902,8 @@ export function CounterPanel({ onChanged }: { onChanged: () => Promise<void> }) 
     } finally { setBusy(false); }
   }
 
-  async function verify() {
+  // `quiet` : vérification automatique (retour au premier plan, minuterie, page de retour) ; aucun message si rien n'a changé.
+  async function verify(quiet = false) {
     if (busy || !result?.checkout) return;
     setBusy(true);
     try {
@@ -877,9 +912,91 @@ export function CounterPanel({ onChanged }: { onChanged: () => Promise<void> }) 
         body: JSON.stringify({ payment_method: result.checkout.payment_method, external_reference: result.checkout.transaction_id }),
       });
       setResult({ ...payload, checkout: payload.booking.status === "CONFIRMED" ? null : result.checkout });
-      if (payload.booking.status === "CONFIRMED") { feedback.success(`Paiement reçu : billet ${payload.booking.tickets[0]?.reference ?? ""} émis.`); setWhatsapp(phone.trim()); clearForm(); await refreshAfterSale(); }
-    } catch (reason) { feedback.failure(reason, "Paiement pas encore reçu. Aucun billet n’est émis tant qu’il n’est pas confirmé."); }
+      if (payload.booking.status === "CONFIRMED") {
+        clearPendingSale(payload.booking.id);
+        feedback.success(`Paiement reçu : billet ${payload.booking.tickets[0]?.reference ?? ""} émis.`);
+        setWhatsapp(phone.trim()); clearForm(); await Promise.all([refreshAfterSale(), loadPendingSales()]);
+      }
+    } catch (reason) {
+      if (!quiet) feedback.failure(reason, "Paiement pas encore reçu. Aucun billet n’est émis tant qu’il n’est pas confirmé.");
+      // Vente expirée ou annulée entre-temps : son état réel remplace l'affichage.
+      try {
+        const current = await apiFetch<SaleResult>(`/staff/sales/${result.booking.id}/`);
+        if (current.booking.status !== "HELD") { setResult({ ...current, checkout: null }); clearPendingSale(current.booking.id); void loadPendingSales(); }
+      } catch { /* l'état reste affiché */ }
+    }
     finally { setBusy(false); }
+  }
+
+  // Vérification sans clic : au retour sur cette fenêtre, quand la page de retour annonce un résultat (autre onglet,
+  // même navigateur), et toutes les 8 s pendant 3 minutes tant que la fenêtre est visible.
+  const waitingId = result?.checkout && result.booking.status === "HELD" ? result.booking.id : null;
+  const verifyRef = useRef(verify);
+  verifyRef.current = verify;
+  useEffect(() => {
+    if (waitingId === null) return;
+    const started = Date.now();
+    const run = () => { if (document.visibilityState === "visible") void verifyRef.current(true); };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== SALE_RESULT_KEY) return;
+      const announced = parseSaleResult(event.newValue);
+      if (announced?.bookingId === waitingId) void verifyRef.current(true);
+    };
+    const timer = window.setInterval(() => { if (Date.now() - started > 180000) window.clearInterval(timer); else run(); }, 8000);
+    window.addEventListener("storage", onStorage);
+    document.addEventListener("visibilitychange", run);
+    window.addEventListener("focus", run);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("storage", onStorage);
+      document.removeEventListener("visibilitychange", run);
+      window.removeEventListener("focus", run);
+    };
+  }, [waitingId]);
+
+  // Vente en attente retrouvée dans la liste : vérifiée, puis affichée dans « Vente en cours ».
+  async function verifyPending(row: PendingSaleRow) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const payload = await apiFetch<SaleResult>(`/staff/sales/${row.booking.id}/verify/`, {
+        method: "POST",
+        body: JSON.stringify({ payment_method: row.payment_method, external_reference: row.transaction_id }),
+      });
+      setCancelled(false);
+      if (payload.booking.status === "CONFIRMED") {
+        clearPendingSale(payload.booking.id);
+        setResult({ ...payload, checkout: null });
+        setWhatsapp(payload.booking.tickets[0]?.passenger_phone ?? "");
+        feedback.success(`Paiement reçu : billet ${payload.booking.tickets[0]?.reference ?? ""} émis.`);
+        await Promise.all([refreshAfterSale(), loadPendingSales()]);
+      } else {
+        const local = loadPendingSale();
+        setResult({ ...payload, checkout: { transaction_id: row.transaction_id, payment_method: row.payment_method, payment_url: local?.bookingId === row.booking.id ? local.paymentUrl : null, total: payload.booking.amount, currency: payload.booking.currency } });
+      }
+    } catch (reason) {
+      feedback.failure(reason, "Paiement pas encore reçu. Aucun billet n’est émis tant qu’il n’est pas confirmé.");
+      const local = loadPendingSale();
+      setResult({ booking: row.booking, checkout: { transaction_id: row.transaction_id, payment_method: row.payment_method, payment_url: local?.bookingId === row.booking.id ? local.paymentUrl : null, total: row.booking.amount, currency: row.booking.currency } });
+      void loadPendingSales();
+    } finally { setBusy(false); }
+  }
+
+  // Fin d'une vente (billet émis ou vente annulée) : retour à l'accueil de l'espace.
+  function goHome() {
+    setResult(null); setCancelled(false); setWhatsapp(""); setLinkCopied(false); clearForm();
+    window.scrollTo({ top: 0 });
+    onHome?.();
+  }
+
+  async function copyTicketLink(url: string) {
+    try { await navigator.clipboard.writeText(url); setLinkCopied(true); }
+    catch { feedback.failure(null, "Copie impossible : sélectionnez le lien et copiez-le à la main."); }
+  }
+
+  async function shareTicket(url: string, reference: string) {
+    try { await navigator.share({ title: `Billet AXIS Transport ${reference}`, text: `Votre billet AXIS Transport ${reference}`, url }); }
+    catch { /* partage annulé par l'agent */ }
   }
 
   async function cancelSale() {
@@ -888,8 +1005,9 @@ export function CounterPanel({ onChanged }: { onChanged: () => Promise<void> }) 
     try {
       await apiFetch(`/staff/sales/${result.booking.id}/cancel/`, { method: "POST", body: "{}" });
       feedback.success("Vente annulée. La place est libérée.");
-      setResult(null); clearForm();
-      await refreshAfterSale();
+      clearPendingSale(result.booking.id);
+      setResult(null); clearForm(); setCancelled(true);
+      await Promise.all([refreshAfterSale(), loadPendingSales()]);
     } catch (reason) { feedback.failure(reason, "La vente n’a pas été annulée."); }
     finally { setBusy(false); }
   }
@@ -974,7 +1092,12 @@ export function CounterPanel({ onChanged }: { onChanged: () => Promise<void> }) 
 
       <section className="card min-w-0">
         <SectionHeading eyebrow="Encaissement" title="Vente en cours" action={booking && <StatusBadge tone={issued ? "green" : pending ? "amber" : "grey"}>{booking.client_status_display || booking.status_display}</StatusBadge>} />
-        {!booking ? <EmptyState title="Aucune vente en cours" text="Le billet s’affiche ici après l’encaissement." /> : (
+        {!booking ? (
+          <>
+            <EmptyState title="Aucune vente en cours" text="Le billet s’affiche ici après l’encaissement." />
+            {cancelled && <button type="button" className="primary-button mt-4 w-full" onClick={goHome}>Accueil</button>}
+          </>
+        ) : (
           <div>
             <p className="text-lg font-extrabold text-axis-900">{ticket?.reference ?? booking.reference}</p>
             <p className="text-sm font-semibold text-slate-700">{booking.segment_label}</p>
@@ -984,30 +1107,66 @@ export function CounterPanel({ onChanged }: { onChanged: () => Promise<void> }) 
               <div className="mt-4 flex flex-wrap gap-2">
                 {result.checkout.payment_url && <a className="secondary-button" href={result.checkout.payment_url} target="_blank" rel="noreferrer">Ouvrir la page de paiement</a>}
                 <button type="button" className="primary-button" disabled={busy} onClick={() => void verify()}>Vérifier le paiement</button>
+                <p className="w-full text-xs text-slate-500">Le paiement est vérifié automatiquement quand vous revenez sur cette fenêtre.</p>
               </div>
             )}
             {pending && <button type="button" className="text-button mt-3" disabled={busy} onClick={() => void cancelSale()}>Annuler la vente</button>}
             {issued && ticket && (
               <div className="mt-5 flex flex-wrap gap-2">
                 <a className="primary-button" href={`/t/${encodeURIComponent(ticket.reference)}`} target="_blank" rel="noreferrer">Afficher / imprimer le billet</a>
-                <button type="button" className="secondary-button" onClick={() => { setResult(null); setWhatsapp(""); }}>Nouvelle vente</button>
+                <button type="button" className="secondary-button" onClick={() => { setResult(null); setWhatsapp(""); setLinkCopied(false); }}>Nouvelle vente</button>
               </div>
             )}
             {issued && ticket && (
               <div className="mt-4 rounded-lg border border-slate-200 p-3">
-                <label className="block"><span className="field-label">WhatsApp du client (facultatif)</span>
-                  <input className="field" inputMode="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Format international, ex. : +229 …" />
-                </label>
-                {whatsapp && !whatsappHref(whatsapp) && <p className="mt-1 text-xs text-amber-700">Numéro au format international (+ et indicatif) pour l’ouvrir directement ; sinon WhatsApp vous laissera choisir le contact.</p>}
+                <span className="field-label">WhatsApp du client (facultatif)</span>
+                <div className="flex flex-wrap gap-2">
+                  <select className="field w-auto" aria-label="Indicatif du pays" value={whatsappCode} onChange={(e) => setWhatsappCode(e.target.value)}>
+                    {PHONE_COUNTRY_CODES.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+                    <option value="autre">Autre indicatif…</option>
+                  </select>
+                  {whatsappCode === "autre" && <input className="field w-24" inputMode="tel" aria-label="Indicatif" value={otherCode} onChange={(e) => setOtherCode(e.target.value)} placeholder="+44" />}
+                  <input className="field min-w-0 flex-1" inputMode="tel" aria-label="Numéro WhatsApp" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Numéro, ex. : 01 97 00 00 00" />
+                </div>
+                {whatsapp && !internationalNumber(whatsappCode === "autre" ? otherCode : whatsappCode, whatsapp) && <p className="mt-1 text-xs text-amber-700">Vérifiez l’indicatif et le numéro ; sinon WhatsApp vous laissera choisir le contact.</p>}
                 <a className="primary-button mt-2 inline-flex" target="_blank" rel="noopener noreferrer"
-                  href={soldTicketWhatsappHref({ reference: ticket.reference, passenger_name: ticket.passenger_name ?? "", passenger_phone: whatsapp }, `${window.location.origin}/t/${encodeURIComponent(ticket.reference)}`)}>
+                  href={soldTicketWhatsappHref({ reference: ticket.reference, passenger_name: ticket.passenger_name ?? "", passenger_phone: internationalNumber(whatsappCode === "autre" ? otherCode : whatsappCode, whatsapp) ?? "" }, `${window.location.origin}/t/${encodeURIComponent(ticket.reference)}`)}>
                   Envoyer le billet par WhatsApp
                 </a>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button type="button" className="secondary-button" onClick={() => void copyTicketLink(`${window.location.origin}/t/${encodeURIComponent(ticket.reference)}`)}>{linkCopied ? "Lien copié" : "Copier le lien"}</button>
+                  {typeof navigator !== "undefined" && "share" in navigator && (
+                    <button type="button" className="secondary-button" onClick={() => void shareTicket(`${window.location.origin}/t/${encodeURIComponent(ticket.reference)}`, ticket.reference)}>Partager</button>
+                  )}
+                </div>
               </div>
             )}
+            {issued && <button type="button" className="primary-button mt-4 w-full" onClick={goHome}>Retour à l’accueil</button>}
           </div>
         )}
       </section>
+
+      {pendingSales.length > 0 && (
+        <section className="card min-w-0 lg:col-span-2">
+          <SectionHeading eyebrow="Mobile Money" title="Ventes en attente de paiement" />
+          <p className="mb-3 text-sm text-slate-600">Paiement abandonné ou onglet fermé : la place reste tenue jusqu’à l’expiration. Vérifiez le paiement ou annulez la vente.</p>
+          <ul className="space-y-2">
+            {pendingSales.map((row) => {
+              const local = loadPendingSale();
+              const resumeUrl = local?.bookingId === row.booking.id ? local.paymentUrl : null;
+              return (
+                <li key={row.booking.id} className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-slate-200 p-3">
+                  <span className="min-w-0 text-sm"><b>{row.booking.reference}</b> · {row.booking.tickets[0]?.passenger_name ?? ""} · {row.booking.segment_label} · {money(row.booking.amount, row.booking.currency)}</span>
+                  <span className="flex flex-wrap gap-2">
+                    <button type="button" className="primary-button" disabled={busy} onClick={() => void verifyPending(row)}>Vérifier</button>
+                    {resumeUrl && <a className="secondary-button" href={resumeUrl} target="_blank" rel="noreferrer">Reprendre le paiement</a>}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

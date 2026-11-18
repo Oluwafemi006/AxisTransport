@@ -1,3 +1,4 @@
+import '../../../core/widgets/system_insets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -199,16 +200,21 @@ class _SeatSelectionScreenState extends ConsumerState<SeatSelectionScreen> {
       body: Column(
         children: [
           // En-tête blanc (Siege.html)
+          // Marge de la barre d'état ajoutée : l'écran s'affiche bord à bord, le titre passait dessous.
           Container(
             decoration: BoxDecoration(
               color: theme.colorScheme.surface,
               border: Border(bottom: BorderSide(color: axis.border)),
             ),
-            padding: const EdgeInsets.fromLTRB(
-              AxisSpacing.screen,
-              AxisSpacing.s12,
-              AxisSpacing.screen,
-              AxisSpacing.s12,
+            padding: withSystemInsets(
+              context,
+              const EdgeInsets.fromLTRB(
+                AxisSpacing.screen,
+                AxisSpacing.s12,
+                AxisSpacing.screen,
+                AxisSpacing.s12,
+              ),
+              top: true,
             ),
             child: Row(
               children: [
@@ -354,11 +360,10 @@ class _SeatSelectionScreenState extends ConsumerState<SeatSelectionScreen> {
               color: theme.colorScheme.surface,
               border: Border(top: BorderSide(color: axis.border)),
             ),
-            padding: const EdgeInsets.fromLTRB(
-              AxisSpacing.screen,
-              AxisSpacing.s12,
-              AxisSpacing.screen,
-              AxisSpacing.s16,
+            padding: withSystemInsets(
+              context,
+              const EdgeInsets.fromLTRB(AxisSpacing.screen, AxisSpacing.s12, AxisSpacing.screen, AxisSpacing.s16),
+              bottom: true,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,

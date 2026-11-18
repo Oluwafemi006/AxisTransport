@@ -5,6 +5,8 @@ import 'package:axis_transport_flutter/core/session_store.dart';
 import 'package:axis_transport_flutter/core/theme/axis_theme.dart';
 import 'package:axis_transport_flutter/core/widgets/widgets.dart';
 import 'package:axis_transport_flutter/features/bookings/application/booking_draft.dart';
+import 'package:axis_transport_flutter/features/auth/login_screen.dart';
+import 'package:axis_transport_flutter/features/auth/register_screen.dart';
 import 'package:axis_transport_flutter/features/bookings/presentation/booking_review_screen.dart';
 import 'package:axis_transport_flutter/features/home/home_screen.dart';
 import 'package:axis_transport_flutter/features/passengers/domain/passenger.dart';
@@ -14,9 +16,12 @@ import 'package:axis_transport_flutter/features/tickets/ticket_screen.dart';
 import 'package:axis_transport_flutter/features/trips/domain/segment_offer.dart';
 import 'package:axis_transport_flutter/features/trips/domain/trip_search.dart';
 import 'package:axis_transport_flutter/features/trips/presentation/trip_results_screen.dart';
+import 'package:axis_transport_flutter/features/trips/presentation/trip_search_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/layout_audit.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -508,5 +513,209 @@ void main() {
       expect(find.text('Partager'), findsOneWidget);
     });
   });
-}
 
+  // Affichage bord à bord (Android 15 et plus) : barre d'état de 48 et barre de navigation de 34 simulées.
+  group('Marges du système (barre haute 48, barre basse 34)', () {
+    void simulate(WidgetTester tester, {required double top, required double bottom}) {
+      // 800 × 800 de large, comme les autres tests de ce fichier : seule la marge du système change.
+      tester.view.physicalSize = const Size(2400, 2400);
+      tester.view.devicePixelRatio = 3.0;
+      tester.view.padding = FakeViewPadding(top: top * 3, bottom: bottom * 3);
+      tester.view.viewPadding = FakeViewPadding(top: top * 3, bottom: bottom * 3);
+      addTearDown(tester.view.reset);
+    }
+
+    final search = TripSearch(originId: 1, destinationId: 2, date: DateTime(2026, 10, 30), passengers: 1);
+
+    Future<void> openResults(WidgetTester tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [apiClientProvider.overrideWithValue(_Phase4Api())],
+        child: MaterialApp(theme: AxisTheme.light(), home: TripResultsScreen(search: search)),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('résultats : la flèche de retour passe sous la barre d’état', (tester) async {
+      simulate(tester, top: 48, bottom: 34);
+      await openResults(tester);
+      expect(tester.getTopLeft(find.byTooltip('Retour')).dy, greaterThanOrEqualTo(48));
+    });
+
+    testWidgets('résultats : sans barre, la mise en page ne change pas', (tester) async {
+      simulate(tester, top: 0, bottom: 0);
+      await openResults(tester);
+      expect(tester.getTopLeft(find.byTooltip('Retour')).dy, lessThan(48));
+    });
+
+    ProviderContainer draft({bool withSeat = false}) {
+      final container = ProviderContainer(overrides: [apiClientProvider.overrideWithValue(_Phase4Api())]);
+      addTearDown(container.dispose);
+      container.read(bookingDraftProvider.notifier).start(_sampleTrip);
+      container.read(bookingDraftProvider.notifier).setPassengers(const [
+        Passenger(id: 'p1', fullName: 'Koffi Mensah', phone: '97000000', type: PassengerType.adult),
+      ]);
+      if (withSeat) {
+        container.read(bookingDraftProvider.notifier).assignSeat('p1', const Seat(id: 1, number: '1A', status: 'AVAILABLE'));
+      }
+      return container;
+    }
+
+    Future<double> lowestButtonBottom(WidgetTester tester, Widget home, ProviderContainer container) async {
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: AxisTheme.light(), home: home),
+      ));
+      await tester.pumpAndSettle();
+      final buttons = find.byType(AxisButton);
+      expect(buttons, findsWidgets);
+      return buttons.evaluate().map((element) => tester.getBottomLeft(find.byWidget(element.widget)).dy).reduce((a, b) => a > b ? a : b);
+    }
+
+    testWidgets('sièges : le bouton du bas reste au-dessus de la barre de navigation', (tester) async {
+      simulate(tester, top: 48, bottom: 34);
+      final bottom = await lowestButtonBottom(tester, const SeatSelectionScreen(tripId: 10), draft());
+      expect(bottom, lessThanOrEqualTo(800 - 34));
+    });
+
+    testWidgets('récapitulatif : le bouton du bas reste au-dessus de la barre de navigation', (tester) async {
+      simulate(tester, top: 48, bottom: 34);
+      final bottom = await lowestButtonBottom(tester, const BookingReviewScreen(tripId: 10), draft(withSeat: true));
+      expect(bottom, lessThanOrEqualTo(800 - 34));
+    });
+
+    // Constaté sur téléphone (TECNO KM5) : le titre passait sous l'heure et l'encoche.
+    testWidgets('sièges : le titre passe sous la barre d’état', (tester) async {
+      simulate(tester, top: 48, bottom: 34);
+      await lowestButtonBottom(tester, const SeatSelectionScreen(tripId: 10), draft());
+      expect(tester.getTopLeft(find.text('Choisissez votre siège').first).dy, greaterThanOrEqualTo(48));
+    });
+
+    testWidgets('récapitulatif : le titre passe sous la barre d’état', (tester) async {
+      simulate(tester, top: 48, bottom: 34);
+      await lowestButtonBottom(tester, const BookingReviewScreen(tripId: 10), draft(withSeat: true));
+      expect(tester.getTopLeft(find.text('Récapitulatif').first).dy, greaterThanOrEqualTo(48));
+    });
+  });
+
+
+  group('Audit des largeurs (320, 360, 390 ; texte 1,0 et 1,3)', () {
+    ProviderContainer draft({bool withSeat = false}) {
+      final container = ProviderContainer(overrides: [apiClientProvider.overrideWithValue(_Phase4Api())]);
+      addTearDown(container.dispose);
+      container.read(bookingDraftProvider.notifier).start(_sampleTrip);
+      container.read(bookingDraftProvider.notifier).setPassengers(const [
+        Passenger(id: 'p1', fullName: 'Koffi Mensah', phone: '97000000', type: PassengerType.adult),
+      ]);
+      if (withSeat) {
+        container.read(bookingDraftProvider.notifier).assignSeat('p1', const Seat(id: 1, number: '1A', status: 'AVAILABLE'));
+      }
+      return container;
+    }
+
+    Widget scoped(Widget home, [ProviderContainer? container]) => container == null
+        ? ProviderScope(
+            overrides: [apiClientProvider.overrideWithValue(_Phase4Api())],
+            child: MaterialApp(theme: AxisTheme.light(), home: home),
+          )
+        : UncontrolledProviderScope(container: container, child: MaterialApp(theme: AxisTheme.light(), home: home));
+
+    final screens = <String, Widget Function()>{
+      'accueil': () => scoped(const Scaffold(body: HomeScreen())),
+      'résultats': () => scoped(TripResultsScreen(search: TripSearch(originId: 1, destinationId: 2, date: DateTime(2026, 10, 30), passengers: 1))),
+      'passagers': () => scoped(const PassengersScreen(tripId: 10, originId: 1, destinationId: 3), draft()),
+      'sièges': () => scoped(const SeatSelectionScreen(tripId: 10), draft()),
+      'récapitulatif': () => scoped(const BookingReviewScreen(tripId: 10), draft(withSeat: true)),
+      'billet': () => scoped(TicketScreen(
+            ticketId: 99,
+            initialTicket: Ticket(
+              id: 99, reference: 'AX-2026-00142', trip: _sampleTrip,
+              seat: const Seat(id: 1, number: '1A', status: 'PAID'),
+              passengerName: 'Koffi Mensah', passengerPhone: '97000000', status: 'ISSUED',
+              statusDisplay: 'Ticket émis', qrToken: 'qr-token-test-99', amount: 7500, currency: 'XOF',
+            ),
+          )),
+    };
+    for (final entry in screens.entries) {
+      testWidgets('${entry.key} : aucun débordement', (tester) async {
+        expect(await layoutOverflows(tester, entry.value), isEmpty);
+      });
+    }
+  });
+
+  // Remarque de relecture (téléphone Android bord à bord) : sur tout le parcours de commande, aucun texte ne doit passer
+  // sous la barre d'état ni aucun bouton fixe sous la barre de navigation. Barres simulées : 48 en haut, 34 en bas.
+  group('Parcours de commande et connexion : barres du système respectées (48 / 34)', () {
+    void simulate(WidgetTester tester) {
+      tester.view.physicalSize = const Size(1170, 2400);
+      tester.view.devicePixelRatio = 3.0;
+      tester.view.padding = const FakeViewPadding(top: 48 * 3, bottom: 34 * 3);
+      tester.view.viewPadding = const FakeViewPadding(top: 48 * 3, bottom: 34 * 3);
+      addTearDown(tester.view.reset);
+    }
+
+    ProviderContainer draft({bool withSeat = false}) {
+      final container = ProviderContainer(overrides: [apiClientProvider.overrideWithValue(_Phase4Api())]);
+      addTearDown(container.dispose);
+      container.read(bookingDraftProvider.notifier).start(_sampleTrip);
+      container.read(bookingDraftProvider.notifier).setPassengers(const [
+        Passenger(id: 'p1', fullName: 'Koffi Mensah', phone: '97000000', type: PassengerType.adult),
+      ]);
+      if (withSeat) {
+        container.read(bookingDraftProvider.notifier).assignSeat('p1', const Seat(id: 1, number: '1A', status: 'AVAILABLE'));
+      }
+      return container;
+    }
+
+    Widget scoped(Widget home, [ProviderContainer? container]) => container == null
+        ? ProviderScope(
+            overrides: [apiClientProvider.overrideWithValue(_Phase4Api())],
+            child: MaterialApp(theme: AxisTheme.light(), home: home),
+          )
+        : UncontrolledProviderScope(container: container, child: MaterialApp(theme: AxisTheme.light(), home: home));
+
+    final screens = <String, Widget Function()>{
+      'connexion': () => scoped(const LoginScreen()),
+      'inscription': () => scoped(const RegisterScreen()),
+      'recherche': () => scoped(const TripSearchScreen()),
+      'résultats': () => scoped(TripResultsScreen(search: TripSearch(originId: 1, destinationId: 2, date: DateTime(2026, 10, 30), passengers: 1))),
+      'passagers': () => scoped(const PassengersScreen(tripId: 10, originId: 1, destinationId: 3), draft()),
+      'sièges': () => scoped(const SeatSelectionScreen(tripId: 10), draft()),
+      'récapitulatif': () => scoped(const BookingReviewScreen(tripId: 10), draft(withSeat: true)),
+      'billet': () => scoped(TicketScreen(
+            ticketId: 99,
+            initialTicket: Ticket(
+              id: 99, reference: 'AX-2026-00142', trip: _sampleTrip,
+              seat: const Seat(id: 1, number: '1A', status: 'PAID'),
+              passengerName: 'Koffi Mensah', passengerPhone: '97000000', status: 'ISSUED',
+              statusDisplay: 'Ticket émis', qrToken: 'qr-token-test-99', amount: 7500, currency: 'XOF',
+            ),
+          )),
+    };
+
+    for (final entry in screens.entries) {
+      testWidgets('${entry.key} : rien sous la barre d’état ni sous la barre de navigation', (tester) async {
+        simulate(tester);
+        await tester.pumpWidget(entry.value());
+        await tester.pumpAndSettle();
+        final height = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+        final underStatusBar = <String>[];
+        for (final element in find.byType(Text).evaluate()) {
+          final box = element.renderObject as RenderBox?;
+          if (box == null || !box.hasSize || !box.attached) continue;
+          final top = box.localToGlobal(Offset.zero).dy;
+          if (top >= 0 && top < 48) underStatusBar.add('${(element.widget as Text).data ?? '(texte)'} à $top');
+        }
+        expect(underStatusBar, isEmpty, reason: 'textes sous la barre d’état');
+        // Boutons fixes (hors zone qui défile) : entièrement au-dessus de la barre de navigation.
+        final underNavigationBar = <String>[];
+        for (final element in find.byType(AxisButton).evaluate()) {
+          if (find.ancestor(of: find.byWidget(element.widget), matching: find.byType(Scrollable)).evaluate().isNotEmpty) continue;
+          final box = element.renderObject as RenderBox;
+          final bottom = box.localToGlobal(Offset(0, box.size.height)).dy;
+          if (bottom > height - 34) underNavigationBar.add('${(element.widget as AxisButton).label} jusqu’à $bottom');
+        }
+        expect(underNavigationBar, isEmpty, reason: 'boutons sous la barre de navigation');
+      });
+    }
+  });
+}

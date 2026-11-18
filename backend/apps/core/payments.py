@@ -276,7 +276,22 @@ def _mark_refund_due(locked):
 
 # ─── Création de la transaction chez le prestataire ──────────────────────────
 
-def create_checkout(target, *, payment_method):
+# Espaces du personnel vers lesquels FedaPay peut renvoyer après un paiement : liste fixe, jamais d'adresse libre
+# (pas de redirection ouverte). Chaque valeur est une page du site : /paiement/retour/<espace>.
+STAFF_RETURN_SPACES = ("guichet", "controleur", "admin")
+
+
+def checkout_callback_url(space=None):
+    """Adresse de retour envoyée à FedaPay : celle des clients, ou celle d'un espace du personnel."""
+    base = settings.FEDAPAY_CALLBACK_URL
+    if space is None or space == "":
+        return base
+    if space not in STAFF_RETURN_SPACES:
+        raise ValidationError("Espace de retour inconnu.")
+    return f"{base.rstrip('/')}/{space}" if base else ""
+
+
+def create_checkout(target, *, payment_method, space=None):
     """
     Prépare le paiement en ligne d'une réservation ou d'un billet : le montant est fixé ici,
     et la transaction créée chez le prestataire porte l'identifiant de la réservation.
@@ -311,8 +326,9 @@ def create_checkout(target, *, payment_method):
         "currency": {"iso": "XOF"},
         "custom_metadata": _binding_keys(target),
     }
-    if settings.FEDAPAY_CALLBACK_URL:
-        payload["callback_url"] = settings.FEDAPAY_CALLBACK_URL
+    callback_url = checkout_callback_url(space)
+    if callback_url:
+        payload["callback_url"] = callback_url
     data = _fedapay_create_transaction(payload)
     if not data.get("id") or not data.get("payment_url"):
         raise ValidationError("Le service Mobile Money n'a pas ouvert de page de paiement. Réessayez.")

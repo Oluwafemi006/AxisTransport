@@ -145,7 +145,8 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
       date: _date,
       passengers: _passengers,
     );
-    context.go(search.resultsLocation);
+    // push (et non go) : le retour ramène à l'écran d'où part la recherche (accueil ou recherche), pas à l'onglet Billets.
+    context.push(search.resultsLocation);
   }
 
   @override

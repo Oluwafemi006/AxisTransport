@@ -15,6 +15,8 @@ import 'package:axis_transport_flutter/features/staff/presentation/staff_home_sc
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/layout_audit.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 class _TestStore extends SessionStore {
@@ -132,6 +134,29 @@ class _Phase6Api extends ApiClient {
 
 void main() {
   setUpAll(() => initializeDateFormatting('fr_FR'));
+
+  group('Audit des largeurs (320, 360, 390 ; texte 1,0 et 1,3)', () {
+    Widget app(Widget home) => ProviderScope(
+          overrides: [apiClientProvider.overrideWithValue(_Phase6Api())],
+          child: MaterialApp(theme: AxisTheme.light(), home: home),
+        );
+    final screens = <String, Widget Function()>{
+      'accueil du personnel': () => app(StaffHomeScreen(stops: const [
+            RouteStopItem(name: 'Cotonou', state: RouteStopState.passed),
+            RouteStopItem(name: 'Bohicon', state: RouteStopState.current),
+            RouteStopItem(name: 'Parakou', state: RouteStopState.upcoming),
+          ])),
+      'scanner': () => app(const ControllerScannerScreen(enableCamera: false)),
+      'vente (contrôleur)': () => containerWithRole(api: _Phase6Api(), role: 'CONTROLLER', child: const SellTicketScreen()),
+      'vente (guichet)': () => containerWithRole(api: _Phase6Api(), role: 'COUNTER', child: const SellTicketScreen()),
+      'enregistrer un colis': () => app(const ControllerParcelScreen(fareFcfa: 2500)),
+    };
+    for (final entry in screens.entries) {
+      testWidgets('${entry.key} : aucun débordement', (tester) async {
+        expect(await layoutOverflows(tester, entry.value), isEmpty);
+      });
+    }
+  });
 
   group('Phase 6 — Espace Contrôleur', () {
     testWidgets(
@@ -266,6 +291,53 @@ void main() {
           findsOneWidget,
         );
         expect(find.text('Réessayer'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'Scanner : session perdue (401) ou compte non habilité (403) : jamais « Billet refusé », bouton de reconnexion',
+      (tester) async {
+        tester.view.physicalSize = const Size(1080, 2400);
+        tester.view.devicePixelRatio = 2.0;
+        addTearDown(tester.view.reset);
+
+        final api = _Phase6Api();
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [apiClientProvider.overrideWithValue(api)],
+            child: MaterialApp(
+              theme: AxisTheme.light(),
+              home: const ControllerScannerScreen(enableCamera: false),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Message exact du serveur quand le jeton n'est plus valable.
+        api.scanError = ApiException(
+          'Informations d\'authentification non fournies.',
+          statusCode: 401,
+        );
+        await tester.tap(find.text('Saisir le code à la main'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'AX-2026-0401');
+        await tester.tap(find.text('Valider'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Billet refusé'), findsNothing);
+        expect(find.textContaining('non fournies'), findsNothing);
+        expect(find.textContaining('Session expirée'), findsOneWidget);
+        expect(find.byKey(const Key('scan-reconnect')), findsOneWidget);
+
+        api.scanError = ApiException('Accès interdit.', statusCode: 403);
+        await tester.tap(find.text('Saisir le code à la main'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'AX-2026-0403');
+        await tester.tap(find.text('Valider'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Billet refusé'), findsNothing);
+        expect(find.textContaining('pas autorisé à contrôler'), findsOneWidget);
       },
     );
 

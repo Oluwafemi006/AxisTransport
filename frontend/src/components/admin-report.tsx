@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, formatDate, money } from "@/lib/api";
-import { beninDateKey, reportPeriodError } from "@/lib/portal-rules";
+import { beninDateKey, formatDayKey, reportPeriodError } from "@/lib/portal-rules";
 import { Loading, Notice, SectionHeading } from "./ui";
 import type { NoticeState } from "./ui";
 
@@ -32,7 +32,7 @@ export const GROSS_REVENUE_LABEL = "Encaissements bruts (remboursements non déd
 const roleLabels: Record<string, string> = { COUNTER: "Guichet", CONTROLLER: "Contrôleur", ADMIN: "Administrateur" };
 
 function dayLabel(key: string) {
-  return new Date(`${key}T00:00:00`).toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
+  return formatDayKey(key, { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 // Les cartes principales, partagées par l'accueil (aujourd'hui, cumul) et le bilan (période).

@@ -1,0 +1,26 @@
+{
+  "id": "/admin",
+  "name": "Axis Transport · Administration",
+  "short_name": "Axis Admin",
+  "description": "Portail d’administration Axis Transport",
+  "start_url": "/admin",
+  "scope": "/admin",
+  "display": "standalone",
+  "background_color": "#f3f7fc",
+  "theme_color": "#0b3c74",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

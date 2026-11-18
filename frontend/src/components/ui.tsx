@@ -2,8 +2,9 @@
 
 import { ForcedPasswordChange } from "./forced-password-change";
 import { ReactNode, createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Brand } from "./brand";
-import { actionErrorText } from "@/lib/portal-rules";
+import { actionErrorText, staffSpaceHome } from "@/lib/portal-rules";
 import type { User } from "@/lib/types";
 
 export type Tone = "blue" | "green" | "amber" | "red" | "grey";
@@ -136,7 +137,7 @@ export function StaffShell<Key extends string>({ user, tabs, current, onTab, chi
     <div className="staff">
       <header>
         <div className="wrap nav">
-          <Brand />
+          <StaffBrand />
           <div className="sp" />
           {user && (
             <p className="staff-user">
@@ -183,7 +184,7 @@ export function StaffLogin({ children, error }: { children: ReactNode; error?: s
     <div className="staff">
       <header>
         <div className="wrap nav">
-          <Brand />
+          <StaffBrand />
         </div>
       </header>
       <main className="wrap staff-login">
@@ -199,7 +200,7 @@ export function AccessDenied({ area }: { area: string }) {
     <div className="staff">
       <header>
         <div className="wrap nav">
-          <Brand />
+          <StaffBrand />
           <div className="sp" />
           <button className="btn s staff-logout" onClick={logout}>Déconnexion</button>
         </div>
@@ -218,4 +219,10 @@ export function AccessDenied({ area }: { area: string }) {
       </main>
     </div>
   );
+}
+
+// Logo des portails du personnel : ramène à l'accueil de l'espace en cours, pas au site client
+// (depuis une application installée, « / » sortirait de l'espace).
+function StaffBrand() {
+  return <Brand href={staffSpaceHome(usePathname() ?? "/")} />;
 }

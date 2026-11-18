@@ -4,15 +4,22 @@ import { PasswordInput } from "./password-input";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail } from "@/lib/api";
-import { SEGMENT_FARE_MISSING_MESSAGE, beninDateKey, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
+import { BOARDING_POINT_HELP, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, boardingFieldLabel, resizePassengers, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
+import { ClientTabBar, type ClientTab } from "./client-tab-bar";
+import { BOOKING_STEPS, bookingStep, clientLocationSearch, hasCompleteSearch, readClientLocation, searchSummary, shiftDayKey } from "@/lib/search-url";
+import { SwapIcon } from "./icons";
+import { Rentals } from "./client-rentals";
+import { BusIcon, CarIcon, CheckCircleIcon, CheckIcon, PackageIcon, PhoneIcon, TicketIcon } from "./icons";
+import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
+import { useSessionGuard } from "@/lib/use-session";
 import { ForcedPasswordChange } from "./forced-password-change";
 import { BusSeatMap } from "./bus-seat-map";
 import { PassengerForm, type PassengerItem } from "./passenger-form";
 import { clearGuestBooking, loadGuestBooking, rememberGuestPayment, saveGuestBooking } from "@/lib/guest-booking";
+import { FEDAPAY_PUBLIC_KEY, PAYMENT_DISMISSED_MESSAGE, PAYMENT_EMBEDDED_UNAVAILABLE_MESSAGE, embeddedPaymentAvailable, openEmbeddedPayment, shouldAutoVerify, unregisterLegacyServiceWorkers } from "@/lib/pwa";
 
-type ClientTab = "accueil" | "billets" | "colis" | "location" | "profil";
 
 export function ClientPortal() {
   const [tab, setTab] = useState<ClientTab>("accueil");
@@ -31,6 +38,8 @@ export function ClientPortal() {
   const [contact, setContact] = useState<Contact>({ contact_phone: "", contact_whatsapp: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Session terminée (renouvellement refusé, inactivité) : espace déconnecté, message, réservation en cours conservée dans le navigateur.
+  useSessionGuard(() => { setUser(null); setTickets([]); setBookings([]); setParcels([]); setRentals([]); setError(SESSION_EXPIRED_MESSAGE); });
 
   const loadPrivate = useCallback(async () => {
     if (!getAccessToken()) return setUser(null);
@@ -81,13 +90,14 @@ export function ClientPortal() {
       apiFetch<Contact>("/client/contact/", {}, false).then(setContact).catch(() => undefined);
       await loadPrivate();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "L’API Axis est indisponible.");
+      // Jamais le texte technique du navigateur (« Failed to fetch ») : message de l'application (home_screen.dart:54).
+      setError(actionErrorText(reason, "Impossible de récupérer les trajets pour le moment."));
     } finally {
       setLoading(false);
     }
   }, [loadPrivate]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); void unregisterLegacyServiceWorkers(); }, [load]);
 
   function logout() {
     clearTokens();
@@ -103,8 +113,14 @@ export function ClientPortal() {
   const [searchOrigin, setSearchOrigin] = useState("");
   const [searchDestination, setSearchDestination] = useState("");
   const [searchDate, setSearchDate] = useState("");
+  const [searchPassengers, setSearchPassengers] = useState(1);
   const [searchMessage, setSearchMessage] = useState("");
   const [preselectedTripId, setPreselectedTripId] = useState("");
+  // Recherche validée (celle écrite dans l'adresse) et départs de ce jour : null tant qu'aucune recherche n'est faite.
+  const [committedSearch, setCommittedSearch] = useState<{ origin: string; destination: string; date: string; passengers: number } | null>(null);
+  const [dayTrips, setDayTrips] = useState<Trip[] | null>(null);
+  // Faux pendant la lecture de l'adresse (chargement, bouton retour) : l'état restauré n'est pas réécrit dans l'historique.
+  const urlReady = useRef(false);
 
   // Aujourd'hui au Bénin : date minimale du calendrier (les jours passés sont grisés).
   const beninToday = beninDateKey();
@@ -139,7 +155,7 @@ export function ClientPortal() {
     document.getElementById("prochains-departs")?.scrollIntoView({ behavior: "smooth" });
   }
 
-  async function runSearch(searchOrigin = searchOriginValue, searchDestination = searchDestinationValue, searchDate = searchDateValue) {
+  async function runSearch(searchOrigin = searchOriginValue, searchDestination = searchDestinationValue, searchDate = searchDateValue, passengers = searchPassengers, targetTab: ClientTab = "billets") {
     const problem = searchError(searchOrigin, searchDestination) ?? searchDateError(searchDate, beninDateKey());
     setSearchMessage(problem ?? "");
     setNextAvailable(null);
@@ -164,14 +180,65 @@ export function ClientPortal() {
             return [...serverTrips, ...current.filter(t => !serverIds.has(t.id))];
           });
           setPreselectedTripId(String(serverTrips[0].id));
+        } else {
+          setPreselectedTripId("");
         }
+        // Départs de ce jour et recherche validée : l'onglet Billets affiche un résumé, jamais le formulaire à refaire.
+        setDayTrips(serverTrips);
+        setCommittedSearch({ origin: searchOrigin, destination: searchDestination, date: searchDate, passengers });
       } catch (reason) {
         // Tronçon sans tarif : on reste sur le formulaire, sa saisie est gardée.
         if (isSegmentFareMissing(reason)) { setSearchMessage(SEGMENT_FARE_MISSING_MESSAGE); return; }
-        // En cas d'autre erreur de requête, le filtre local s'applique
+        // Autre erreur (réseau, serveur) : message en français, la saisie reste sur l'accueil.
+        setSearchMessage(actionErrorText(reason, "La recherche n’a pas abouti."));
+        return;
       }
-      setTab("billets");
+      setTab(targetTab);
     }
+  }
+
+  // Adresse de la page = onglet + recherche validée : rechargement et bouton retour ramènent au même endroit.
+  useEffect(() => {
+    if (!urlReady.current) return;
+    const next = window.location.pathname + clientLocationSearch({
+      tab,
+      origin: committedSearch?.origin ?? "",
+      destination: committedSearch?.destination ?? "",
+      date: committedSearch?.date ?? "",
+      passengers: committedSearch?.passengers ?? 1,
+    });
+    if (next !== window.location.pathname + window.location.search) window.history.pushState(null, "", next);
+  }, [tab, committedSearch]);
+
+  // Lecture de l'adresse au chargement et à chaque retour arrière ou avant du navigateur.
+  useEffect(() => {
+    const apply = async () => {
+      urlReady.current = false;
+      const location = readClientLocation(window.location.search);
+      setSearchOrigin(location.origin);
+      setSearchDestination(location.destination);
+      setSearchDate(location.date);
+      setSearchPassengers(location.passengers);
+      if (hasCompleteSearch(location)) {
+        await runSearch(location.origin, location.destination, location.date, location.passengers, location.tab);
+      } else {
+        setCommittedSearch(null);
+        setDayTrips(null);
+        setTab(location.tab);
+      }
+      window.requestAnimationFrame(() => { urlReady.current = true; });
+    };
+    void apply();
+    const onPop = () => { void apply(); };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // « Modifier » depuis l'onglet Billets : retour à la recherche de l'accueil, saisie gardée.
+  function editSearch() {
+    setTab("accueil");
+    window.setTimeout(() => document.querySelector(".search")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
   }
   
   // Derived state: Filtered Trips based on Search
@@ -217,7 +284,7 @@ export function ClientPortal() {
   if (user?.must_change_password) return <ForcedPasswordChange onDone={() => window.location.reload()} />;
 
   return (
-    <>
+    <div className="client-site">
       <div className="top">
         <div className="wrap">
           <span>{banner?.banner_text ? banner.banner_text.split('.')[0] : "Voyages interurbains au Bénin"}</span>
@@ -272,8 +339,11 @@ export function ClientPortal() {
                   <p>Réservez votre place en ligne, payez par Mobile Money et voyagez avec un billet électronique.</p>
                   {banner?.banner_text ? (
                     <div className="axe" style={{ padding: '12px 20px', fontSize: '15px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '10px', lineHeight: 1.4 }}>
-                      <span style={{ fontSize: '20px' }}>🚌</span>
-                      <span>{banner.banner_text}</span>
+                      {/* Icône dans la même bulle que le texte : sinon, sur téléphone, le texte long passe sous l'icône. */}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+                        <BusIcon size={22} style={{ flex: 'none' }} />
+                        <span style={{ background: 'none', border: 'none', padding: 0 }}>{banner.banner_text}</span>
+                      </span>
                     </div>
                   ) : null}
                 </div>
@@ -289,7 +359,13 @@ export function ClientPortal() {
                     </select>
                   </div>
                   <div className="f">
-                    <label>Destination</label>
+                    <div className="search-label-row">
+                      <label>Destination</label>
+                      <button type="button" className="swap-btn" aria-label="Inverser le départ et l’arrivée" title="Inverser le départ et l’arrivée"
+                        onClick={() => { setSearchOrigin(searchDestination); setSearchDestination(searchOrigin); setSearchMessage(""); }}>
+                        <SwapIcon size={16} /> Inverser
+                      </button>
+                    </div>
                     <select value={searchDestination} onChange={(e) => { setSearchDestination(e.target.value); setSearchMessage(""); }}>
                       <option value="">Choisir…</option>
                       {placeChoices(locations, searchOrigin).map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
@@ -301,7 +377,7 @@ export function ClientPortal() {
                   </div>
                   <div className="f">
                     <label>Passagers</label>
-                    <select>
+                    <select value={searchPassengers} onChange={(e) => setSearchPassengers(Number(e.target.value) || 1)}>
                       <option value="1">1 passager</option>
                       <option value="2">2 passagers</option>
                       <option value="3">3 passagers</option>
@@ -431,9 +507,9 @@ export function ClientPortal() {
                           </div>
                           <div className="d">Date : {formatDate(trip.departure_at)}</div>
                           <div className="times">
-                            <span>Départ <b>{new Date(trip.departure_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</b></span>
+                            <span>Départ <b>{new Date(trip.departure_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit', timeZone: 'Africa/Porto-Novo'})}</b></span>
                             {trip.arrival_at && (
-                              <span>Arrivée <b>{new Date(trip.arrival_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</b></span>
+                              <span>Arrivée <b>{new Date(trip.arrival_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit', timeZone: 'Africa/Porto-Novo'})}</b></span>
                             )}
                           </div>
                           <div className="b">
@@ -454,17 +530,17 @@ export function ClientPortal() {
                     <p>Un parcours simple, de la réservation au contrôle du billet.</p>
                   </div>
                   <div>
-                    <div className="ic">🎫</div>
+                    <div className="ic"><TicketIcon /></div>
                     <h3>Billet électronique</h3>
                     <p>Recevez votre billet avec QR code sur votre téléphone.</p>
                   </div>
                   <div>
-                    <div className="ic">📱</div>
+                    <div className="ic"><PhoneIcon /></div>
                     <h3>Paiement Mobile Money</h3>
                     <p>Payez en ligne, votre place est confirmée aussitôt.</p>
                   </div>
                   <div>
-                    <div className="ic">📦</div>
+                    <div className="ic"><PackageIcon /></div>
                     <h3>Suivi de colis</h3>
                     <p>Suivez votre colis étape par étape jusqu'au retrait.</p>
                   </div>
@@ -491,8 +567,7 @@ export function ClientPortal() {
                       </div>
                     </div>
                     <div className="card" onClick={() => setTab("location")}>
-                      {/* Using emoji as fallback since image failed */}
-                      <div className="pic">🚗</div>
+                      <div className="pic" style={{ display: 'grid', placeItems: 'center', color: 'var(--navy)' }}><CarIcon size={40} /></div>
                       <div>
                         <h3>Location de véhicules</h3>
                         <p>Véhicules et tarifs à confirmer avec Axis.</p>
@@ -510,7 +585,11 @@ export function ClientPortal() {
 
               <p className="sub">Trouvez un départ, choisissez votre siège (facultatif) et recevez votre billet électronique.</p>
               <p className="sub"><a href="/billet/retrouver" style={{ color: 'var(--blue)', fontWeight: 600 }}>Vous avez déjà un billet ? Retrouvez-le avec sa référence et votre téléphone →</a></p>
-              <Tickets user={user} trips={trips} locations={locations} tickets={tickets} bookings={bookings} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} />
+              <Tickets user={user} trips={trips} locations={locations} tickets={tickets} bookings={bookings} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} searchPassengers={committedSearch?.passengers ?? searchPassengers}
+                dayTrips={dayTrips} nextAvailable={nextAvailable} onEditSearch={editSearch}
+                searchLabel={committedSearch ? searchSummary(locations.find((l) => String(l.id) === committedSearch.origin)?.name ?? "", locations.find((l) => String(l.id) === committedSearch.destination)?.name ?? "", committedSearch.date, committedSearch.passengers) : ""}
+                searchDate={committedSearch?.date ?? ""}
+                onPickDay={(day) => committedSearch && void runSearch(committedSearch.origin, committedSearch.destination, day, committedSearch.passengers)} />
 
             </main>
           )}
@@ -577,7 +656,8 @@ export function ClientPortal() {
           <div className="copy">© {new Date().getFullYear()} AXIS Transport · <a href="/privacy">Politique de confidentialité</a> · <a href="/suppression-compte">Suppression de compte</a></div>
         </div>
       </footer>
-    </>
+      <ClientTabBar current={tab} onSelect={setTab} />
+    </div>
   );
 }
 
@@ -601,6 +681,13 @@ function Tickets({
   preselectedTripId = "",
   searchOrigin = "",
   searchDestination = "",
+  searchPassengers = 0,
+  dayTrips = null,
+  nextAvailable = null,
+  onEditSearch,
+  searchLabel = "",
+  searchDate = "",
+  onPickDay,
 }: {
   user: User | null;
   trips: Trip[];
@@ -613,6 +700,16 @@ function Tickets({
   preselectedTripId?: string;
   searchOrigin?: string;
   searchDestination?: string;
+  /** Nombre choisi dans la recherche (0 : aucun) ; prioritaire sur le formulaire. */
+  searchPassengers?: number;
+  /** Départs du jour recherché sur l'accueil (null : aucune recherche validée). */
+  dayTrips?: Trip[] | null;
+  nextAvailable?: NextAvailable | null;
+  onEditSearch?: () => void;
+  /** Résumé « Parakou → Savè · 19/11 · 1 passager » de la recherche validée. */
+  searchLabel?: string;
+  searchDate?: string;
+  onPickDay?: (day: string) => void;
 }) {
   const [tripId, setTripId] = useState(preselectedTripId || "");
   const [originId, setOriginId] = useState(searchOrigin || "");
@@ -707,6 +804,8 @@ function Tickets({
   const [busy, setBusy] = useState(false);
   // Verrou immédiat contre le double clic : l'état « busy » n'est visible qu'au rendu suivant.
   const locked = useRef(false);
+  // Dernière vérification automatique du paiement (retour au premier plan) ; voir shouldAutoVerify.
+  const lastAutoVerify = useRef<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [message, setMessage] = useState("");
   const selectedTrip = segmentTrips.find((trip) => String(trip.id) === tripId) || trips.find((trip) => String(trip.id) === tripId);
@@ -750,6 +849,19 @@ function Tickets({
       setAlightingPointId("");
     }
   }, [effectiveDestId, activeAlightingPoints, alightingPointId]);
+  // Le nombre choisi dans la recherche prime ; il reste modifiable ensuite dans le formulaire.
+  useEffect(() => {
+    if (!searchPassengers) return;
+    setPassengers((prev) => resizePassengers(prev, searchPassengers, (index) => ({
+      seatId: null,
+      seatNumber: null,
+      fullName: index === 0 ? defaultUserFullName : "",
+      phone: index === 0 ? (user?.phone || "") : "",
+    })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchPassengers, preselectedTripId]);
+  const boardingCity = locations.find((l) => String(l.id) === effectiveOriginId)?.name || "";
+  const alightingCity = locations.find((l) => String(l.id) === effectiveDestId)?.name || "";
   const onlineMethods = paymentMethods.filter((method) => method.online);
   // Un seul moyen de paiement en ligne : une seule action « Payer [total] ». Plusieurs : le choix reste à l'écran.
   const singleQuote = tripQuotes.length === 1 ? tripQuotes[0] : null;
@@ -790,13 +902,34 @@ function Tickets({
         setPendingTickets(found.tickets);
         setBookingQuotes(found.payment_quotes);
         const quote = found.payment_quotes.find((item) => item.payment_method === stored.paymentMethod);
-        if (first.status === "HELD" && quote && stored.transactionId) setCheckout({ ...quote, transaction_id: stored.transactionId, payment_url: stored.paymentUrl ?? null, simulated: false });
+        const restored = first.status === "HELD" && quote && stored.transactionId
+          ? { ...quote, transaction_id: stored.transactionId, payment_url: stored.paymentUrl ?? null, simulated: false }
+          : null;
+        if (restored) setCheckout(restored);
         setMessage(first.status === "ISSUED" ? "Vos billets sont prêts." : "Réservation retrouvée. Finalisez le paiement avant l’expiration.");
+        // Paiement déjà lancé (retour de la page de paiement) : le serveur le vérifie tout de suite.
+        if (restored) { lastAutoVerify.current = Date.now(); void confirmPayment(restored, { id: stored.id, token: stored.token }); }
       })
       .catch((reason) => { if ((reason as { status?: number }).status === 403 || (reason as { status?: number }).status === 404) clearGuestBooking(); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Retour au premier plan avec un paiement en cours : le serveur vérifie le paiement, sans clic.
+  // Pas pendant une action en cours (dialogue de paiement ouvert), ni plus d'une fois toutes les 5 s.
+  useEffect(() => {
+    if (!held || !checkout || !booking || paymentFailed) return;
+    const check = () => {
+      if (document.visibilityState !== "visible" || locked.current) return;
+      if (!shouldAutoVerify(lastAutoVerify.current, Date.now())) return;
+      lastAutoVerify.current = Date.now();
+      void confirmPayment(checkout, booking);
+    };
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+    return () => { document.removeEventListener("visibilitychange", check); window.removeEventListener("focus", check); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [held, checkout, booking, paymentFailed]);
 
   // Revenu par le bouton « retour » du navigateur depuis la page de paiement : la page peut être restaurée telle quelle.
   useEffect(() => {
@@ -1002,19 +1135,42 @@ function Tickets({
     return current;
   }
 
-  // Le serveur crée la transaction et fixe le montant ; le site redirige ensuite vers la page de paiement.
+  // Paiement dans la page (PWA comprise) sur la transaction créée par le serveur ; rien n'est émis ici.
+  // Renvoie true si la page de paiement a été ouverte par redirection (la page courante est quittée).
+  async function startPayment(created: Checkout, current: { id: number; token: string | null }) {
+    if (embeddedPaymentAvailable(FEDAPAY_PUBLIC_KEY, created)) {
+      setMessage("Ouverture du paiement Mobile Money…");
+      const outcome = await openEmbeddedPayment(FEDAPAY_PUBLIC_KEY, created.transaction_id);
+      if (outcome === "completed") { await confirmPayment(created, current); return false; }
+      if (outcome === "dismissed") { lastAutoVerify.current = Date.now(); setMessage(PAYMENT_DISMISSED_MESSAGE); return false; }
+      // Script indisponible : repli par redirection, comme sans clé publique.
+    }
+    if (created.payment_url) {
+      setMessage(PAYMENT_EMBEDDED_UNAVAILABLE_MESSAGE);
+      window.location.assign(created.payment_url);
+      return true;
+    }
+    await confirmPayment(created, current);
+    return false;
+  }
+
+  // Reprise du paiement en cours (même transaction) : dans la page si possible, sinon la page de paiement.
+  async function resumePayment() {
+    if (locked.current || !booking || !checkout) return;
+    locked.current = true;
+    setBusy(true); setMessage("");
+    const redirecting = await startPayment(checkout, booking);
+    if (!redirecting) { locked.current = false; setBusy(false); }
+  }
+
+  // Le serveur crée la transaction et fixe le montant ; le site ouvre ensuite le paiement.
   async function openPayment(current: { id: number; token: string | null }, methodId: number) {
     setPaymentFailed(false);
     try {
       const created = await apiFetch<Checkout>(`/client/bookings/${current.id}/checkout/`, { method: "POST", headers: access(current), body: JSON.stringify({ payment_method: methodId }) }, !current.token);
       setCheckout(created);
       rememberGuestPayment(created.payment_method, created.transaction_id, created.payment_url);
-      if (created.payment_url) {
-        setMessage("Redirection vers la page de paiement…");
-        window.location.assign(created.payment_url);
-        return true;
-      }
-      await confirmPayment(created, current);
+      return await startPayment(created, current);
     } catch (reason) {
       // La réservation existe toujours : le client réessaie le paiement sur la même réservation.
       setPaymentFailed(true);
@@ -1102,7 +1258,10 @@ function Tickets({
   const heldQuote = payableQuotes.find((item) => item.payment_method === checkout?.payment_method) ?? (payableQuotes.length === 1 ? payableQuotes[0] : null);
   const countdown = remainingSeconds === null ? "—" : `${Math.floor(remainingSeconds / 60)} min ${String(remainingSeconds % 60).padStart(2, "0")} s`;
 
-  const currentStep = issued ? 3 : held ? 2 : 1;
+  const currentStep = bookingStep({ tripChosen: Boolean(tripId), held, issued });
+  // Recherche venue de l'accueil : résumé à la place des choix de sens, trajet et date (jamais à ressaisir).
+  const summaryMode = Boolean(searchLabel) && dayTrips !== null;
+  const noDeparture = summaryMode && (dayTrips?.length ?? 0) === 0 && !held && !issued;
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }} className="responsive-grid">
@@ -1112,7 +1271,7 @@ function Tickets({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
+            gridTemplateColumns: "repeat(4, 1fr)",
             gap: "8px",
             marginTop: "12px",
             marginBottom: "16px",
@@ -1120,11 +1279,7 @@ function Tickets({
             fontWeight: 700,
           }}
         >
-          {[
-            [1, "1. Trajet & Passagers"],
-            [2, "2. Récapitulatif & Paiement"],
-            [3, "3. Billets émis"],
-          ].map(([stepNum, stepLabel]) => {
+          {BOOKING_STEPS.map((label, index) => [index + 1, `${index + 1}. ${label}`] as const).map(([stepNum, stepLabel]) => {
             const active = currentStep === stepNum;
             const done = currentStep > (stepNum as number);
             return (
@@ -1145,8 +1300,41 @@ function Tickets({
           })}
         </div>
         <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
-        {trips.length === 0 ? <p>Aucun trajet disponible.</p> : (
+        {summaryMode && (
+          <div className="search-summary" role="status">
+            <b>{searchLabel}</b>
+            <button type="button" className="btn s" onClick={onEditSearch}>Modifier</button>
+          </div>
+        )}
+        {noDeparture ? (
+          <div className="no-departure">
+            <p className="no-departure-title">Aucun départ ce jour pour ce trajet.</p>
+            {nextAvailable && (
+              <button type="button" className="btn p" onClick={() => onPickDay?.(nextAvailable.date)}>
+                Voir le départ du {nextAvailable.formatted_date} à {nextAvailable.formatted_time}
+              </button>
+            )}
+            {!nextAvailable && <p>Aucun autre départ n’est programmé pour le moment.</p>}
+            <div className="day-nav">
+              <button type="button" className="btn" disabled={!searchDate || shiftDayKey(searchDate, -1) < beninDateKey()} onClick={() => onPickDay?.(shiftDayKey(searchDate, -1))}>← Jour précédent</button>
+              <button type="button" className="btn" disabled={!searchDate} onClick={() => onPickDay?.(shiftDayKey(searchDate, 1))}>Jour suivant →</button>
+            </div>
+          </div>
+        ) : trips.length === 0 ? <p>Aucun trajet disponible.</p> : (
           <form onSubmit={singleQuote ? payNow : reserveOnly} className="f">
+            {summaryMode && (dayTrips?.length ?? 0) > 1 && (
+              <>
+                <label style={{ marginTop: '10px' }}>Heure du départ</label>
+                <div className="day-trips">
+                  {(dayTrips ?? []).map((trip) => (
+                    <button key={trip.id} type="button" className={String(trip.id) === tripId ? "btn p" : "btn"} onClick={() => setTripId(String(trip.id))}>
+                      {formatDate(trip.departure_at)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {!summaryMode && (<>
             {/* Comme l'app : sens, puis tronçon avec son prix, puis date du départ. */}
             <label style={{ marginTop: '10px' }}>Sens</label>
             <div role="tablist" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -1203,36 +1391,44 @@ function Tickets({
               </>
             )}
 
+            </>)}
+
             {selectedTrip && (activeBoardingPoints.length > 0 || activeAlightingPoints.length > 0) && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginTop: '10px' }}>
                 {activeBoardingPoints.length > 0 && (
                   <div>
-                    <label style={{ fontSize: '13px' }}>Point d’embarquement</label>
-                    <select
-                      value={boardingPointId}
-                      onChange={(e) => setBoardingPointId(e.target.value)}
-                      required={activeBoardingPoints.length > 1}
-                    >
-                      {activeBoardingPoints.length > 1 && <option value="">Choisir un point…</option>}
-                      {activeBoardingPoints.map((pt) => (
-                        <option key={pt.id} value={pt.id}>{pt.name}</option>
-                      ))}
-                    </select>
+                    <label htmlFor="boarding-point" style={{ fontSize: '13px' }}>{boardingFieldLabel("boarding", boardingCity)}</label>
+                    {activeBoardingPoints.length === 1 ? (
+                      <p id="boarding-point" style={{ margin: '4px 0 0', fontWeight: 600 }}>{activeBoardingPoints[0].name}</p>
+                    ) : (
+                      <>
+                        <select id="boarding-point" value={boardingPointId} onChange={(e) => setBoardingPointId(e.target.value)} required>
+                          <option value="">Choisir un point…</option>
+                          {activeBoardingPoints.map((pt) => (
+                            <option key={pt.id} value={pt.id}>{pt.name}</option>
+                          ))}
+                        </select>
+                        <small style={{ color: 'var(--mute)', display: 'block', marginTop: '4px' }}>{BOARDING_POINT_HELP}</small>
+                      </>
+                    )}
                   </div>
                 )}
                 {activeAlightingPoints.length > 0 && (
                   <div>
-                    <label style={{ fontSize: '13px' }}>Point de débarquement</label>
-                    <select
-                      value={alightingPointId}
-                      onChange={(e) => setAlightingPointId(e.target.value)}
-                      required={activeAlightingPoints.length > 1}
-                    >
-                      {activeAlightingPoints.length > 1 && <option value="">Choisir un point…</option>}
-                      {activeAlightingPoints.map((pt) => (
-                        <option key={pt.id} value={pt.id}>{pt.name}</option>
-                      ))}
-                    </select>
+                    <label htmlFor="alighting-point" style={{ fontSize: '13px' }}>{boardingFieldLabel("alighting", alightingCity)}</label>
+                    {activeAlightingPoints.length === 1 ? (
+                      <p id="alighting-point" style={{ margin: '4px 0 0', fontWeight: 600 }}>{activeAlightingPoints[0].name}</p>
+                    ) : (
+                      <>
+                        <select id="alighting-point" value={alightingPointId} onChange={(e) => setAlightingPointId(e.target.value)} required>
+                          <option value="">Choisir un point…</option>
+                          {activeAlightingPoints.map((pt) => (
+                            <option key={pt.id} value={pt.id}>{pt.name}</option>
+                          ))}
+                        </select>
+                        <small style={{ color: 'var(--mute)', display: 'block', marginTop: '4px' }}>{BOARDING_POINT_HELP}</small>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -1359,7 +1555,9 @@ function Tickets({
                 )}
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   {checkout?.payment_url && !paymentFailed && (
-                    <a className="btn p" href={checkout.payment_url}>Reprendre le paiement</a>
+                    embeddedPaymentAvailable(FEDAPAY_PUBLIC_KEY, checkout)
+                      ? <button type="button" className="btn p" disabled={busy} onClick={() => void resumePayment()}>{busy ? "Patientez…" : "Reprendre le paiement"}</button>
+                      : <a className="btn p" href={checkout.payment_url}>Reprendre le paiement</a>
                   )}
                   {(!checkout?.payment_url || paymentFailed) && payableQuotes.length === 1 && (
                     <button type="button" className="btn p" disabled={busy} onClick={() => void payHeld(payableQuotes[0].payment_method)}>
@@ -1380,7 +1578,7 @@ function Tickets({
         
         {issued && pending && (
            <div style={{ background: 'var(--okbg)', color: 'var(--ok)', padding: '20px', borderRadius: '12px', marginTop: '20px', border: '1px solid #c3e6d3', textAlign: 'center' }}>
-             <p style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '10px' }}>🎉 Voyage confirmé !</p>
+             <p style={{ fontWeight: 'bold', fontSize: '18px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><CheckCircleIcon size={22} /> Voyage confirmé !</p>
              <p style={{ marginBottom: '16px' }}>
                {pendingTickets.length > 1
                  ? `${pendingTickets.length} billets ont été émis avec succès.`
@@ -1627,7 +1825,7 @@ function Parcels() {
           <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {result.steps.map((step) => (
               <li key={step.key} style={{ display: 'flex', alignItems: 'center', gap: '12px', opacity: step.done ? 1 : 0.45 }}>
-                <span style={{ width: '22px', height: '22px', borderRadius: '50%', display: 'inline-grid', placeItems: 'center', fontSize: '12px', color: '#fff', background: step.done ? 'var(--ok)' : 'var(--line)' }}>{step.done ? "✓" : ""}</span>
+                <span style={{ width: '22px', height: '22px', borderRadius: '50%', display: 'inline-grid', placeItems: 'center', fontSize: '12px', color: '#fff', background: step.done ? 'var(--ok)' : 'var(--line)' }}>{step.done ? <CheckIcon size={14} /> : ""}</span>
                 <span style={{ fontWeight: step.current ? 'bold' : 'normal' }}>{step.label}</span>
                 {step.reached_at && <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--mute)' }}>{formatDate(step.reached_at)}</span>}
               </li>
@@ -1635,61 +1833,6 @@ function Parcels() {
           </ol>
         </div>
       )}
-    </div>
-  );
-}
-
-function Rentals({ user, vehicles, rentals, onAuthenticated, onChanged }: { user: User | null; vehicles: Vehicle[]; rentals: RentalBooking[]; onAuthenticated: () => Promise<void>; onChanged: () => Promise<void> }) {
-  // Simplified rentals UI
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }} className="responsive-grid">
-      <div className="card">
-        <h3>Véhicules disponibles</h3>
-        <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
-        {vehicles.length === 0 ? <p style={{ color: 'var(--mute)' }}>Aucun véhicule publié.</p> : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {vehicles.map(v => (
-              <div key={v.id} style={{ border: '1px solid var(--line)', padding: '16px', borderRadius: '12px', opacity: v.rentable === false ? 0.7 : 1 }}>
-                {/* Photo du véhicule, ou image de secours si elle manque. */}
-                {v.photo_url
-                  ? <img src={v.photo_url} alt={v.name} style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '8px', marginBottom: '12px' }} />
-                  : <div aria-label="Pas de photo" style={{ width: '100%', height: '160px', borderRadius: '8px', marginBottom: '12px', background: 'var(--bg)', display: 'grid', placeItems: 'center', color: 'var(--mute)' }}>Pas de photo</div>}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <h4 style={{ color: 'var(--navy)' }}>{v.name}</h4>
-                    {(v.brand || v.model_name) && <p style={{ fontSize: '13px' }}>{[v.brand, v.model_name].filter(Boolean).join(" ")}</p>}
-                    <p style={{ fontSize: '13px', color: 'var(--mute)' }}>
-                      {[v.capacity ? `${v.capacity} places` : "", v.transmission_display, v.fuel_display].filter(Boolean).join(" · ")}
-                    </p>
-                    <p style={{ fontSize: '13px', color: 'var(--mute)' }}>
-                      {v.driver_required
-                        ? (v.rental_daily_rate_with_driver ? `Avec chauffeur uniquement : ${money(v.rental_daily_rate_with_driver)} / jour` : "Avec chauffeur uniquement")
-                        : [v.rental_daily_rate ? `${money(v.rental_daily_rate)} / jour` : "", v.rental_daily_rate_with_driver ? `avec chauffeur : ${money(v.rental_daily_rate_with_driver)} / jour` : ""].filter(Boolean).join(" · ")}
-                    </p>
-                  </div>
-                  {v.rentable === false
-                    ? <span className="pill ex">Indisponible</span>
-                    : <button className="btn s p">Louer</button>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="card">
-        <h3>Vos demandes</h3>
-        <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
-        {!user ? <LoginCard title="Connectez-vous" allowRegistration onSuccess={() => void onAuthenticated()} /> : rentals.length === 0 ? <p style={{ color: 'var(--mute)' }}>Aucune demande en cours.</p> : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {rentals.map(r => (
-              <div key={r.id} style={{ background: 'var(--bg)', padding: '12px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between' }}>
-                <span>{r.vehicle_detail.name}</span>
-                <span className="pill ex">{r.status_display}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { QRCodeCanvas, QRCodeSVG } from "qrcode.react";
+import { CloseIcon } from "@/components/icons";
 import { API_URL } from "@/lib/api";
 import { ticketFooter, ticketRows } from "@/lib/ticket-print";
 import type { TicketPrintInfo } from "@/lib/types";
@@ -71,6 +72,8 @@ export default function PublicTicketPage() {
         year: "numeric",
         hour: "2-digit",
         minute: "2-digit",
+        // Heure du Bénin sur le billet, quel que soit le réglage du téléphone.
+        timeZone: "Africa/Porto-Novo",
       }).format(date);
     } catch {
       return isoString;
@@ -92,8 +95,8 @@ export default function PublicTicketPage() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 text-center border border-slate-100">
-          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl font-bold">
-            ✕
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <CloseIcon size={30} strokeWidth={2.4} />
           </div>
           <h1 className="text-xl font-bold text-slate-800 mb-2">Billet non disponible</h1>
           <p className="text-slate-600 mb-6">{error || "Le billet demandé n'existe pas."}</p>

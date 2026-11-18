@@ -493,7 +493,7 @@ h2 {
   background: #fff;
   display: grid;
   place-items: center;
-  font-size: 22px;
+  color: var(--navy);
   margin-bottom: 10px;
 }
 
@@ -879,6 +879,7 @@ footer {
 
   .notice-ok { background: var(--okbg); color: var(--ok); }
   .notice-error { background: #FDE8E8; color: #B42318; }
+  .notice-info { background: var(--tint); color: var(--navy); }
 
   /* Retour d'une action du portail : toujours visible, même en bas de page. */
   .action-feedback {
@@ -966,3 +967,83 @@ footer {
     50% { opacity: .55; }
   }
 }
+
+/* Session expirée : reconnexion par-dessus le portail, qui reste monté (saisies conservées). */
+.session-expired {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center;
+  padding: 48px 16px 16px; background: rgba(11, 60, 116, .55); overflow-y: auto;
+}
+.session-expired-box { width: 100%; max-width: 420px; }
+.session-expired .notice { padding: 10px 14px; font-size: 14px; }
+
+/* Barre d'onglets du bas (espace client), comme l'application : visible quand le menu du haut est masqué (≤ 900 px). */
+.tabbar { display: none; }
+@media (max-width: 900px) {
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    background: #fff; border-top: 1px solid var(--line);
+    box-shadow: 0 -4px 16px rgba(11, 60, 116, .08);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tabbar button {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    min-height: 60px; padding: 6px 2px; background: none; border: none; cursor: pointer;
+    color: var(--mute); font-size: 12px; font-weight: 600; line-height: 1.1;
+  }
+  .tabbar button.on { color: var(--navy); }
+  .tabbar button.on svg { color: var(--blue); }
+  .tabbar span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* La barre ne cache jamais la fin de la page (pied de page, boutons). */
+  .client-site { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+}
+
+/* Location de véhicules (espace client) : liste, demandes, fiche de demande. */
+.rental-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: start; }
+@media (max-width: 900px) { .rental-layout { grid-template-columns: 1fr; gap: 20px; } }
+.rental-vehicle { border: 1px solid var(--line); padding: 16px; border-radius: 12px; }
+.rental-photo { width: 100%; height: 160px; object-fit: cover; border-radius: 8px; }
+.rental-photo-empty { display: grid; place-items: center; background: var(--bg); color: var(--navy); }
+.rental-request { background: var(--bg); padding: 12px; border-radius: 8px; }
+.pill.rental-ok { background: var(--okbg); color: var(--ok); }
+.pill.rental-warn { background: var(--warnbg); color: var(--warn); }
+.pill.rental-danger { background: #FDE8E8; color: #B42318; }
+.rental-notice { background: var(--okbg); color: var(--ok); padding: 12px 14px; border-radius: 10px; margin-bottom: 16px; font-weight: 600; }
+.rental-sheet { max-width: 640px; margin: 0 auto; scroll-margin-top: 96px; }
+.rental-label { font-size: 12px; font-weight: 700; letter-spacing: .06em; color: var(--mute); margin: 20px 0 8px; }
+.rental-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rental-choice { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer; min-width: 0; }
+.rental-choice b { color: var(--navy); }
+.rental-choice span { font-size: 12px; color: var(--mute); }
+.rental-choice strong { font-size: 13px; color: var(--navy); overflow-wrap: anywhere; }
+.rental-choice.on { border-color: var(--blue); background: var(--tint); }
+.rental-choice:disabled { opacity: .5; cursor: not-allowed; }
+.rental-info { margin-top: 16px; padding: 12px; border-radius: 10px; background: var(--tint); color: var(--navy); font-size: 13px; }
+.rental-error { margin-top: 8px; color: #B42318; font-size: 13px; font-weight: 600; }
+.rental-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+/* Onglets du personnel sur téléphone : le bord droit s'efface pour montrer qu'on peut faire défiler ;
+   la marge de fin laisse le dernier onglet entièrement visible une fois au bout. */
+@media (max-width: 900px) {
+  .staff-tabs {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+    padding-right: 48px;
+    scrollbar-width: none;
+  }
+  .staff-tabs::-webkit-scrollbar { display: none; }
+}
+
+/* Safari sur iPhone zoome la page dès qu'un champ a une police inférieure à 16 px : sur téléphone,
+   tous les champs de saisie du site (client, guichet, admin, contrôleur) passent à 16 px. */
+@media (max-width: 900px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* Espace client : résumé de la recherche, inversion départ / arrivée, aucun départ ce jour. */
+.search-label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.swap-btn { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: none; background: none; color: var(--blue); font-weight: 700; font-size: 12px; cursor: pointer; }
+.search-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 14px; margin-bottom: 14px; border-radius: 12px; background: var(--tint); color: var(--navy); }
+.no-departure { display: grid; gap: 12px; padding: 18px; border: 1px dashed var(--line); border-radius: 14px; background: #fff; }
+.no-departure-title { font-weight: 800; color: var(--navy); font-size: 16px; }
+.day-nav, .day-trips { display: flex; gap: 8px; flex-wrap: wrap; }

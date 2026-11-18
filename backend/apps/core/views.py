@@ -41,6 +41,7 @@ from .models import (
     TripStopArrival,
     TicketControl,
     ParcelStatusHistory,
+    PaymentAttempt,
     PaymentMethod,
     RentalBooking,
     Route,
@@ -110,6 +111,7 @@ from .payments import (
     ONLINE_PROVIDERS,
     REFUND_DUE_MESSAGE,
     SIMULATION,
+    STAFF_RETURN_SPACES,
     PaymentNotApproved,
     ProviderUnavailable,
     create_checkout,
@@ -2514,6 +2516,10 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
         key = str(request.data.get("idempotency_key") or "").strip()
         if not _SALE_KEY_PATTERN.match(key):
             raise ValidationError({"idempotency_key": "Clé de vente absente ou invalide."})
+        # Espace d'où part la vente (/guichet, /controleur, /admin) : FedaPay y renvoie l'agent. Liste fixe.
+        space = str(request.data.get("espace") or "").strip() or None
+        if space is not None and space not in STAFF_RETURN_SPACES:
+            raise ValidationError({"espace": "Espace inconnu."})
         payment_method = self._payment_method(request.data.get("payment_method"))
         online = payment_method.code.upper() in ONLINE_PROVIDERS
 
@@ -2579,7 +2585,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
         checkout = None
         if online and booking.status == Booking.Status.HELD:
             try:
-                checkout = create_checkout(booking, payment_method=payment_method)
+                checkout = create_checkout(booking, payment_method=payment_method, space=space)
             except DjangoValidationError as exc:
                 # La place reste tenue : l'application réessaie avec la même clé, sans seconde réservation.
                 return Response(
@@ -2621,6 +2627,33 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
         except DjangoValidationError as exc:
             raise service_validation_error(exc)
         return Response(self._payload(booking, cancelled=cancelled))
+
+    @action(detail=False, methods=["get"])
+    def pending(self, request):
+        """
+        Ventes Mobile Money de l'agent encore en attente de paiement (onglet fermé, paiement abandonné) :
+        la place est encore tenue. Avec la dernière transaction créée, pour « Vérifier » sans la retrouver.
+        """
+        release_expired_holds()
+        bookings = (
+            Booking.objects.filter(sold_by=request.user, status=Booking.Status.HELD)
+            .prefetch_related("payment_attempts")
+            .order_by("-created_at")[:20]
+        )
+        rows = []
+        for booking in bookings:
+            attempt = max(
+                (item for item in booking.payment_attempts.all() if item.outcome == PaymentAttempt.Outcome.PENDING),
+                key=lambda item: item.created_at,
+                default=None,
+            )
+            if attempt is None:
+                continue
+            method = PaymentMethod.objects.filter(code__iexact=attempt.provider, active=True).first()
+            if method is None:
+                continue
+            rows.append({**self._payload(booking), "transaction_id": attempt.external_id, "payment_method": method.pk})
+        return Response(rows)
 
     def retrieve(self, request, pk=None):
         """État d'une vente (place tenue, payée, expirée)."""

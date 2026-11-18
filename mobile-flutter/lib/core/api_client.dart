@@ -696,6 +696,9 @@ class ApiClient {
 
   // ─── Internals ────────────────────────────────────────────────────────────
 
+  /// Appelé quand le renouvellement de la session échoue (jeton expiré ou fermé) : l'interface prévient l'utilisateur.
+  void Function()? onSessionLost;
+
   Future<bool> _refreshSession() async {
     if (_refreshLock != null) return _refreshLock!.future;
     final lock = Completer<bool>();
@@ -720,6 +723,7 @@ class ApiClient {
     } catch (_) {
       await logout();
       lock.complete(false);
+      onSessionLost?.call();
       return false;
     } finally {
       _refreshLock = null;

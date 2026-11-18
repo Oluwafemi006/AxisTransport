@@ -697,10 +697,13 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                           color: theme.colorScheme.onPrimary,
                         ),
                         const SizedBox(width: AxisSpacing.s8),
-                        Text(
-                          'Partager',
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: theme.colorScheme.onPrimary,
+                        Flexible(
+                          child: Text(
+                            'Partager',
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: theme.colorScheme.onPrimary,
+                            ),
                           ),
                         ),
                       ],
