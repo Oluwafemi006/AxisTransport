@@ -16,10 +16,7 @@ import '../../core/widgets/timeline_steps.dart';
 
 /// Écran client de suivi de colis (`ColisSuiviPhotos.html`).
 class ParcelsScreen extends ConsumerStatefulWidget {
-  const ParcelsScreen({
-    super.key,
-    this.initialTracking,
-  });
+  const ParcelsScreen({super.key, this.initialTracking});
 
   /// Permet d'injecter un état initial lors des tests de composants.
   final ParcelTracking? initialTracking;
@@ -108,11 +105,7 @@ class _ParcelsScreenState extends ConsumerState<ParcelsScreen> {
       final subtitle = step.reachedAt != null
           ? formatDateTime(step.reachedAt!)
           : (step.current ? 'En cours' : 'À venir');
-      return TimelineStepItem(
-        title: step.label,
-        meta: subtitle,
-        state: state,
-      );
+      return TimelineStepItem(title: step.label, meta: subtitle, state: state);
     }).toList();
   }
 
@@ -276,8 +269,7 @@ class _ParcelsScreenState extends ConsumerState<ParcelsScreen> {
                   else if (tracking == null)
                     const EmptyState(
                       title: 'Suivez votre colis',
-                      description:
-                          'Saisissez le code inscrit sur votre récépissé de dépôt pour afficher le statut et l’historique d’acheminement.',
+                      description: 'Saisissez le code inscrit sur votre récépissé de dépôt pour afficher le statut et l’historique d’acheminement.',
                       icon: Icons.local_shipping_outlined,
                     )
                   else ...[
@@ -288,7 +280,8 @@ class _ParcelsScreenState extends ConsumerState<ParcelsScreen> {
                           final (statusLabel, statusVariant) = _resolveStatus(
                             tracking,
                           );
-                          final hasMeta = (tracking.senderLabel != null &&
+                          final hasMeta =
+                              (tracking.senderLabel != null &&
                                   tracking.senderLabel!.trim().isNotEmpty) ||
                               (tracking.recipientLabel != null &&
                                   tracking.recipientLabel!.trim().isNotEmpty) ||
@@ -323,6 +316,11 @@ class _ParcelsScreenState extends ConsumerState<ParcelsScreen> {
                                 '${tracking.origin} → ${tracking.destination}',
                                 style: theme.textTheme.titleLarge,
                               ),
+
+                              if (tracking.bus != null) ...[
+                                const SizedBox(height: AxisSpacing.s14),
+                                ParcelBusLine(bus: tracking.bus!),
+                              ],
 
                               if (tracking.photos.isNotEmpty) ...[
                                 const SizedBox(height: AxisSpacing.s14),
@@ -364,10 +362,7 @@ class _ParcelsScreenState extends ConsumerState<ParcelsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            'ÉTAPES',
-                            style: theme.textTheme.labelSmall,
-                          ),
+                          Text('ÉTAPES', style: theme.textTheme.labelSmall),
                           const SizedBox(height: AxisSpacing.s12),
                           if (tracking.steps.isEmpty)
                             Text(
@@ -396,10 +391,7 @@ class _ParcelsScreenState extends ConsumerState<ParcelsScreen> {
 ///
 /// Composant en UI pure tant que l'endpoint `/client/parcels/track/` ne renvoie pas `photos`.
 class ParcelPhotoGallery extends StatelessWidget {
-  const ParcelPhotoGallery({
-    super.key,
-    required this.photos,
-  });
+  const ParcelPhotoGallery({super.key, required this.photos});
 
   final List<String> photos;
 
@@ -440,10 +432,7 @@ class ParcelPhotoGallery extends StatelessWidget {
                       IconButton(
                         key: const Key('parcel-photo-close'),
                         onPressed: () => Navigator.of(dialogContext).pop(),
-                        icon: Icon(
-                          Icons.close_rounded,
-                          color: onPrimary,
-                        ),
+                        icon: Icon(Icons.close_rounded, color: onPrimary),
                         tooltip: 'Fermer',
                       ),
                     ],
@@ -455,10 +444,7 @@ class ParcelPhotoGallery extends StatelessWidget {
                       height: 240,
                       child: Container(
                         color: axis.primarySoft,
-                        child: _ParcelPhotoImage(
-                          url: photoUrl,
-                          enlarged: true,
-                        ),
+                        child: _ParcelPhotoImage(url: photoUrl, enlarged: true),
                       ),
                     ),
                   ),
@@ -578,10 +564,7 @@ class ParcelPhotoGallery extends StatelessWidget {
 }
 
 class _ParcelPhotoImage extends StatelessWidget {
-  const _ParcelPhotoImage({
-    required this.url,
-    required this.enlarged,
-  });
+  const _ParcelPhotoImage({required this.url, required this.enlarged});
 
   final String url;
   final bool enlarged;
@@ -637,10 +620,7 @@ class _ParcelMetaRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: theme.textTheme.bodySmall,
-          ),
+          Text(label, style: theme.textTheme.bodySmall),
           const SizedBox(width: AxisSpacing.s12),
           Flexible(
             child: Text(
@@ -690,6 +670,63 @@ class _ParcelTrackingSkeleton extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Ligne du trajet : la dernière ville confirmée est mise en avant, avec son heure.
+class ParcelBusLine extends StatelessWidget {
+  const ParcelBusLine({super.key, required this.bus});
+
+  final ParcelBus bus;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      key: const Key('parcel-bus'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(AxisSpacing.s12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AxisRadius.small),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Position du bus', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (var i = 0; i < bus.stops.length; i++) ...[
+                if (i > 0) const Text('→'),
+                Chip(
+                  key: bus.stops[i] == bus.lastStop
+                      ? const Key('parcel-bus-current')
+                      : null,
+                  visualDensity: VisualDensity.compact,
+                  label: Text(bus.stops[i]),
+                  backgroundColor: bus.stops[i] == bus.lastStop
+                      ? scheme.primary
+                      : null,
+                  labelStyle: bus.stops[i] == bus.lastStop
+                      ? TextStyle(
+                          color: scheme.onPrimary,
+                          fontWeight: FontWeight.bold,
+                        )
+                      : null,
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(bus.text, style: theme.textTheme.bodyMedium),
+        ],
+      ),
     );
   }
 }

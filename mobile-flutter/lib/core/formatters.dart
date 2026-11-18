@@ -16,3 +16,11 @@ String formatMoney(num amount, [String currency = 'XOF']) {
   final unit = currency == 'XOF' ? 'FCFA' : currency;
   return '${_money.format(amount)} $unit';
 }
+
+/// Date et heure au Bénin (UTC+1), quel que soit le fuseau du téléphone.
+String formatBeninDateTime(DateTime value) {
+  final benin = value.toUtc().add(const Duration(hours: 1));
+  return _dateTime.format(
+    DateTime(benin.year, benin.month, benin.day, benin.hour, benin.minute),
+  );
+}

@@ -4,7 +4,7 @@ import { PasswordInput } from "./password-input";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail } from "@/lib/api";
-import { BOARDING_POINT_HELP, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, boardingFieldLabel, resizePassengers, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
+import { BOARDING_POINT_HELP, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, boardingFieldLabel, resizePassengers, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, parcelBusText, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { ClientTabBar, type ClientTab } from "./client-tab-bar";
@@ -1821,7 +1821,32 @@ function Parcels() {
         <div style={{ marginTop: '24px' }}>
           <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--mute)' }}>{result.tracking_number}</div>
           <div style={{ fontWeight: 'bold', color: 'var(--navy)', margin: '4px 0 16px' }}>{result.origin} → {result.destination}</div>
-          {(result.photos ?? []).map((url) => <img key={url} src={url} alt="Photo du colis" style={{ width: '100%', maxWidth: '240px', borderRadius: '8px', marginBottom: '12px' }} />)}
+          {result.bus && (
+            <div data-testid="parcel-bus" style={{ background: 'var(--bg)', borderRadius: '12px', padding: '14px', marginBottom: '16px' }}>
+              <div style={{ fontWeight: 'bold', color: 'var(--navy)', marginBottom: '10px' }}>Position du bus</div>
+              <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                {result.bus.stops.map((stop, index) => {
+                  const here = stop === result.bus?.last_stop;
+                  return (
+                    <li key={`${stop}-${index}`} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {index > 0 && <span aria-hidden style={{ color: 'var(--mute)' }}>→</span>}
+                      <span aria-current={here ? "location" : undefined} style={{ padding: '4px 10px', borderRadius: '999px', fontSize: '13px', fontWeight: here ? 'bold' : 'normal', background: here ? 'var(--navy)' : '#fff', color: here ? '#fff' : 'var(--navy)', border: '1px solid var(--line)' }}>{stop}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+              <p style={{ margin: '10px 0 0', fontSize: '14px' }}>{parcelBusText(result.bus)}</p>
+            </div>
+          )}
+          {(result.photos ?? []).length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+              {(result.photos ?? []).map((url) => (
+                <a key={url} href={url} target="_blank" rel="noopener noreferrer" title="Agrandir la photo">
+                  <img src={url} alt="Photo du colis (toucher pour agrandir)" style={{ width: '120px', height: '120px', objectFit: 'cover', borderRadius: '8px' }} />
+                </a>
+              ))}
+            </div>
+          )}
           <ol style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {result.steps.map((step) => (
               <li key={step.key} style={{ display: 'flex', alignItems: 'center', gap: '12px', opacity: step.done ? 1 : 0.45 }}>

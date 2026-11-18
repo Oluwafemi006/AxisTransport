@@ -1,3 +1,5 @@
+import 'formatters.dart';
+
 num asNum(dynamic value) {
   if (value == null) return 0;
   if (value is num) return value;
@@ -113,8 +115,12 @@ class Place {
       id: json['id'] as int,
       name: json['name'] as String? ?? '',
       address: json['address'] as String? ?? '',
-      boardingPoints: (json['boarding_points'] as List<dynamic>?)
-              ?.map((item) => BoardingPointInfo.fromJson(item as Map<String, dynamic>))
+      boardingPoints:
+          (json['boarding_points'] as List<dynamic>?)
+              ?.map(
+                (item) =>
+                    BoardingPointInfo.fromJson(item as Map<String, dynamic>),
+              )
               .toList() ??
           const [],
     );
@@ -147,8 +153,12 @@ class RouteStopInfo {
       id: json['id'] as int? ?? 0,
       name: json['name'] as String? ?? '',
       position: json['position'] as int? ?? 0,
-      boardingPoints: (json['boarding_points'] as List<dynamic>?)
-              ?.map((item) => BoardingPointInfo.fromJson(item as Map<String, dynamic>))
+      boardingPoints:
+          (json['boarding_points'] as List<dynamic>?)
+              ?.map(
+                (item) =>
+                    BoardingPointInfo.fromJson(item as Map<String, dynamic>),
+              )
               .toList() ??
           const [],
     );
@@ -188,8 +198,11 @@ class RouteInfo {
       destination: json['destination_detail'] is Map<String, dynamic>
           ? Place.fromJson(json['destination_detail'] as Map<String, dynamic>)
           : null,
-      stops: (json['stops'] as List<dynamic>?)
-              ?.map((item) => RouteStopInfo.fromJson(item as Map<String, dynamic>))
+      stops:
+          (json['stops'] as List<dynamic>?)
+              ?.map(
+                (item) => RouteStopInfo.fromJson(item as Map<String, dynamic>),
+              )
               .toList() ??
           const [],
     );
@@ -972,7 +985,10 @@ class Vehicle {
           ? null
           : asNum(json['rental_daily_rate_with_driver']),
       // Le serveur envoie « driver_required » (avec chauffeur uniquement).
-      onlyWithDriver: json['driver_required'] as bool? ?? json['only_with_driver'] as bool? ?? false,
+      onlyWithDriver:
+          json['driver_required'] as bool? ??
+          json['only_with_driver'] as bool? ??
+          false,
       brand: json['brand'] as String? ?? '',
       modelName: json['model_name'] as String? ?? '',
       transmissionDisplay: json['transmission_display'] as String? ?? '',
@@ -1132,6 +1148,7 @@ class ParcelTracking {
     this.senderLabel,
     this.recipientLabel,
     this.description,
+    this.bus,
   });
 
   final String trackingNumber;
@@ -1142,6 +1159,7 @@ class ParcelTracking {
   final String? senderLabel;
   final String? recipientLabel;
   final String? description;
+  final ParcelBus? bus;
 
   factory ParcelTracking.fromJson(Map<String, dynamic> json) {
     return ParcelTracking(
@@ -1160,6 +1178,46 @@ class ParcelTracking {
       senderLabel: json['sender_label'] as String?,
       recipientLabel: json['recipient_label'] as String?,
       description: json['description'] as String?,
+      bus: json['bus'] is Map
+          ? ParcelBus.fromJson(Map<String, dynamic>.from(json['bus'] as Map))
+          : null,
     );
+  }
+}
+
+/// Position du bus d'un colis chargé ou en route (null sinon) : ville confirmée par le contrôleur.
+class ParcelBus {
+  const ParcelBus({
+    required this.stops,
+    required this.departureAt,
+    this.lastStop,
+    this.lastConfirmedAt,
+  });
+
+  final List<String> stops;
+  final DateTime? departureAt;
+  final String? lastStop;
+  final DateTime? lastConfirmedAt;
+
+  factory ParcelBus.fromJson(Map<String, dynamic> json) {
+    return ParcelBus(
+      stops: (json['stops'] as List? ?? const []).whereType<String>().toList(),
+      departureAt: DateTime.tryParse(json['departure_at'] as String? ?? ''),
+      lastStop: json['last_stop'] as String?,
+      lastConfirmedAt: DateTime.tryParse(
+        json['last_confirmed_at'] as String? ?? '',
+      ),
+    );
+  }
+
+  /// Même texte que le site (portal-rules.ts, parcelBusText), heures du Bénin.
+  String get text {
+    if (lastStop != null && lastConfirmedAt != null) {
+      return 'Dernier passage confirmé : $lastStop, le ${formatBeninDateTime(lastConfirmedAt!)}.';
+    }
+    final departure = departureAt;
+    return departure == null
+        ? 'Aucune arrivée confirmée pour l’instant.'
+        : 'Aucune arrivée confirmée pour l’instant. Départ prévu le ${formatBeninDateTime(departure)}.';
   }
 }
