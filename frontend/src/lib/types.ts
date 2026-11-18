@@ -273,6 +273,8 @@ export interface ParcelTracking {
   destination: string;
   current_step: string;
   photos?: string[];
+  // Présent seulement quand le colis est chargé ou en route ; null sinon.
+  bus?: { stops: string[]; departure_at: string; last_stop: string | null; last_confirmed_at: string | null } | null;
   steps: { key: string; label: string; done: boolean; current: boolean; reached_at: string | null }[];
 }
 

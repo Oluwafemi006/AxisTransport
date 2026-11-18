@@ -342,3 +342,11 @@ test("WhatsApp du client : indicatif choisi + numéro local, numéros étrangers
   assert.equal(internationalNumber("+", "90000009"), null, "indicatif incomplet");
   assert.equal(internationalNumber("+229", "TEST"), null);
 });
+
+test("suivi colis : dernière ville confirmée, ou départ prévu, à l'heure du Bénin", async () => {
+  const { parcelBusText } = await import(pathToFileURL(compiled).href);
+  const passed = parcelBusText({ departure_at: "2026-11-18T07:00:00+01:00", last_stop: "Ville TEST", last_confirmed_at: "2026-11-18T09:30:00+01:00" });
+  assert.match(passed, /^Dernier passage confirmé : Ville TEST, le .*09:30\.$/);
+  const planned = parcelBusText({ departure_at: "2026-11-18T06:00:00Z", last_stop: null, last_confirmed_at: null });
+  assert.match(planned, /^Aucune arrivée confirmée pour l’instant\. Départ prévu le .*07:00\.$/, "UTC 06:00 = 07:00 au Bénin");
+});

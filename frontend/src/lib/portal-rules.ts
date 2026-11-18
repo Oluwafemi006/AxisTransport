@@ -389,3 +389,11 @@ export function internationalNumber(code: string, local: string): string | null 
   const national = code === "+229" ? compact : compact.replace(/^0/, "");
   return `${code}${national}`;
 }
+
+// Suivi colis : phrase sur la position du bus (mêmes textes dans l'application).
+export function parcelBusText(bus: { departure_at: string; last_stop: string | null; last_confirmed_at: string | null }): string {
+  if (bus.last_stop && bus.last_confirmed_at) {
+    return `Dernier passage confirmé : ${bus.last_stop}, le ${formatBeninDateTime(bus.last_confirmed_at)}.`;
+  }
+  return `Aucune arrivée confirmée pour l’instant. Départ prévu le ${formatBeninDateTime(bus.departure_at)}.`;
+}
