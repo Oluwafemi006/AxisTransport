@@ -104,17 +104,32 @@ export function clearPendingSale(bookingId?: number) {
   } catch { /* stockage indisponible */ }
 }
 
-export function announceSaleResult(bookingId: number, state: ReturnState) {
-  try { window.localStorage.setItem(SALE_RESULT_KEY, JSON.stringify({ bookingId, state, at: Date.now() })); } catch { /* idem */ }
+export function announceSaleResult(bookingId: number, state: ReturnState, reference: string | null = null) {
+  try { window.localStorage.setItem(SALE_RESULT_KEY, JSON.stringify({ bookingId, state, reference, at: Date.now() })); } catch { /* idem */ }
 }
 
-export function parseSaleResult(raw: string | null): { bookingId: number; state: ReturnState } | null {
+export type SaleResultNotice = { bookingId: number; state: ReturnState; reference: string | null; at: number };
+
+export function parseSaleResult(raw: string | null): SaleResultNotice | null {
   if (!raw) return null;
   try {
-    const value = JSON.parse(raw) as { bookingId?: unknown; state?: unknown };
+    const value = JSON.parse(raw) as { bookingId?: unknown; state?: unknown; reference?: unknown; at?: unknown };
     if (typeof value.bookingId !== "number" || !["attente", "paye", "echoue", "expire"].includes(String(value.state))) return null;
-    return { bookingId: value.bookingId, state: value.state as ReturnState };
+    return {
+      bookingId: value.bookingId,
+      state: value.state as ReturnState,
+      reference: typeof value.reference === "string" ? value.reference : null,
+      at: typeof value.at === "number" ? value.at : 0,
+    };
   } catch {
     return null;
   }
+}
+
+// Page de retour rechargée après un paiement confirmé ou expiré (la vente n'est plus gardée) :
+// le dernier résultat final de moins de 30 minutes est réaffiché au lieu de « vente introuvable ».
+export const RESULT_MEMORY_MS = 30 * 60 * 1000;
+export function recentFinalResult(notice: SaleResultNotice | null, now: number): SaleResultNotice | null {
+  if (!notice || !isFinalState(notice.state)) return null;
+  return now - notice.at <= RESULT_MEMORY_MS ? notice : null;
 }

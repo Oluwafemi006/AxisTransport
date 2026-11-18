@@ -62,7 +62,7 @@ test("vente en attente gardée dans le navigateur : rejetée si l'espace n'est p
   assert.deepEqual(sale.parsePendingSale(JSON.stringify(ok)), ok);
   assert.equal(sale.parsePendingSale(JSON.stringify({ ...ok, space: "https://pirate.exemple.test" })), null);
   assert.equal(sale.parsePendingSale("pas du json"), null);
-  assert.deepEqual(sale.parseSaleResult(JSON.stringify({ bookingId: 12, state: "paye" })), { bookingId: 12, state: "paye" });
+  assert.deepEqual(sale.parseSaleResult(JSON.stringify({ bookingId: 12, state: "paye" })), { bookingId: 12, state: "paye", reference: null, at: 0 });
   assert.equal(sale.parseSaleResult(JSON.stringify({ bookingId: 12, state: "autre" })), null);
 });
 
@@ -70,4 +70,14 @@ test("seules trois pages de retour du personnel existent", () => {
   const page = readFileSync(path.join(here, "../src/app/paiement/retour/[espace]/page.tsx"), "utf8");
   assert.match(page, /dynamicParams = false/);
   assert.match(page, /STAFF_SPACES\.map/);
+});
+
+test("page de retour rechargée : le dernier résultat final récent est réaffiché", () => {
+  const now = 10_000_000;
+  const paid = { bookingId: 41, state: "paye", reference: "AX-TEST-0001", at: now - 60_000 };
+  assert.deepEqual(sale.recentFinalResult(paid, now), paid);
+  assert.equal(sale.recentFinalResult({ ...paid, at: now - 31 * 60_000 }, now), null, "trop ancien");
+  assert.equal(sale.recentFinalResult({ ...paid, state: "attente" }, now), null, "pas un résultat final");
+  assert.equal(sale.recentFinalResult(null, now), null);
+  assert.deepEqual(sale.parseSaleResult(JSON.stringify(paid)), paid);
 });

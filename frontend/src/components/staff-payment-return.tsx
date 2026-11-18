@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import {
-  RETURN_MESSAGES, RETURN_POLL_LIMIT_MS, RETURN_POLL_MS, announceSaleResult, clearPendingSale, isFinalState,
-  loadPendingSale, staffReturnState, staffSpaceHomePath, type ReturnState, type StaffSpace,
+  RETURN_MESSAGES, RETURN_POLL_LIMIT_MS, RETURN_POLL_MS, SALE_RESULT_KEY, announceSaleResult, clearPendingSale, isFinalState,
+  loadPendingSale, parseSaleResult, recentFinalResult, staffReturnState, staffSpaceHomePath, type ReturnState, type StaffSpace,
 } from "@/lib/staff-sale";
 import type { Booking } from "@/lib/types";
 
@@ -24,7 +24,13 @@ export function StaffPaymentReturn({ space }: { space: StaffSpace }) {
 
   useEffect(() => {
     const sale = loadPendingSale();
-    if (!sale) { setView("inconnu"); return; }
+    if (!sale) {
+      // Page rechargée après la fin de la vente : son résultat est encore connu dans ce navigateur.
+      let previous = null;
+      try { previous = recentFinalResult(parseSaleResult(window.localStorage.getItem(SALE_RESULT_KEY)), Date.now()); } catch { previous = null; }
+      if (previous) { setView(previous.state); setReference(previous.reference); } else setView("inconnu");
+      return;
+    }
     const providerStatus = new URLSearchParams(window.location.search).get("status");
     const started = Date.now();
     let cancelled = false;
@@ -52,7 +58,7 @@ export function StaffPaymentReturn({ space }: { space: StaffSpace }) {
       const state = staffReturnState(bookingStatus, providerStatus);
       setView(state);
       if (ticketReference) setReference(ticketReference);
-      announceSaleResult(sale.bookingId, state);
+      announceSaleResult(sale.bookingId, state, ticketReference);
       if (isFinalState(state)) { clearPendingSale(sale.bookingId); return; }
       if (state === "echoue") return;
       if (Date.now() - started >= RETURN_POLL_LIMIT_MS) { setExhausted(true); return; }
