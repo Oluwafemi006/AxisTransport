@@ -346,3 +346,46 @@ export function resizePassengers<T>(current: T[], count: number, blank: (index: 
   if (current.length > wanted) return current.slice(0, wanted);
   return [...current, ...Array.from({ length: wanted - current.length }, (_, i) => blank(current.length + i))];
 }
+
+// ─── Dates et heures : toujours à l'heure du Bénin, quel que soit le réglage de l'appareil ───
+
+export const BENIN_TIME_ZONE = "Africa/Porto-Novo";
+
+// Instant venant du serveur (ISO avec fuseau) affiché à l'heure du Bénin.
+export function formatBeninDateTime(value: string, options: Intl.DateTimeFormatOptions = { dateStyle: "medium", timeStyle: "short" }): string {
+  return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: BENIN_TIME_ZONE }).format(new Date(value));
+}
+
+// Jour calendaire AAAA-MM-JJ (déjà un jour du Bénin) : affiché tel quel, sans glisser d'un jour selon le fuseau de l'appareil.
+export function formatDayKey(key: string, options: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: "UTC" }).format(new Date(`${key}T12:00:00Z`));
+}
+
+// ─── Numéro WhatsApp du client : indicatif choisi + numéro local (voyageurs d'autres pays) ───
+
+// Indicatifs proposés au guichet ; « Autre » permet d'en saisir n'importe lequel. Liste à ajuster par l'agence.
+export const PHONE_COUNTRY_CODES: Array<{ code: string; label: string }> = [
+  { code: "+229", label: "Bénin (+229)" },
+  { code: "+228", label: "Togo (+228)" },
+  { code: "+234", label: "Nigeria (+234)" },
+  { code: "+227", label: "Niger (+227)" },
+  { code: "+226", label: "Burkina Faso (+226)" },
+  { code: "+233", label: "Ghana (+233)" },
+  { code: "+225", label: "Côte d’Ivoire (+225)" },
+  { code: "+221", label: "Sénégal (+221)" },
+  { code: "+223", label: "Mali (+223)" },
+  { code: "+237", label: "Cameroun (+237)" },
+  { code: "+241", label: "Gabon (+241)" },
+  { code: "+33", label: "France (+33)" },
+];
+
+// Numéro international à partir de l'indicatif et du numéro saisi. Un numéro déjà international (+…) est gardé.
+// Bénin : le numéro à 10 chiffres garde son 01 (numérotation de 2024). Ailleurs, le 0 initial national est retiré.
+// null si l'indicatif ou le numéro ne sont pas valables.
+export function internationalNumber(code: string, local: string): string | null {
+  const compact = local.replace(/[\s.\-()]/g, "");
+  if (/^(\+|00)\d{6,15}$/.test(compact)) return compact.startsWith("00") ? `+${compact.slice(2)}` : compact;
+  if (!/^\+\d{1,4}$/.test(code) || !/^\d{4,14}$/.test(compact)) return null;
+  const national = code === "+229" ? compact : compact.replace(/^0/, "");
+  return `${code}${national}`;
+}

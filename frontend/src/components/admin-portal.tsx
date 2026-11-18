@@ -18,7 +18,7 @@ import { BusSeatMap } from "./bus-seat-map";
 import { apiFetch, apiList, clearTokens, formatDate, getAccessToken, money } from "@/lib/api";
 import { unregisterLegacyServiceWorkers } from "@/lib/pwa";
 import { SALE_RESULT_KEY, clearPendingSale, loadPendingSale, parseSaleResult, savePendingSale, type StaffSpace } from "@/lib/staff-sale";
-import { actionErrorText, beninDateKey, holdMinutesConfigured, offlinePaymentConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref, type SegmentDirection, type SegmentOffer } from "@/lib/portal-rules";
+import { PHONE_COUNTRY_CODES, internationalNumber, actionErrorText, beninDateKey, formatDayKey, holdMinutesConfigured, offlinePaymentConfigured, soldTicketWhatsappHref, upcomingSellableTrips, whatsappHref, type SegmentDirection, type SegmentOffer } from "@/lib/portal-rules";
 
 import type { AgencyProfile, AgencySettingChange, BoardingPoint, Booking, FareRule, FeatureFlag, LineState, LineStopRow, Location, ManualTicketChange, MissingSegmentFare, BusPosition, Tax, Parcel, PaymentIncident, PaymentMethod, RentalBooking, Route, SegmentFare, SegmentFareChange, Seat, SystemSetting, Ticket, Trip, User, Vehicle, WeeklySchedule } from "@/lib/types";
 
@@ -173,7 +173,7 @@ function DashboardPanel({ data, trips, onReport }: { data: Dashboard | null; tri
     .sort((a, b) => a.departure_at.localeCompare(b.departure_at));
   return (
     <>
-      <SectionHeading eyebrow="Heure du Bénin, de minuit à minuit" title={`Aujourd'hui (${new Date(`${data.today.date}T00:00:00`).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })})`} />
+      <SectionHeading eyebrow="Heure du Bénin, de minuit à minuit" title={`Aujourd'hui (${formatDayKey(data.today.date, { weekday: "long", day: "numeric", month: "long" })})`} />
       <HeadlineCards data={data.today} />
       <p className="mt-4"><button type="button" className="secondary-button" onClick={onReport}>Voir le bilan global</button></p>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_.6fr]">
@@ -776,6 +776,9 @@ export function CounterPanel({ onChanged, space, onHome }: { onChanged: () => Pr
   const [result, setResult] = useState<SaleResult | null>(null);
   // Numéro WhatsApp du client, facultatif : prérempli avec son téléphone, sert seulement à lui envoyer son billet.
   const [whatsapp, setWhatsapp] = useState("");
+  // Indicatif du pays du client (voyageurs d'autres pays) ; « autre » : indicatif saisi par l'agent.
+  const [whatsappCode, setWhatsappCode] = useState("+229");
+  const [otherCode, setOtherCode] = useState("+");
   const [busy, setBusy] = useState(false);
   const [saleKey, setSaleKey] = useState<string | null>(null);
   // Ventes Mobile Money de l'agent encore en attente (onglet fermé, paiement abandonné), lues sur le serveur.
@@ -1116,12 +1119,18 @@ export function CounterPanel({ onChanged, space, onHome }: { onChanged: () => Pr
             )}
             {issued && ticket && (
               <div className="mt-4 rounded-lg border border-slate-200 p-3">
-                <label className="block"><span className="field-label">WhatsApp du client (facultatif)</span>
-                  <input className="field" inputMode="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Format international, ex. : +229 …" />
-                </label>
-                {whatsapp && !whatsappHref(whatsapp) && <p className="mt-1 text-xs text-amber-700">Numéro au format international (+ et indicatif) pour l’ouvrir directement ; sinon WhatsApp vous laissera choisir le contact.</p>}
+                <span className="field-label">WhatsApp du client (facultatif)</span>
+                <div className="flex flex-wrap gap-2">
+                  <select className="field w-auto" aria-label="Indicatif du pays" value={whatsappCode} onChange={(e) => setWhatsappCode(e.target.value)}>
+                    {PHONE_COUNTRY_CODES.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+                    <option value="autre">Autre indicatif…</option>
+                  </select>
+                  {whatsappCode === "autre" && <input className="field w-24" inputMode="tel" aria-label="Indicatif" value={otherCode} onChange={(e) => setOtherCode(e.target.value)} placeholder="+44" />}
+                  <input className="field min-w-0 flex-1" inputMode="tel" aria-label="Numéro WhatsApp" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Numéro, ex. : 01 97 00 00 00" />
+                </div>
+                {whatsapp && !internationalNumber(whatsappCode === "autre" ? otherCode : whatsappCode, whatsapp) && <p className="mt-1 text-xs text-amber-700">Vérifiez l’indicatif et le numéro ; sinon WhatsApp vous laissera choisir le contact.</p>}
                 <a className="primary-button mt-2 inline-flex" target="_blank" rel="noopener noreferrer"
-                  href={soldTicketWhatsappHref({ reference: ticket.reference, passenger_name: ticket.passenger_name ?? "", passenger_phone: whatsapp }, `${window.location.origin}/t/${encodeURIComponent(ticket.reference)}`)}>
+                  href={soldTicketWhatsappHref({ reference: ticket.reference, passenger_name: ticket.passenger_name ?? "", passenger_phone: internationalNumber(whatsappCode === "autre" ? otherCode : whatsappCode, whatsapp) ?? "" }, `${window.location.origin}/t/${encodeURIComponent(ticket.reference)}`)}>
                   Envoyer le billet par WhatsApp
                 </a>
                 <div className="mt-2 flex flex-wrap gap-2">

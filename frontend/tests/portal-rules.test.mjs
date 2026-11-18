@@ -13,7 +13,7 @@ const source = readFileSync(path.join(here, "../src/lib/portal-rules.ts"), "utf8
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
 const compiled = path.join(mkdtempSync(path.join(tmpdir(), "axis-portal-rules-")), "portal-rules.mjs");
 writeFileSync(compiled, outputText);
-const { staffSpaceHome, beninDateTimeToIso, rentalPeriodError, rentalDays, rentalFormulas, rentalDailyRate, rentalStatusTone, offlinePaymentConfigured, placeChoices, segmentDepartureLabel, segmentSearchDate, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE, writeKey, shareInFlight } = await import(pathToFileURL(compiled).href);
+const { internationalNumber, PHONE_COUNTRY_CODES, staffSpaceHome, beninDateTimeToIso, rentalPeriodError, rentalDays, rentalFormulas, rentalDailyRate, rentalStatusTone, offlinePaymentConfigured, placeChoices, segmentDepartureLabel, segmentSearchDate, searchError, holdMinutesConfigured, counterTripLabel, actionErrorText, nextPagePath, isSegmentFareMissing, SEGMENT_FARE_MISSING_MESSAGE, writeKey, shareInFlight } = await import(pathToFileURL(compiled).href);
 
 const places = [{ id: 1, name: "Cotonou" }, { id: 2, name: "Parakou" }];
 
@@ -330,4 +330,15 @@ test("nombre de passagers de la recherche : saisies gardées, bornes 1 à 8", as
   assert.equal(resizePassengers(["TEST Un", "TEST Deux"], 0, blank).length, 1);
   const same = ["TEST Un"];
   assert.equal(resizePassengers(same, 1, blank), same);
+});
+
+test("WhatsApp du client : indicatif choisi + numéro local, numéros étrangers acceptés (numéros fictifs)", () => {
+  assert.equal(PHONE_COUNTRY_CODES[0].code, "+229", "Bénin par défaut");
+  assert.equal(internationalNumber("+229", "01 00 00 00 09"), "+2290100000009", "Bénin : le 01 est gardé");
+  assert.equal(internationalNumber("+228", "90 00 00 09"), "+22890000009");
+  assert.equal(internationalNumber("+33", "06 00 00 00 09"), "+33600000009", "France : 0 national retiré");
+  assert.equal(internationalNumber("+229", "+234 800 000 0009"), "+2348000000009", "déjà international : gardé");
+  assert.equal(internationalNumber("+229", "00228 90 00 00 09"), "+22890000009");
+  assert.equal(internationalNumber("+", "90000009"), null, "indicatif incomplet");
+  assert.equal(internationalNumber("+229", "TEST"), null);
 });

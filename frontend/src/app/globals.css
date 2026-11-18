@@ -1033,3 +1033,17 @@ footer {
   }
   .staff-tabs::-webkit-scrollbar { display: none; }
 }
+
+/* Safari sur iPhone zoome la page dès qu'un champ a une police inférieure à 16 px : sur téléphone,
+   tous les champs de saisie du site (client, guichet, admin, contrôleur) passent à 16 px. */
+@media (max-width: 900px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* Espace client : résumé de la recherche, inversion départ / arrivée, aucun départ ce jour. */
+.search-label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.swap-btn { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: none; background: none; color: var(--blue); font-weight: 700; font-size: 12px; cursor: pointer; }
+.search-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 14px; margin-bottom: 14px; border-radius: 12px; background: var(--tint); color: var(--navy); }
+.no-departure { display: grid; gap: 12px; padding: 18px; border: 1px dashed var(--line); border-radius: 14px; background: #fff; }
+.no-departure-title { font-weight: 800; color: var(--navy); font-size: 16px; }
+.day-nav, .day-trips { display: flex; gap: 8px; flex-wrap: wrap; }

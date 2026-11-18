@@ -8,6 +8,8 @@ import { BOARDING_POINT_HELP, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, ben
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { ClientTabBar, type ClientTab } from "./client-tab-bar";
+import { BOOKING_STEPS, bookingStep, clientLocationSearch, hasCompleteSearch, readClientLocation, searchSummary, shiftDayKey } from "@/lib/search-url";
+import { SwapIcon } from "./icons";
 import { Rentals } from "./client-rentals";
 import { BusIcon, CarIcon, CheckCircleIcon, CheckIcon, PackageIcon, PhoneIcon, TicketIcon } from "./icons";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
@@ -114,6 +116,11 @@ export function ClientPortal() {
   const [searchPassengers, setSearchPassengers] = useState(1);
   const [searchMessage, setSearchMessage] = useState("");
   const [preselectedTripId, setPreselectedTripId] = useState("");
+  // Recherche validée (celle écrite dans l'adresse) et départs de ce jour : null tant qu'aucune recherche n'est faite.
+  const [committedSearch, setCommittedSearch] = useState<{ origin: string; destination: string; date: string; passengers: number } | null>(null);
+  const [dayTrips, setDayTrips] = useState<Trip[] | null>(null);
+  // Faux pendant la lecture de l'adresse (chargement, bouton retour) : l'état restauré n'est pas réécrit dans l'historique.
+  const urlReady = useRef(false);
 
   // Aujourd'hui au Bénin : date minimale du calendrier (les jours passés sont grisés).
   const beninToday = beninDateKey();
@@ -148,7 +155,7 @@ export function ClientPortal() {
     document.getElementById("prochains-departs")?.scrollIntoView({ behavior: "smooth" });
   }
 
-  async function runSearch(searchOrigin = searchOriginValue, searchDestination = searchDestinationValue, searchDate = searchDateValue) {
+  async function runSearch(searchOrigin = searchOriginValue, searchDestination = searchDestinationValue, searchDate = searchDateValue, passengers = searchPassengers, targetTab: ClientTab = "billets") {
     const problem = searchError(searchOrigin, searchDestination) ?? searchDateError(searchDate, beninDateKey());
     setSearchMessage(problem ?? "");
     setNextAvailable(null);
@@ -173,14 +180,65 @@ export function ClientPortal() {
             return [...serverTrips, ...current.filter(t => !serverIds.has(t.id))];
           });
           setPreselectedTripId(String(serverTrips[0].id));
+        } else {
+          setPreselectedTripId("");
         }
+        // Départs de ce jour et recherche validée : l'onglet Billets affiche un résumé, jamais le formulaire à refaire.
+        setDayTrips(serverTrips);
+        setCommittedSearch({ origin: searchOrigin, destination: searchDestination, date: searchDate, passengers });
       } catch (reason) {
         // Tronçon sans tarif : on reste sur le formulaire, sa saisie est gardée.
         if (isSegmentFareMissing(reason)) { setSearchMessage(SEGMENT_FARE_MISSING_MESSAGE); return; }
-        // En cas d'autre erreur de requête, le filtre local s'applique
+        // Autre erreur (réseau, serveur) : message en français, la saisie reste sur l'accueil.
+        setSearchMessage(actionErrorText(reason, "La recherche n’a pas abouti."));
+        return;
       }
-      setTab("billets");
+      setTab(targetTab);
     }
+  }
+
+  // Adresse de la page = onglet + recherche validée : rechargement et bouton retour ramènent au même endroit.
+  useEffect(() => {
+    if (!urlReady.current) return;
+    const next = window.location.pathname + clientLocationSearch({
+      tab,
+      origin: committedSearch?.origin ?? "",
+      destination: committedSearch?.destination ?? "",
+      date: committedSearch?.date ?? "",
+      passengers: committedSearch?.passengers ?? 1,
+    });
+    if (next !== window.location.pathname + window.location.search) window.history.pushState(null, "", next);
+  }, [tab, committedSearch]);
+
+  // Lecture de l'adresse au chargement et à chaque retour arrière ou avant du navigateur.
+  useEffect(() => {
+    const apply = async () => {
+      urlReady.current = false;
+      const location = readClientLocation(window.location.search);
+      setSearchOrigin(location.origin);
+      setSearchDestination(location.destination);
+      setSearchDate(location.date);
+      setSearchPassengers(location.passengers);
+      if (hasCompleteSearch(location)) {
+        await runSearch(location.origin, location.destination, location.date, location.passengers, location.tab);
+      } else {
+        setCommittedSearch(null);
+        setDayTrips(null);
+        setTab(location.tab);
+      }
+      window.requestAnimationFrame(() => { urlReady.current = true; });
+    };
+    void apply();
+    const onPop = () => { void apply(); };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // « Modifier » depuis l'onglet Billets : retour à la recherche de l'accueil, saisie gardée.
+  function editSearch() {
+    setTab("accueil");
+    window.setTimeout(() => document.querySelector(".search")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
   }
   
   // Derived state: Filtered Trips based on Search
@@ -301,7 +359,13 @@ export function ClientPortal() {
                     </select>
                   </div>
                   <div className="f">
-                    <label>Destination</label>
+                    <div className="search-label-row">
+                      <label>Destination</label>
+                      <button type="button" className="swap-btn" aria-label="Inverser le départ et l’arrivée" title="Inverser le départ et l’arrivée"
+                        onClick={() => { setSearchOrigin(searchDestination); setSearchDestination(searchOrigin); setSearchMessage(""); }}>
+                        <SwapIcon size={16} /> Inverser
+                      </button>
+                    </div>
                     <select value={searchDestination} onChange={(e) => { setSearchDestination(e.target.value); setSearchMessage(""); }}>
                       <option value="">Choisir…</option>
                       {placeChoices(locations, searchOrigin).map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
@@ -443,9 +507,9 @@ export function ClientPortal() {
                           </div>
                           <div className="d">Date : {formatDate(trip.departure_at)}</div>
                           <div className="times">
-                            <span>Départ <b>{new Date(trip.departure_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</b></span>
+                            <span>Départ <b>{new Date(trip.departure_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit', timeZone: 'Africa/Porto-Novo'})}</b></span>
                             {trip.arrival_at && (
-                              <span>Arrivée <b>{new Date(trip.arrival_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</b></span>
+                              <span>Arrivée <b>{new Date(trip.arrival_at).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit', timeZone: 'Africa/Porto-Novo'})}</b></span>
                             )}
                           </div>
                           <div className="b">
@@ -521,7 +585,11 @@ export function ClientPortal() {
 
               <p className="sub">Trouvez un départ, choisissez votre siège (facultatif) et recevez votre billet électronique.</p>
               <p className="sub"><a href="/billet/retrouver" style={{ color: 'var(--blue)', fontWeight: 600 }}>Vous avez déjà un billet ? Retrouvez-le avec sa référence et votre téléphone →</a></p>
-              <Tickets user={user} trips={trips} locations={locations} tickets={tickets} bookings={bookings} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} searchPassengers={searchPassengers} />
+              <Tickets user={user} trips={trips} locations={locations} tickets={tickets} bookings={bookings} paymentMethods={paymentMethods} onAuthenticated={loadPrivate} onChanged={loadPrivate} preselectedTripId={preselectedTripId} searchOrigin={searchOrigin} searchDestination={searchDestination} searchPassengers={committedSearch?.passengers ?? searchPassengers}
+                dayTrips={dayTrips} nextAvailable={nextAvailable} onEditSearch={editSearch}
+                searchLabel={committedSearch ? searchSummary(locations.find((l) => String(l.id) === committedSearch.origin)?.name ?? "", locations.find((l) => String(l.id) === committedSearch.destination)?.name ?? "", committedSearch.date, committedSearch.passengers) : ""}
+                searchDate={committedSearch?.date ?? ""}
+                onPickDay={(day) => committedSearch && void runSearch(committedSearch.origin, committedSearch.destination, day, committedSearch.passengers)} />
 
             </main>
           )}
@@ -614,6 +682,12 @@ function Tickets({
   searchOrigin = "",
   searchDestination = "",
   searchPassengers = 0,
+  dayTrips = null,
+  nextAvailable = null,
+  onEditSearch,
+  searchLabel = "",
+  searchDate = "",
+  onPickDay,
 }: {
   user: User | null;
   trips: Trip[];
@@ -628,6 +702,14 @@ function Tickets({
   searchDestination?: string;
   /** Nombre choisi dans la recherche (0 : aucun) ; prioritaire sur le formulaire. */
   searchPassengers?: number;
+  /** Départs du jour recherché sur l'accueil (null : aucune recherche validée). */
+  dayTrips?: Trip[] | null;
+  nextAvailable?: NextAvailable | null;
+  onEditSearch?: () => void;
+  /** Résumé « Parakou → Savè · 19/11 · 1 passager » de la recherche validée. */
+  searchLabel?: string;
+  searchDate?: string;
+  onPickDay?: (day: string) => void;
 }) {
   const [tripId, setTripId] = useState(preselectedTripId || "");
   const [originId, setOriginId] = useState(searchOrigin || "");
@@ -1176,7 +1258,10 @@ function Tickets({
   const heldQuote = payableQuotes.find((item) => item.payment_method === checkout?.payment_method) ?? (payableQuotes.length === 1 ? payableQuotes[0] : null);
   const countdown = remainingSeconds === null ? "—" : `${Math.floor(remainingSeconds / 60)} min ${String(remainingSeconds % 60).padStart(2, "0")} s`;
 
-  const currentStep = issued ? 3 : held ? 2 : 1;
+  const currentStep = bookingStep({ tripChosen: Boolean(tripId), held, issued });
+  // Recherche venue de l'accueil : résumé à la place des choix de sens, trajet et date (jamais à ressaisir).
+  const summaryMode = Boolean(searchLabel) && dayTrips !== null;
+  const noDeparture = summaryMode && (dayTrips?.length ?? 0) === 0 && !held && !issued;
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }} className="responsive-grid">
@@ -1186,7 +1271,7 @@ function Tickets({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
+            gridTemplateColumns: "repeat(4, 1fr)",
             gap: "8px",
             marginTop: "12px",
             marginBottom: "16px",
@@ -1194,11 +1279,7 @@ function Tickets({
             fontWeight: 700,
           }}
         >
-          {[
-            [1, "1. Trajet & Passagers"],
-            [2, "2. Récapitulatif & Paiement"],
-            [3, "3. Billets émis"],
-          ].map(([stepNum, stepLabel]) => {
+          {BOOKING_STEPS.map((label, index) => [index + 1, `${index + 1}. ${label}`] as const).map(([stepNum, stepLabel]) => {
             const active = currentStep === stepNum;
             const done = currentStep > (stepNum as number);
             return (
@@ -1219,8 +1300,41 @@ function Tickets({
           })}
         </div>
         <hr style={{ border: 0, borderBottom: '1px solid var(--line)', margin: '16px 0' }} />
-        {trips.length === 0 ? <p>Aucun trajet disponible.</p> : (
+        {summaryMode && (
+          <div className="search-summary" role="status">
+            <b>{searchLabel}</b>
+            <button type="button" className="btn s" onClick={onEditSearch}>Modifier</button>
+          </div>
+        )}
+        {noDeparture ? (
+          <div className="no-departure">
+            <p className="no-departure-title">Aucun départ ce jour pour ce trajet.</p>
+            {nextAvailable && (
+              <button type="button" className="btn p" onClick={() => onPickDay?.(nextAvailable.date)}>
+                Voir le départ du {nextAvailable.formatted_date} à {nextAvailable.formatted_time}
+              </button>
+            )}
+            {!nextAvailable && <p>Aucun autre départ n’est programmé pour le moment.</p>}
+            <div className="day-nav">
+              <button type="button" className="btn" disabled={!searchDate || shiftDayKey(searchDate, -1) < beninDateKey()} onClick={() => onPickDay?.(shiftDayKey(searchDate, -1))}>← Jour précédent</button>
+              <button type="button" className="btn" disabled={!searchDate} onClick={() => onPickDay?.(shiftDayKey(searchDate, 1))}>Jour suivant →</button>
+            </div>
+          </div>
+        ) : trips.length === 0 ? <p>Aucun trajet disponible.</p> : (
           <form onSubmit={singleQuote ? payNow : reserveOnly} className="f">
+            {summaryMode && (dayTrips?.length ?? 0) > 1 && (
+              <>
+                <label style={{ marginTop: '10px' }}>Heure du départ</label>
+                <div className="day-trips">
+                  {(dayTrips ?? []).map((trip) => (
+                    <button key={trip.id} type="button" className={String(trip.id) === tripId ? "btn p" : "btn"} onClick={() => setTripId(String(trip.id))}>
+                      {formatDate(trip.departure_at)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {!summaryMode && (<>
             {/* Comme l'app : sens, puis tronçon avec son prix, puis date du départ. */}
             <label style={{ marginTop: '10px' }}>Sens</label>
             <div role="tablist" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -1276,6 +1390,8 @@ function Tickets({
                 )}
               </>
             )}
+
+            </>)}
 
             {selectedTrip && (activeBoardingPoints.length > 0 || activeAlightingPoints.length > 0) && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginTop: '10px' }}>

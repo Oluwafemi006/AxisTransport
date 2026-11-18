@@ -1,4 +1,4 @@
-import { nextPagePath, shareInFlight, writeKey } from "./portal-rules";
+import { formatBeninDateTime, nextPagePath, shareInFlight, writeKey } from "./portal-rules";
 import { ACTIVITY_KEY, EXPIRED_KEY, SESSION_EXPIRED_EVENT, refreshedTokens, shouldRefresh } from "./session";
 import type { User } from "./types";
 
@@ -225,6 +225,7 @@ export function money(amount: string | number | null, currency = "XOF") {
 }
 
 export function formatDate(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  // Heure du Bénin partout (et non celle réglée sur l'appareil).
+  return formatBeninDateTime(value);
 }
 

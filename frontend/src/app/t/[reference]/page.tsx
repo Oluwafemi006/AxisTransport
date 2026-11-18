@@ -72,6 +72,8 @@ export default function PublicTicketPage() {
         year: "numeric",
         hour: "2-digit",
         minute: "2-digit",
+        // Heure du Bénin sur le billet, quel que soit le réglage du téléphone.
+        timeZone: "Africa/Porto-Novo",
       }).format(date);
     } catch {
       return isoString;

@@ -106,3 +106,11 @@ export function UserIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function SwapIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M7 4v13M7 4 4 7M7 4l3 3M17 20V7M17 20l-3-3M17 20l3-3" />
+    </Icon>
+  );
+}
