@@ -262,27 +262,30 @@ class ParcelTrackingView(APIView):
         if not code:
             raise ValidationError({"code": "Saisissez le code de suivi du colis."})
         parcel = (
-            Parcel.objects.select_related("origin", "destination")
+            Parcel.objects.select_related("origin", "destination", "trip__route")
             .prefetch_related("status_history")
             .filter(tracking_number__iexact=code)
             .first()
         )
         if not parcel:
             return Response({"detail": "Aucun colis ne correspond à ce code."}, status=status.HTTP_404_NOT_FOUND)
+        # Colis annulé : aucune étape n'est en cours (il n'appartient à aucune étape du suivi).
         current = next(
-            index for index, (_, _, statuses) in enumerate(PARCEL_TRACKING_STEPS) if parcel.status in statuses
+            (index for index, (_, _, statuses) in enumerate(PARCEL_TRACKING_STEPS) if parcel.status in statuses),
+            None,
         )
         history = list(parcel.status_history.all())
         steps = []
         for index, (key, label, statuses) in enumerate(PARCEL_TRACKING_STEPS):
             reached = [entry.changed_at for entry in history if entry.to_status in statuses]
+            done = current is not None and index <= current
             steps.append(
                 {
                     "key": key,
                     "label": label,
-                    "done": index <= current,
+                    "done": done,
                     "current": index == current,
-                    "reached_at": min(reached) if reached and index <= current else None,
+                    "reached_at": min(reached) if reached and done else None,
                 }
             )
         return Response(
@@ -290,11 +293,32 @@ class ParcelTrackingView(APIView):
                 "tracking_number": parcel.tracking_number,
                 "origin": parcel.origin.name,
                 "destination": parcel.destination.name,
-                "current_step": PARCEL_TRACKING_STEPS[current][1],
+                "current_step": PARCEL_TRACKING_STEPS[current][1] if current is not None else parcel.get_status_display(),
                 "steps": steps,
                 "photos": [photo.url for photo in parcel.photos.all()],
+                "bus": parcel_bus_position(parcel),
             }
         )
+
+
+# Position du bus pour le suivi public d'un colis : seulement quand le colis est chargé ou en route.
+# Villes du parcours et dernière arrivée confirmée par le contrôleur, à l'heure du Bénin.
+# Ni passager, ni immatriculation, ni position GPS.
+PARCEL_BUS_STATUSES = {Parcel.Status.LOADED, Parcel.Status.IN_TRANSIT}
+
+
+def parcel_bus_position(parcel):
+    trip = parcel.trip
+    if trip is None or parcel.status not in PARCEL_BUS_STATUSES:
+        return None
+    stops = [location.name for location in trip.route.get_stops_sequence()]
+    arrival = trip.stop_arrivals.select_related("location").order_by("-confirmed_at", "-id").first()
+    return {
+        "stops": stops,
+        "departure_at": timezone.localtime(trip.departure_at).isoformat(),
+        "last_stop": arrival.location.name if arrival else None,
+        "last_confirmed_at": timezone.localtime(arrival.confirmed_at).isoformat() if arrival else None,
+    }
 
 
 class MeView(APIView):
