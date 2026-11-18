@@ -5,6 +5,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Lot 1a : vente Mobile Money du personnel — retour FedaPay par espace (liste fixe), page de retour qui vérifie seule, fenêtre d'origine mise à jour, ventes en attente, copier/partager le billet, bouton Accueil | `cc/vente-momo-retour` | Claude Code | à valider par Eddy |
 | Scanner : session perdue (401) ou compte non habilité (403) affichés comme tels avec « Se reconnecter », jamais « Billet refusé » | `cc/scan-session-expiree` | Claude Code | à valider par Eddy |
 | App : en-tête bleu fixe commun à la connexion et à l'inscription, « Bon retour, connectez-vous », champs arrondis à 30 et indicatifs, formulaire centré ; test des barres du système sur tout le parcours de commande | `cc/app-connexion-commande` | Claude Code | à valider par Eddy |
 | App : points d'embarquement — une ville sans point (Savè, Glazoué, Dassa…) n'en reçoit plus d'une autre ; test des 16 trajets de la ligne ; branche remise à jour sur main | `cc/parcours-reservation` | Claude Code | à valider par Eddy |
