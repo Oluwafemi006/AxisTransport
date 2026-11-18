@@ -14,7 +14,8 @@ class SessionRouterNotifier extends ChangeNotifier {
   void update(SessionState newSession) {
     if (_session.user?.id != newSession.user?.id ||
         _session.user?.role != newSession.user?.role ||
-        _session.ready != newSession.ready) {
+        _session.ready != newSession.ready ||
+        _session.expired != newSession.expired) {
       _session = newSession;
       notifyListeners();
     }
@@ -24,15 +25,19 @@ class SessionRouterNotifier extends ChangeNotifier {
 final sessionRouterNotifier = SessionRouterNotifier();
 
 class SessionState {
-  const SessionState({this.user, this.ready = false});
+  const SessionState({this.user, this.ready = false, this.expired = false});
 
   final User? user;
   final bool ready;
+
+  /// Vrai quand la session vient d'expirer pendant l'utilisation (et non à l'ouverture de l'application).
+  final bool expired;
 
   SessionState copyWith({User? user, bool? ready, bool clearUser = false}) {
     return SessionState(
       user: clearUser ? null : user ?? this.user,
       ready: ready ?? this.ready,
+      expired: expired,
     );
   }
 }
@@ -40,6 +45,8 @@ class SessionState {
 class SessionNotifier extends Notifier<SessionState> {
   @override
   SessionState build() {
+    // Session perdue en cours d'utilisation : retour à la connexion avec un message (voir globalRoleRedirect).
+    _api.onSessionLost = _sessionLost;
     Future.microtask(restore);
     sessionRouterNotifier.update(const SessionState());
     return const SessionState();
@@ -76,6 +83,12 @@ class SessionNotifier extends Notifier<SessionState> {
       state = const SessionState(ready: true);
       sessionRouterNotifier.update(state);
     }
+  }
+
+  void _sessionLost() {
+    if (state.user == null) return;
+    state = const SessionState(ready: true, expired: true);
+    sessionRouterNotifier.update(state);
   }
 
   Future<void> login(String username, String password) async {

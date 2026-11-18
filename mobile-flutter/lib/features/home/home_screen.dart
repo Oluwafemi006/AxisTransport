@@ -490,7 +490,8 @@ class _SegmentCard extends StatelessWidget {
         AxisSpacing.s10,
       ),
       child: AxisCard(
-        onTap: () => context.push(segment.searchFrom().searchLocation),
+        // Directement aux résultats : la recherche reste modifiable par « Modifier la recherche ».
+        onTap: () => context.push(segment.searchFrom().resultsLocation),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

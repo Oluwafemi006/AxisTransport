@@ -39,6 +39,17 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 /// Écran imposé tant que le mot de passe provisoire n'est pas remplacé.
 const forcedPasswordPath = '/mot-de-passe-obligatoire';
 
+/// Connexion après une session expirée : message affiché, et adresse de l'écran à retrouver après la connexion.
+String expiredLoginLocation(String current) =>
+    Uri(path: '/connexion', queryParameters: {'expiree': '1', 'retour': current}).toString();
+
+/// Adresse de retour acceptée après la connexion : un chemin interne de l'application seulement.
+String? safeReturnLocation(String? value) {
+  if (value == null || value.isEmpty || !value.startsWith('/') || value.startsWith('//')) return null;
+  if (value.startsWith('/connexion')) return null;
+  return value;
+}
+
 /// Fonction de redirection globale de GoRouter basée sur le rôle serveur.
 String? globalRoleRedirect(BuildContext context, GoRouterState state) {
   final session = sessionRouterNotifier.session;
@@ -53,6 +64,8 @@ String? globalRoleRedirect(BuildContext context, GoRouterState state) {
   // 1. Utilisateur non connecté
   if (session.user == null) {
     if (isAuthRoute || isInvitation) return null;
+    // Session expirée en cours d'utilisation : message sur la connexion, puis retour à l'écran quitté.
+    if (session.expired) return expiredLoginLocation(state.uri.toString());
     return '/connexion';
   }
 

@@ -90,10 +90,10 @@ Future<Uri?> Function() _pump(WidgetTester tester, _Api api) {
     routes: [
       GoRoute(path: '/', builder: (_, _) => const Scaffold(body: HomeScreen())),
       GoRoute(
-        path: '/billets/recherche',
+        path: '/billets/resultats',
         builder: (_, state) {
           opened = state.uri;
-          return const Scaffold(body: Text('Recherche'));
+          return const Scaffold(body: Text('Résultats'));
         },
       ),
     ],

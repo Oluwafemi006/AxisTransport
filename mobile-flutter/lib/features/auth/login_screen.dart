@@ -7,6 +7,7 @@ import '../../core/theme/axis_spacing.dart';
 import '../../core/theme/axis_tokens.dart';
 import '../../core/widgets/axis_button.dart';
 import '../../core/widgets/axis_text_field.dart';
+import '../../router.dart' show safeReturnLocation;
 import 'auth_header.dart';
 
 /// Écran de connexion de l'application Axis Transport selon la maquette Connexion.html.
@@ -33,6 +34,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
+  // Paramètres de l'adresse (session expirée, écran à retrouver) ; aucun hors du routeur (tests, écran modal).
+  Map<String, String> _query(BuildContext context) {
+    try {
+      return GoRouterState.of(context).uri.queryParameters;
+    } catch (_) {
+      return const {};
+    }
+  }
+
   Future<void> _submit() async {
     final username = _username.text.trim();
     final password = _password.text;
@@ -55,8 +65,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await session.login(username, password);
 
       if (mounted) {
-        // Redirection gérée par le routeur ou fermeture de l'écran modal
-        if (!widget.required && context.canPop()) {
+        // Session expirée : retour à l'écran quitté. Sinon, redirection du routeur ou fermeture de l'écran modal.
+        final back = safeReturnLocation(_query(context)['retour']);
+        if (back != null) {
+          context.go(back);
+        } else if (!widget.required && context.canPop()) {
           context.pop();
         } else {
           context.go('/');
@@ -113,6 +126,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          if (_query(context)['expiree'] == '1') ...[
+                            Container(
+                              key: const Key('session-expired-banner'),
+                              padding: const EdgeInsets.all(AxisSpacing.sm),
+                              margin: const EdgeInsets.only(bottom: AxisSpacing.sm),
+                              decoration: BoxDecoration(
+                                color: tokens.warning.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(AxisRadius.sm),
+                              ),
+                              child: Text(
+                                'Votre session a expiré. Reconnectez-vous pour reprendre là où vous étiez.',
+                                style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
                           AxisTextField(
                             // L'API de connexion n'accepte que l'identifiant (ni e-mail ni téléphone).
                             label: 'Identifiant',
