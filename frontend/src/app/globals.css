@@ -879,6 +879,7 @@ footer {
 
   .notice-ok { background: var(--okbg); color: var(--ok); }
   .notice-error { background: #FDE8E8; color: #B42318; }
+  .notice-info { background: var(--tint); color: var(--navy); }
 
   /* Retour d'une action du portail : toujours visible, même en bas de page. */
   .action-feedback {

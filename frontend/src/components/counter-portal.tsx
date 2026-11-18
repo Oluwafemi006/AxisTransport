@@ -60,7 +60,7 @@ export function CounterPortal() {
     <StaffShell user={user}>
       <StaffTitle eyebrow="Guichet" title="Vente de billets" />
       {message && <Notice notice={{ text: message, tone: "error" }} className="mb-5" />}
-      {user ? <CounterPanel onChanged={load} /> : <Loading />}
+      {user ? <CounterPanel onChanged={load} space="guichet" /> : <Loading />}
       {user && <SoldToday />}
       {user && <ParcelPrices />}
     </StaffShell>
