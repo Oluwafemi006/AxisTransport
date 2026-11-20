@@ -397,3 +397,18 @@ export function parcelBusText(bus: { departure_at: string; last_stop: string | n
   }
   return `Aucune arrivée confirmée pour l’instant. Départ prévu le ${formatBeninDateTime(bus.departure_at)}.`;
 }
+
+// Rappel « ajoutez votre e-mail » : client connecté sans e-mail vérifié (mêmes textes dans l'application).
+export const EMAIL_REMINDER_TEXT = "Ajoutez votre e-mail pour pouvoir récupérer votre compte si vous oubliez votre mot de passe. Sans e-mail, vous devrez contacter l’agence.";
+export function needsEmailReminder(user: { role: string; email_verified?: boolean } | null): boolean {
+  return Boolean(user && user.role === "CLIENT" && !user.email_verified);
+}
+
+// Recherche du guichet : référence AX-… ou téléphone (complet, ou 6 chiffres au moins). Jamais par nom (règle du serveur).
+export function counterSearchError(query: string): string | null {
+  const text = query.trim();
+  if (/^AX-[A-Z0-9-]+$/i.test(text)) return null;
+  const digits = text.replace(/[\s.()+-]/g, "");
+  if (/^\d{6,}$/.test(digits)) return null;
+  return "Saisissez la référence du billet (AX-…) ou le téléphone : au moins 6 chiffres. La recherche par nom n’est pas possible.";
+}

@@ -12,6 +12,8 @@ export interface User {
   is_active?: boolean;
   // Mot de passe provisoire saisi par un administrateur : à remplacer avant tout le reste.
   must_change_password?: boolean;
+  // E-mail confirmé par un code : seule condition pour « mot de passe oublié ».
+  email_verified?: boolean;
 }
 
 export interface BoardingPoint {
@@ -161,6 +163,8 @@ export interface Ticket {
   status: string;
   status_display: string;
   qr_token: string;
+  // Lien public du billet ; vide tant que l'adresse du site n'est pas configurée.
+  public_url?: string;
   channel: string;
   channel_display: string;
   reservation_expires_at: string | null;
@@ -190,7 +194,6 @@ export interface Booking {
   departure_label?: string;
   effective_departure_at?: string | null;
   contact_phone: string;
-  buyer_ifu: string;
   status: "HELD" | "CONFIRMED" | "CANCELLED" | "EXPIRED" | "REFUND_DUE" | string;
   status_display: string;
   client_status_display?: string;
@@ -397,7 +400,6 @@ export interface TicketPrintInfo {
   paid: boolean;
   sale: string;
   payment_mode: string;
-  buyer_ifu: string;
   boarding_place: string;
   origin?: string;
   destination?: string;

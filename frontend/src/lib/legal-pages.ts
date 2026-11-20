@@ -73,7 +73,7 @@ ${contactBlock(contact)}
 <h2>Données que nous utilisons</h2>
 <ul>
 <li><strong>Compte client</strong> : identifiant, prénom, nom, téléphone, e-mail et mot de passe (gardé sous forme chiffrée, jamais lisible).</li>
-<li><strong>Billets</strong> : nom et téléphone de chaque passager, téléphone et e-mail de contact, numéro IFU s’il est saisi, trajet, siège, points de montée et de descente, montant.</li>
+<li><strong>Billets</strong> : nom et téléphone de chaque passager, téléphone et e-mail de contact, trajet, siège, points de montée et de descente, montant.</li>
 <li><strong>Colis</strong> : nom et téléphone de l’expéditeur et du destinataire, description du colis, photos du colis prises par le personnel, identité de la personne qui le retire.</li>
 <li><strong>Locations</strong> : véhicule, dates, option chauffeur, montant et caution fixés par l’agence.</li>
 <li><strong>Paiements</strong> : montant, numéro de la transaction Mobile Money et statut du paiement.</li>

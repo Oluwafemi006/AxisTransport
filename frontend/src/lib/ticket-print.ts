@@ -55,7 +55,6 @@ export function ticketRows(ticket: PrintableTicket, formatDate: (iso: string) =>
     if (info.paid) rows.push(["Statut", "Payé"]);
     rows.push(["Vente", info.sale]);
     if (info.payment_mode) rows.push(["Mode de paiement", info.payment_mode]);
-    if (info.buyer_ifu) rows.push(["IFU de l'acheteur", info.buyer_ifu]);
   }
   return rows;
 }

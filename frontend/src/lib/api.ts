@@ -170,6 +170,15 @@ export async function updateMyEmail(email: string) {
   return await apiFetch<User>("/auth/me/", { method: "PATCH", body: JSON.stringify({ email }) });
 }
 
+/** Envoi du code de vérification : le serveur dit clairement si l'e-mail n'est pas parti (jamais « envoyé » à tort). */
+export async function sendEmailCode() {
+  return await apiFetch<{ detail: string; email_sent?: boolean }>("/auth/email/send-code/", { method: "POST" });
+}
+
+export async function verifyEmailCode(code: string) {
+  return await apiFetch<{ detail: string; user: User }>("/auth/email/verify/", { method: "POST", body: JSON.stringify({ code }) });
+}
+
 /** Les autres sessions sont fermées par le serveur ; celle-ci garde les nouveaux jetons. */
 export async function changeMyPassword(currentPassword: string, newPassword: string) {
   const result = await apiFetch<{ detail: string; access: string; refresh: string }>("/auth/password/change/", {

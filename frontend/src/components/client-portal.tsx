@@ -3,8 +3,8 @@
 import { PasswordInput } from "./password-input";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail } from "@/lib/api";
-import { BOARDING_POINT_HELP, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, boardingFieldLabel, resizePassengers, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, parcelBusText, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
+import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail, sendEmailCode, verifyEmailCode } from "@/lib/api";
+import { BOARDING_POINT_HELP, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, boardingFieldLabel, resizePassengers, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, parcelBusText, needsEmailReminder, EMAIL_REMINDER_TEXT, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { ClientTabBar, type ClientTab } from "./client-tab-bar";
@@ -332,6 +332,7 @@ export function ClientPortal() {
         <>
           {tab === "accueil" && (
             <>
+              {user && <div className="wrap" style={{ paddingTop: '16px' }}><EmailReminder user={user} onOpenProfile={() => setTab("profil")} /></div>}
               <div className="hero has-bg">
                 <div className="wrap">
                   <small>AXIS TRANSPORT</small>
@@ -791,7 +792,6 @@ function Tickets({
   ]);
   const selectedSeatIds = passengers.map((p) => p.seatId).filter((id): id is number => id !== null);
   const [contactPhone, setContactPhone] = useState("");
-  const [buyerIfu, setBuyerIfu] = useState("");
   const [pendingBooking, setPendingBooking] = useState<BookingPayload | null>(null);
   const [pendingTickets, setPendingTickets] = useState<Ticket[]>([]);
   const [checkout, setCheckout] = useState<Checkout | null>(null);
@@ -1111,7 +1111,6 @@ function Tickets({
     const payload = {
       trip: Number(tripId),
       contact_phone: contactPhone || passengers[0]?.phone || "",
-      buyer_ifu: buyerIfu.trim(),
       origin: orig || undefined,
       destination: dest || undefined,
       boarding_point_id: boardingPointId ? Number(boardingPointId) : undefined,
@@ -1451,8 +1450,6 @@ function Tickets({
               onClearSeat={handleClearSeat}
               contactPhone={contactPhone}
               onContactPhoneChange={setContactPhone}
-              buyerIfu={buyerIfu}
-              onBuyerIfuChange={setBuyerIfu}
               isUserLoggedIn={Boolean(user)}
             />
 
@@ -1892,6 +1889,7 @@ function Profile({ user, tickets, parcels, rentals, onAuthenticated, onLogout }:
         </div>
       </div>
       
+      <EmailReminder user={user} />
       <AccountSettings user={user} onSaved={onAuthenticated} />
 
       <button className="btn" style={{ width: '100%', borderColor: 'var(--warn)', color: 'var(--warn)' }} onClick={onLogout}>Se déconnecter</button>
@@ -1900,12 +1898,33 @@ function Profile({ user, tickets, parcels, rentals, onAuthenticated, onLogout }:
 }
 
 // E-mail (pour le mot de passe oublié) et changement de mot de passe du titulaire.
+// Rappel fermable (mémorisé dans ce navigateur) tant que l'e-mail du client n'est pas vérifié.
+function EmailReminder({ user, onOpenProfile }: { user: User | null; onOpenProfile?: () => void }) {
+  const key = user ? `axis_email_reminder_closed_${user.id}` : "";
+  const [closed, setClosed] = useState(true);
+  useEffect(() => {
+    try { setClosed(Boolean(key) && window.localStorage.getItem(key) === "1"); } catch { setClosed(false); }
+  }, [key]);
+  if (!needsEmailReminder(user) || closed) return null;
+  return (
+    <div role="status" data-testid="email-reminder" style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', background: 'var(--tint)', color: 'var(--navy)', padding: '14px 16px', borderRadius: '12px', margin: '0 0 20px' }}>
+      <p style={{ margin: 0, flex: 1, fontSize: '14px' }}>
+        {EMAIL_REMINDER_TEXT}
+        {onOpenProfile && <> <button type="button" className="text-button" style={{ padding: 0 }} onClick={onOpenProfile}>Ajouter mon e-mail</button></>}
+      </p>
+      <button type="button" aria-label="Fermer le rappel" style={{ background: 'none', border: 0, fontSize: '20px', lineHeight: 1, cursor: 'pointer', color: 'inherit' }} onClick={() => { setClosed(true); try { window.localStorage.setItem(key, "1"); } catch { /* stockage indisponible */ } }}>×</button>
+    </div>
+  );
+}
+
 function AccountSettings({ user, onSaved }: { user: User; onSaved: () => Promise<void> }) {
   const [email, setEmail] = useState(user.email || "");
   const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [emailNotice, setEmailNotice] = useState({ ok: "", error: "" });
+  const [code, setCode] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
   const [passwordNotice, setPasswordNotice] = useState({ ok: "", error: "" });
   const [busy, setBusy] = useState(false);
 
@@ -1913,11 +1932,41 @@ function AccountSettings({ user, onSaved }: { user: User; onSaved: () => Promise
     event.preventDefault();
     setBusy(true);
     try {
-      await updateMyEmail(email.trim());
-      setEmailNotice({ ok: "E-mail enregistré.", error: "" });
+      const saved = await updateMyEmail(email.trim());
       await onSaved();
+      if (saved.email && !saved.email_verified) await askCode();
+      else setEmailNotice({ ok: "E-mail enregistré.", error: "" });
     } catch (reason) {
       setEmailNotice({ ok: "", error: reason instanceof Error ? reason.message : "Enregistrement impossible." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Le message vient du serveur : « Code envoyé à … » ou la raison exacte s'il n'est pas parti.
+  async function askCode() {
+    setBusy(true);
+    try {
+      const result = await sendEmailCode();
+      setCodeSent(true);
+      setEmailNotice({ ok: result.detail, error: "" });
+    } catch (reason) {
+      setEmailNotice({ ok: "", error: reason instanceof Error ? reason.message : "L’e-mail n’a pas pu être envoyé." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmCode(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await verifyEmailCode(code.trim());
+      setCode(""); setCodeSent(false);
+      setEmailNotice({ ok: "E-mail vérifié : il servira si vous oubliez votre mot de passe.", error: "" });
+      await onSaved();
+    } catch (reason) {
+      setEmailNotice({ ok: "", error: reason instanceof Error ? reason.message : "Code incorrect." });
     } finally {
       setBusy(false);
     }
@@ -1945,12 +1994,24 @@ function AccountSettings({ user, onSaved }: { user: User; onSaved: () => Promise
     <div style={{ display: 'grid', gap: '24px', marginBottom: '32px' }}>
       {user.role === "CLIENT" && (
         <form onSubmit={saveEmail}>
-          <h4 style={{ fontSize: '17px', marginBottom: '4px' }}>E-mail</h4>
-          <p style={{ color: 'var(--mute)', fontSize: '13px', marginBottom: '8px' }}>Il sert à recevoir un code si vous oubliez votre mot de passe.</p>
+          <h4 style={{ fontSize: '17px', marginBottom: '4px' }}>E-mail {user.email && <span data-testid="email-state" style={{ fontSize: '12px', fontWeight: 'normal', color: user.email_verified ? 'var(--ok)' : 'var(--warn)' }}>{user.email_verified ? "· vérifié" : "· non vérifié"}</span>}</h4>
+          <p style={{ color: 'var(--mute)', fontSize: '13px', marginBottom: '8px' }}>Une fois vérifié, il sert à recevoir un lien si vous oubliez votre mot de passe.</p>
           <input type="email" className="field" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           {emailNotice.error && <p className="notice notice-error mt-2" role="alert">{emailNotice.error}</p>}
           {emailNotice.ok && <p className="notice mt-2" role="status">{emailNotice.ok}</p>}
-          <button className="btn mt-2" disabled={busy}>Enregistrer l’e-mail</button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            <button className="btn mt-2" disabled={busy}>Enregistrer l’e-mail</button>
+            {user.email && !user.email_verified && email.trim() === user.email && (
+              <button type="button" className="btn mt-2" disabled={busy} onClick={() => void askCode()}>{codeSent ? "Renvoyer le code" : "Recevoir un code de vérification"}</button>
+            )}
+          </div>
+        </form>
+      )}
+      {user.role === "CLIENT" && codeSent && !user.email_verified && (
+        <form onSubmit={confirmCode}>
+          <label className="field-label" htmlFor="emailCode">Code reçu par e-mail (6 chiffres)</label>
+          <input id="emailCode" className="field" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} required />
+          <button className="primary-button mt-2 w-full" disabled={busy}>Vérifier mon e-mail</button>
         </form>
       )}
       <form onSubmit={savePassword}>

@@ -16,8 +16,6 @@ export interface PassengerFormProps {
   maxPassengers?: number;
   contactPhone: string;
   onContactPhoneChange: (value: string) => void;
-  buyerIfu: string;
-  onBuyerIfuChange: (value: string) => void;
   isUserLoggedIn: boolean;
 }
 
@@ -30,8 +28,6 @@ export function PassengerForm({
   maxPassengers = 8,
   contactPhone,
   onContactPhoneChange,
-  buyerIfu,
-  onBuyerIfuChange,
   isUserLoggedIn,
 }: PassengerFormProps) {
   return (
@@ -196,17 +192,6 @@ export function PassengerForm({
           style={{ width: "100%" }}
         />
 
-        <label style={{ fontSize: "13px", fontWeight: 700, display: "block", marginTop: "14px", marginBottom: "6px" }}>
-          IFU de l’acheteur (facultatif, imprimé sur le billet)
-        </label>
-        <input
-          type="text"
-          placeholder="Ex. 3200000000000"
-          value={buyerIfu}
-          onChange={(e) => onBuyerIfuChange(e.target.value)}
-          maxLength={30}
-          style={{ width: "100%" }}
-        />
       </div>
 
       <style>{`

@@ -350,3 +350,13 @@ test("suivi colis : dernière ville confirmée, ou départ prévu, à l'heure du
   const planned = parcelBusText({ departure_at: "2026-11-18T06:00:00Z", last_stop: null, last_confirmed_at: null });
   assert.match(planned, /^Aucune arrivée confirmée pour l’instant\. Départ prévu le .*07:00\.$/, "UTC 06:00 = 07:00 au Bénin");
 });
+
+test("rappel e-mail : client sans e-mail vérifié seulement", async () => {
+  const { needsEmailReminder, EMAIL_REMINDER_TEXT } = await import(pathToFileURL(compiled).href);
+  assert.equal(needsEmailReminder({ role: "CLIENT", email_verified: false }), true);
+  assert.equal(needsEmailReminder({ role: "CLIENT" }), true);
+  assert.equal(needsEmailReminder({ role: "CLIENT", email_verified: true }), false);
+  assert.equal(needsEmailReminder({ role: "COUNTER", email_verified: false }), false);
+  assert.equal(needsEmailReminder(null), false);
+  assert.match(EMAIL_REMINDER_TEXT, /Sans e-mail, vous devrez contacter l’agence\.$/);
+});
