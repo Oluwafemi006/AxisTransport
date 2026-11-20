@@ -16,6 +16,7 @@ class User {
     required this.role,
     this.email = '',
     this.mustChangePassword = false,
+    this.emailVerified = false,
   });
 
   final int id;
@@ -28,6 +29,12 @@ class User {
 
   /// Mot de passe provisoire saisi par un administrateur : à remplacer avant tout le reste.
   final bool mustChangePassword;
+
+  /// E-mail confirmé par un code : seule condition pour « mot de passe oublié ».
+  final bool emailVerified;
+
+  /// Rappel « ajoutez votre e-mail » : client sans e-mail vérifié (même règle que le site).
+  bool get needsEmailReminder => isClient && !emailVerified;
 
   bool get isClient => role == 'CLIENT';
 
@@ -43,6 +50,7 @@ class User {
     'role': role,
     'email': email,
     'must_change_password': mustChangePassword,
+    'email_verified': emailVerified,
   };
 
   String get displayName {
@@ -63,6 +71,7 @@ class User {
       role: json['role'] as String? ?? 'CLIENT',
       email: json['email'] as String? ?? '',
       mustChangePassword: json['must_change_password'] as bool? ?? false,
+      emailVerified: json['email_verified'] as bool? ?? false,
     );
   }
 }
@@ -552,7 +561,6 @@ class TicketPrintInfo {
     this.paid = false,
     this.sale = '',
     this.paymentMode = '',
-    this.buyerIfu = '',
     this.boardingPlace = '',
     this.origin = '',
     this.destination = '',
@@ -574,7 +582,6 @@ class TicketPrintInfo {
   final bool paid;
   final String sale;
   final String paymentMode;
-  final String buyerIfu;
   final String boardingPlace;
   final String origin;
   final String destination;
@@ -599,7 +606,6 @@ class TicketPrintInfo {
         paid: json['paid'] as bool? ?? false,
         sale: json['sale'] as String? ?? '',
         paymentMode: json['payment_mode'] as String? ?? '',
-        buyerIfu: json['buyer_ifu'] as String? ?? '',
         boardingPlace: json['boarding_place'] as String? ?? '',
         origin: json['origin'] as String? ?? '',
         destination: json['destination'] as String? ?? '',
@@ -631,7 +637,6 @@ class TicketPrintInfo {
     'paid': paid,
     'sale': sale,
     'payment_mode': paymentMode,
-    'buyer_ifu': buyerIfu,
     'boarding_place': boardingPlace,
     'origin': origin,
     'destination': destination,
@@ -1221,3 +1226,7 @@ class ParcelBus {
         : 'Aucune arrivée confirmée pour l’instant. Départ prévu le ${formatBeninDateTime(departure)}.';
   }
 }
+
+/// Même texte que le site (portal-rules.ts, EMAIL_REMINDER_TEXT).
+const emailReminderText =
+    'Ajoutez votre e-mail pour pouvoir récupérer votre compte si vous oubliez votre mot de passe. Sans e-mail, vous devrez contacter l’agence.';

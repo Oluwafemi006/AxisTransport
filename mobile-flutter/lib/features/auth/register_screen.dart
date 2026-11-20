@@ -20,9 +20,6 @@ class RegisterScreen extends ConsumerStatefulWidget {
 }
 
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
-  final _username = TextEditingController();
-  final _lastName = TextEditingController();
-  final _firstName = TextEditingController();
   final _phone = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
@@ -33,9 +30,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   @override
   void dispose() {
-    _username.dispose();
-    _lastName.dispose();
-    _firstName.dispose();
     _phone.dispose();
     _email.dispose();
     _password.dispose();
@@ -44,33 +38,22 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }
 
   Future<void> _submit() async {
-    final lastName = _lastName.text.trim();
-    final firstName = _firstName.text.trim();
     final phone = _phone.text.trim();
     final email = _email.text.trim();
     final password = _password.text;
     final confirm = _confirmPassword.text;
 
-    if (firstName.isEmpty || lastName.isEmpty) {
-      setState(
-        () => _errorMessage = 'Veuillez renseigner votre nom et prénom.',
-      );
-      return;
-    }
     if (phone.isEmpty) {
       setState(
         () => _errorMessage = 'Veuillez renseigner votre numéro de téléphone.',
       );
       return;
     }
-    if (email.isEmpty || !email.contains('@')) {
+    // E-mail facultatif : vérifié seulement s'il est saisi.
+    if (email.isNotEmpty && !email.contains('@')) {
       setState(
         () => _errorMessage = 'Veuillez saisir une adresse e-mail valide.',
       );
-      return;
-    }
-    if (_username.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Choisissez un identifiant de connexion.');
       return;
     }
     if (password.length < 8) {
@@ -91,19 +74,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     });
 
     try {
-      final username = _username.text.trim();
-      final formattedPhone = phone.startsWith('+229') ? phone : '+229$phone';
-
       await ref
           .read(sessionProvider.notifier)
-          .register(
-            username: username,
-            password: password,
-            firstName: firstName,
-            lastName: lastName,
-            phone: formattedPhone,
-            email: email,
-          );
+          .register(phone: phone, password: password, email: email);
 
       if (mounted) {
         // Une fois connecté, GoRouter redirige automatiquement vers l'accueil client.
@@ -158,26 +131,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 AxisSpacing.md + MediaQuery.paddingOf(context).bottom,
               ),
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: AxisTextField(
-                        borderRadius: AxisRadius.authField,
-                        label: 'Nom',
-                        controller: _lastName,
-                        textInputAction: TextInputAction.next,
-                      ),
-                    ),
-                    const SizedBox(width: AxisSpacing.xs),
-                    Expanded(
-                      child: AxisTextField(
-                        borderRadius: AxisRadius.authField,
-                        label: 'Prénom',
-                        controller: _firstName,
-                        textInputAction: TextInputAction.next,
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Votre numéro de téléphone et un mot de passe suffisent. Nom et e-mail se complètent plus tard dans le profil.',
+                  style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: AxisSpacing.sm),
                 AxisTextField(
@@ -191,19 +147,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 const SizedBox(height: AxisSpacing.sm),
                 AxisTextField(
                   borderRadius: AxisRadius.authField,
-                  label: 'E-mail',
+                  label: 'E-mail (facultatif)',
                   controller: _email,
+                  helperText:
+                      'Pour récupérer votre compte si vous oubliez votre mot de passe',
                   hintText: 'exemple@mail.com',
                   keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: AxisSpacing.sm),
-                // La connexion n'accepte que l'identifiant (API) : le client le choisit et le connaît.
-                AxisTextField(
-                  borderRadius: AxisRadius.authField,
-                  label: 'Identifiant',
-                  controller: _username,
-                  helperText: 'Servira à vous connecter',
                   textInputAction: TextInputAction.next,
                 ),
                 const SizedBox(height: AxisSpacing.sm),

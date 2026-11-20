@@ -120,31 +120,36 @@ class ApiClient {
     );
   }
 
+  /// Inscription allégée : téléphone et mot de passe, e-mail facultatif. Le serveur fait du numéro l'identifiant.
   Future<void> register({
-    required String username,
-    required String password,
-    required String firstName,
     required String phone,
-    String? lastName,
+    required String password,
     String? email,
   }) async {
-    final payload = <String, dynamic>{
-      'username': username,
-      'password': password,
-      'first_name': firstName,
-      'phone': phone,
-    };
-    if (lastName != null && lastName.isNotEmpty) {
-      payload['last_name'] = lastName;
-    }
+    final payload = <String, dynamic>{'phone': phone, 'password': password};
     if (email != null && email.isNotEmpty) {
       payload['email'] = email;
     }
-    await _request<dynamic>(
-      '/auth/register/',
-      data: payload,
+    await _request<dynamic>('/auth/register/', data: payload);
+    // La connexion accepte le numéro sous toutes ses formes (le serveur le retrouve).
+    await login(phone, password);
+  }
+
+  /// Envoie un code à l'e-mail du compte. Le serveur répond 503 avec un message clair si rien n'est parti.
+  Future<String> sendEmailCode() async {
+    final payload = await _request<Map<String, dynamic>>(
+      '/auth/email/send-code/',
+      auth: true,
     );
-    await login(username, password);
+    return payload['detail'] as String? ?? 'Code envoyé.';
+  }
+
+  Future<void> verifyEmailCode(String code) async {
+    await _request<dynamic>(
+      '/auth/email/verify/',
+      data: {'code': code},
+      auth: true,
+    );
   }
 
   Future<void> updateEmail(String email) async {
@@ -427,7 +432,6 @@ class ApiClient {
     required int trip,
     required String contactPhone,
     String contactEmail = '',
-    String buyerIfu = '',
     String? origin,
     String? destination,
     int? boardingPointId,
@@ -440,7 +444,6 @@ class ApiClient {
         'trip': trip,
         'contact_phone': contactPhone,
         'contact_email': contactEmail,
-        'buyer_ifu': buyerIfu.trim(),
         if (origin != null && origin.isNotEmpty) 'origin': origin,
         if (destination != null && destination.isNotEmpty) 'destination': destination,
         // ignore: use_null_aware_elements

@@ -147,10 +147,43 @@ class _StaffHomeScreenState extends ConsumerState<StaffHomeScreen> {
     final stop = trip.stops.where((item) => item.name == stopName).firstOrNull;
     if (stop == null) return;
     final messenger = ScaffoldMessenger.of(context);
+    // Le terminus termine le voyage : jamais d'un seul toucher.
+    if (trip.stops.isNotEmpty && trip.stops.last.id == stop.id) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          key: const Key('final-arrival-dialog'),
+          title: const Text('Terminer le voyage ?'),
+          content: Text(
+            'Confirmer l’arrivée finale à $stopName termine ce voyage : plus aucune vente ni contrôle ne sera possible sur ce départ.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              key: const Key('final-arrival-confirm'),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Terminer le voyage'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
     try {
-      await ref.read(apiClientProvider).confirmArrival(trip.id, stop.id);
+      final result =
+          await ref.read(apiClientProvider).confirmArrival(trip.id, stop.id);
+      final warning = (result['warning'] as String? ?? '').trim();
       messenger.showSnackBar(
-        SnackBar(content: Text('Arrivée à $stopName confirmée. L’agence est informée.')),
+        SnackBar(
+          content: Text(
+            warning.isEmpty
+                ? 'Arrivée à $stopName confirmée. L’agence est informée.'
+                : 'Arrivée à $stopName confirmée. $warning',
+          ),
+        ),
       );
       await _fetchActiveTrip();
     } on ApiException catch (e) {

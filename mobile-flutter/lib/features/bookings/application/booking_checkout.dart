@@ -231,7 +231,6 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
         .reserveBooking(
           trip: draft.trip!.id,
           contactPhone: contactPhone,
-          buyerIfu: draft.buyerIfu,
           origin: draft.originId != null ? '${draft.originId}' : null,
           destination: draft.destinationId != null ? '${draft.destinationId}' : null,
           boardingPointId: draft.boardingPointId,
@@ -264,7 +263,6 @@ class BookingCheckoutNotifier extends AsyncNotifier<BookingCheckoutState> {
       final reservation = await client.reserveBooking(
         trip: draft.trip!.id,
         contactPhone: contactPhone,
-        buyerIfu: draft.buyerIfu,
         origin: draft.originId != null ? '${draft.originId}' : null,
         destination: draft.destinationId != null ? '${draft.destinationId}' : null,
         boardingPointId: draft.boardingPointId,

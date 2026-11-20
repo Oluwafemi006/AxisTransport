@@ -5,6 +5,7 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
+| Comptes allégés : inscription téléphone + mot de passe (le numéro est l'identifiant), e-mail vérifié par code (migration 0031), IFU acheteur retiré, recherche de billet au guichet (référence ou téléphone), terminus confirmé avant de terminer le voyage, arrêt le plus avancé dans le suivi | `cc/comptes-allege` | Claude Code | à valider par Eddy |
 | Lot 3 : suivi colis — dernière ville confirmée du bus (chargé ou en route, heure du Bénin), ligne du trajet sur le site et l'app, photos agrandissables sur le site, colis annulé sans erreur 500 | `cc/suivi-colis-bus` | Claude Code | à valider par Eddy |
 | Lots 2 + 5 : recherche dans l'adresse, résumé au lieu de tout redemander, aucun départ (prochain départ, jours voisins), inversion, quatre étapes, heure du Bénin, champs 16 px, indicatif WhatsApp ; app : retour des résultats, raccourcis vers les résultats, session expirée | `cc/recherche-flux` | Claude Code | à valider par Eddy |
 | Lot 1a : vente Mobile Money du personnel — retour FedaPay par espace (liste fixe), page de retour qui vérifie seule, fenêtre d'origine mise à jour, ventes en attente, copier/partager le billet, bouton Accueil | `cc/vente-momo-retour` | Claude Code | à valider par Eddy |

@@ -711,22 +711,6 @@ class _BookingReviewScreenState extends ConsumerState<BookingReviewScreen>
                     );
                   }),
 
-                // IFU de l'acheteur : facultatif, saisi avant la réservation
-                if (pending == null) ...[
-                  const SizedBox(height: AxisSpacing.s6),
-                  TextFormField(
-                    key: const Key('buyer-ifu'),
-                    initialValue: draft.buyerIfu,
-                    maxLength: 30,
-                    decoration: const InputDecoration(
-                      labelText: 'IFU de l\'acheteur (facultatif)',
-                      helperText: 'Imprimé sur le billet s\'il est rempli.',
-                    ),
-                    onChanged: ref
-                        .read(bookingDraftProvider.notifier)
-                        .setBuyerIfu,
-                  ),
-                ],
 
                 const SizedBox(height: AxisSpacing.s8),
 

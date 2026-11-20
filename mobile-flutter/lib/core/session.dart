@@ -100,21 +100,11 @@ class SessionNotifier extends Notifier<SessionState> {
   }
 
   Future<void> register({
-    required String username,
-    required String password,
-    required String firstName,
     required String phone,
-    String? lastName,
+    required String password,
     String? email,
   }) async {
-    await _api.register(
-      username: username,
-      password: password,
-      firstName: firstName,
-      phone: phone,
-      lastName: lastName,
-      email: email,
-    );
+    await _api.register(phone: phone, password: password, email: email);
     await restore();
   }
 

@@ -1101,15 +1101,6 @@ class SaleIssuedCard extends StatelessWidget {
               ),
             ),
           ],
-          if (info != null && info.buyerIfu.trim().isNotEmpty) ...[
-            const SizedBox(height: AxisSpacing.xxs),
-            Text(
-              'IFU de l\'acheteur : ${info.buyerIfu.trim()}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: axis.textSecondary,
-              ),
-            ),
-          ],
         ],
       ),
     );

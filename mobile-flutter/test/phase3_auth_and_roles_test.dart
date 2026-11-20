@@ -58,11 +58,8 @@ class _MockApi extends ApiClient {
 
   @override
   Future<void> register({
-    required String username,
-    required String password,
-    required String firstName,
     required String phone,
-    String? lastName,
+    required String password,
     String? email,
   }) async {}
 
@@ -319,32 +316,26 @@ void main() {
       Future<void> fill(String label, String text) =>
           tester.enterText(fieldOf(label), text);
 
-      // Clic sans rien remplir
-      await tester.tap(find.text('Créer mon compte'));
-      await tester.pumpAndSettle();
-      expect(find.text('Veuillez renseigner votre nom et prénom.'), findsOneWidget);
+      // Seuls le téléphone et le mot de passe sont demandés.
+      expect(find.text('Nom'), findsNothing);
+      expect(find.text('Prénom'), findsNothing);
+      expect(find.text('Identifiant'), findsNothing);
+      expect(find.text('E-mail (facultatif)'), findsOneWidget);
 
-      // Remplir nom et prénom mais pas le téléphone
-      await fill('Nom', 'Bio');
-      await fill('Prénom', 'Gounou');
+      // Clic sans rien remplir
       await tester.tap(find.text('Créer mon compte'));
       await tester.pumpAndSettle();
       expect(find.text('Veuillez renseigner votre numéro de téléphone.'), findsOneWidget);
 
-      // Remplir téléphone mais email invalide
-      await fill('Téléphone', '0197000000');
-      await fill('E-mail', 'emailinvalide');
+      // E-mail facultatif, mais vérifié s'il est saisi
+      await fill('Téléphone', '0100000009');
+      await fill('E-mail (facultatif)', 'emailinvalide');
       await tester.tap(find.text('Créer mon compte'));
       await tester.pumpAndSettle();
       expect(find.text('Veuillez saisir une adresse e-mail valide.'), findsOneWidget);
 
-      // Mot de passe trop court
-      await fill('E-mail', 'bio@axis.bj');
-      await tester.tap(find.text('Créer mon compte'));
-      await tester.pumpAndSettle();
-      expect(find.text('Choisissez un identifiant de connexion.'), findsOneWidget);
-
-      await fill('Identifiant', 'bio.test');
+      // Sans e-mail : on passe au mot de passe
+      await fill('E-mail (facultatif)', '');
       await fill('Mot de passe', 'court');
       await tester.tap(find.text('Créer mon compte'));
       await tester.pumpAndSettle();

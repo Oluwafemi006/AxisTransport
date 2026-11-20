@@ -141,21 +141,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           borderRadius: BorderRadius.circular(AxisRadius.small),
                           child: InkWell(
                             onTap: () {
+                              // Seule notification : le rappel d'e-mail tant qu'il n'est pas vérifié.
+                              final remind =
+                                  ref.read(sessionProvider).user?.needsEmailReminder ?? false;
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Aucune notification'),
-                                  duration: Duration(seconds: 2),
-                                ),
+                                remind
+                                    ? SnackBar(
+                                        key: const Key('email-reminder'),
+                                        content: const Text(emailReminderText),
+                                        duration: const Duration(seconds: 8),
+                                        action: SnackBarAction(
+                                          label: 'Ajouter',
+                                          onPressed: () =>
+                                              context.push('/mon-profil'),
+                                        ),
+                                      )
+                                    : const SnackBar(
+                                        content: Text('Aucune notification'),
+                                        duration: Duration(seconds: 2),
+                                      ),
                               );
                             },
                             borderRadius: BorderRadius.circular(AxisRadius.small),
                             child: SizedBox(
                               width: AxisSizes.minTarget,
                               height: AxisSizes.minTarget,
-                              child: Icon(
-                                Icons.notifications_none_rounded,
-                                color: theme.colorScheme.onPrimary,
-                                size: AxisSizes.icon,
+                              child: Badge(
+                                key: const Key('email-reminder-badge'),
+                                isLabelVisible:
+                                    ref.read(sessionProvider).user?.needsEmailReminder ?? false,
+                                child: Icon(
+                                  Icons.notifications_none_rounded,
+                                  color: theme.colorScheme.onPrimary,
+                                  size: AxisSizes.icon,
+                                ),
                               ),
                             ),
                           ),

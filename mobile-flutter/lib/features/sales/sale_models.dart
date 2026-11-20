@@ -211,7 +211,7 @@ class SaleTicket {
   final String boardingDisplay;
   final String alightingDisplay;
 
-  /// Données imprimées sur le billet (fiscalité, IFU acheteur, mode de paiement).
+  /// Données imprimées sur le billet (fiscalité, mode de paiement).
   final TicketPrintInfo? printInfo;
 
   bool get isIssued => status == 'ISSUED';
@@ -329,8 +329,6 @@ String saleShareText(SaleTicket ticket, String Function(DateTime) formatDate) {
           : 'Vendeur : ${info.sale.trim()}',
     if (info != null && info.paymentMode.trim().isNotEmpty)
       'Mode de paiement : ${info.paymentMode.trim()}',
-    if (info != null && info.buyerIfu.trim().isNotEmpty)
-      'IFU de l\'acheteur : ${info.buyerIfu.trim()}',
     if (ticket.publicUrl.isNotEmpty) ...[
       '',
       'Votre billet : ${ticket.publicUrl}',

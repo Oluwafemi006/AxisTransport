@@ -250,7 +250,7 @@ void main() {
       await tester.tap(find.text('Créer un compte'));
       await tester.pumpAndSettle();
       expect(find.text('Créer mon compte'), findsOneWidget);
-      expect(find.text('Identifiant'), findsOneWidget);
+      expect(find.text('Identifiant'), findsNothing);
       expect(find.text('Téléphone'), findsOneWidget);
     },
   );
