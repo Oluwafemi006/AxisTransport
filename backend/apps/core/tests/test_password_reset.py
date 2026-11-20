@@ -29,7 +29,7 @@ SITE = "https://site.test"
 class Base(APITestCase):
     def setUp(self):
         cache.clear()
-        self.user = User.objects.create_user(username="test_client", email=EMAIL, password=OLD, role=User.Role.CLIENT)
+        self.user = User.objects.create_user(username="test_client", email=EMAIL, email_verified=True, password=OLD, role=User.Role.CLIENT)
 
     def ask(self, email=EMAIL, **extra):
         return self.client.post(REQUEST, {"email": email}, format="json", **extra)
@@ -61,7 +61,7 @@ class RequestTests(Base):
     def test_staff_and_shared_address_get_nothing(self):
         User.objects.create_user(username="test_guichet", email="g.test@exemple.test", password=OLD, role=User.Role.COUNTER)
         self.ask("g.test@exemple.test")
-        User.objects.create_user(username="test_client2", email=EMAIL, password=OLD, role=User.Role.CLIENT)
+        User.objects.create_user(username="test_client2", email=EMAIL, email_verified=True, password=OLD, role=User.Role.CLIENT)
         self.ask()
         self.assertEqual(len(mail.outbox), 0)
         self.assertFalse(PasswordResetLink.objects.exists())
@@ -217,6 +217,6 @@ class ProvisionalPasswordTests(APITestCase):
         self.assertEqual(self.client.get("/api/v1/staff/sales/options/").status_code, 200)
 
     def test_self_registration_is_not_provisional(self):
-        response = self.client.post("/api/v1/auth/register/", {"username": "test_inscrit", "password": NEW}, format="json")
+        response = self.client.post("/api/v1/auth/register/", {"phone": "0100000031", "password": NEW}, format="json")
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertFalse(User.objects.get(username="test_inscrit").must_change_password)
+        self.assertFalse(User.objects.get(username="+2290100000031").must_change_password)

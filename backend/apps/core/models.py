@@ -30,6 +30,8 @@ class User(AbstractUser):
     password_changed_at = models.DateTimeField(null=True, blank=True, editable=False)
     # Mot de passe provisoire saisi par un administrateur : à remplacer à la première connexion.
     must_change_password = models.BooleanField(default=False)
+    # E-mail confirmé par un code reçu à cette adresse : seule condition pour « mot de passe oublié ».
+    email_verified = models.BooleanField(default=False)
 
     @property
     def is_axis_staff(self):
@@ -647,7 +649,7 @@ class Booking(TimeStampedModel):
     reservation_expires_at = models.DateTimeField(null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     currency = models.CharField(max_length=3, default="XOF")
-    # IFU de l'acheteur, facultatif, saisi à la réservation ; imprimé sur le billet s'il est rempli.
+    # IFU de l'acheteur : plus saisi ni imprimé ; les anciennes valeurs restent (vidées à la suppression du compte).
     buyer_ifu = models.CharField(max_length=30, blank=True)
     origin = models.ForeignKey(
         Location,

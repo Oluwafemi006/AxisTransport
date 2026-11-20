@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import logging
 import math
 import re
 from decimal import Decimal, InvalidOperation
@@ -26,8 +27,10 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from . import password_reset, reporting
+from . import email_verification, password_reset, reporting
+from .phone import normalize_benin_phone
 from .models import (
     RentalChange,
     LineChange,
@@ -146,6 +149,8 @@ from .services import (
     transition_ticket,
     validate_ticket,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def service_validation_error(exc, *, staff=False):
@@ -311,8 +316,12 @@ def parcel_bus_position(parcel):
     trip = parcel.trip
     if trip is None or parcel.status not in PARCEL_BUS_STATUSES:
         return None
-    stops = [location.name for location in trip.route.get_stops_sequence()]
-    arrival = trip.stop_arrivals.select_related("location").order_by("-confirmed_at", "-id").first()
+    sequence = list(trip.route.get_stops_sequence())
+    stops = [location.name for location in sequence]
+    # L'arrêt le plus avancé sur la ligne, même si les confirmations sont arrivées dans le désordre.
+    order = {location.pk: index for index, location in enumerate(sequence)}
+    arrivals = list(trip.stop_arrivals.select_related("location"))
+    arrival = max(arrivals, key=lambda item: order.get(item.location_id, -1), default=None)
     return {
         "stops": stops,
         "departure_at": timezone.localtime(trip.departure_at).isoformat(),
@@ -356,16 +365,30 @@ class MeView(APIView):
         if not request.data or set(request.data) - set(self.PROFILE_FIELDS):
             raise ValidationError({"detail": "Seuls le prénom, le nom, le téléphone et l'e-mail peuvent être modifiés ici."})
         data = {key: str(request.data.get(key) or "").strip() for key in request.data}
-        # Prénom et téléphone ne peuvent pas être effacés : ils identifient le client au guichet et au contrôle.
-        for key, message in (("first_name", "Le prénom est obligatoire."), ("phone", "Le numéro de téléphone est obligatoire.")):
-            if key in data and not data[key]:
-                raise ValidationError({key: [message]})
-        if "phone" in data and not phone_digits_valid(data["phone"]):
-            raise ValidationError({"phone": ["Numéro de téléphone invalide."]})
+        # Téléphone, et prénom une fois saisi, ne peuvent pas être effacés : ils identifient le client au guichet.
+        # Un compte créé avec le seul téléphone (inscription allégée) ajoute son prénom plus tard.
+        if "phone" in data and not data["phone"]:
+            raise ValidationError({"phone": ["Le numéro de téléphone est obligatoire."]})
+        if "first_name" in data and not data["first_name"] and user.first_name:
+            raise ValidationError({"first_name": ["Le prénom est obligatoire."]})
+        if "phone" in data:
+            phone = normalize_benin_phone(data["phone"])
+            if phone is None:
+                raise ValidationError({"phone": ["Numéro béninois attendu : 10 chiffres commençant par 01."]})
+            if phone != normalize_benin_phone(user.phone) and phone_account_exists(phone, exclude=user):
+                raise ValidationError({"phone": ["Ce numéro est déjà utilisé par un autre compte."]})
+            data["phone"] = phone
+        if "email" in data:
+            data["email"] = data["email"].lower()
         before = {key: getattr(user, key) for key in self.PROFILE_FIELDS}
         serializer = UserSerializer(user, data=data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        if before["email"] != user.email:
+            # Nouvelle adresse : plus vérifiée tant que le code n'est pas saisi.
+            user.email_verified = False
+            user.save(update_fields=["email_verified"])
+            email_verification.forget_code(user)
         changed = [label for key, label in self.PROFILE_FIELDS.items() if before[key] != getattr(user, key)]
         if changed:
             AccountChange.objects.create(
@@ -582,9 +605,27 @@ class FrenchThrottleMixin:
         raise TooManyAttempts(wait)
 
 
+class AxisTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    L'identifiant exact passe toujours en premier : les comptes existants (dont ceux de test du Play Store)
+    se connectent comme avant. Sinon, un numéro béninois, quel que soit son format, retrouve l'unique compte qui le porte.
+    """
+
+    def validate(self, attrs):
+        login = str(attrs.get(self.username_field) or "").strip()
+        if login and not User.objects.filter(username=login).exists():
+            phone = normalize_benin_phone(login)
+            if phone:
+                matches = accounts_with_phone(phone)
+                if len(matches) == 1:
+                    attrs[self.username_field] = matches[0].username
+        return super().validate(attrs)
+
+
 class AxisTokenObtainPairView(FrenchThrottleMixin, TokenObtainPairView):
     """Connexion (jetons JWT). Réponse inchangée, sauf au-delà des seuils : 429 et message clair."""
 
+    serializer_class = AxisTokenObtainPairSerializer
     throttle_classes = [LoginAddressThrottle, LoginAccountThrottle]
 
     def post(self, request, *args, **kwargs):
@@ -605,12 +646,47 @@ class RegisterView(FrenchThrottleMixin, APIView):
     throttle_classes = [RegisterAddressThrottle]
 
     def post(self, request):
-        payload = request.data.copy()
-        payload["role"] = User.Role.CLIENT
+        """Inscription allégée : téléphone et mot de passe ; e-mail, prénom et nom facultatifs. Le numéro est l'identifiant."""
+        phone = normalize_benin_phone(request.data.get("phone"))
+        if phone is None:
+            raise ValidationError({"phone": ["Numéro béninois attendu : 10 chiffres commençant par 01 (ex. : 01 97 00 00 00)."]})
+        if phone_account_exists(phone):
+            raise ValidationError({"phone": ["Un compte existe déjà avec ce numéro. Connectez-vous ou contactez l'agence."]})
+        payload = {
+            "username": phone,
+            "phone": phone,
+            "password": request.data.get("password") or "",
+            "email": str(request.data.get("email") or "").strip().lower(),
+            "first_name": str(request.data.get("first_name") or "").strip(),
+            "last_name": str(request.data.get("last_name") or "").strip(),
+            "role": User.Role.CLIENT,
+        }
+        if not payload["password"]:
+            raise ValidationError({"password": ["Mot de passe requis."]})
         serializer = UserSerializer(data=payload)
         serializer.is_valid(raise_exception=True)
         user = serializer.save(role=User.Role.CLIENT)
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+def phone_account_exists(phone, exclude=None):
+    """Un compte porte déjà ce numéro (identifiant ou téléphone, quel que soit le format enregistré)."""
+    return bool(accounts_with_phone(phone, exclude=exclude))
+
+
+def accounts_with_phone(phone, exclude=None):
+    """Comptes dont l'identifiant ou le téléphone, une fois normalisé, vaut ce numéro."""
+    from django.db.models import F, Func, Value
+
+    tail = phone[-8:]
+    # Chiffres seuls : un ancien numéro enregistré « 01 97 00 00 00 » est retrouvé aussi.
+    candidates = User.objects.annotate(
+        username_digits=Func(F("username"), Value(r"\D"), Value(""), Value("g"), function="regexp_replace"),
+        phone_digits=Func(F("phone"), Value(r"\D"), Value(""), Value("g"), function="regexp_replace"),
+    ).filter(Q(username_digits__endswith=tail) | Q(phone_digits__endswith=tail))
+    if exclude is not None:
+        candidates = candidates.exclude(pk=exclude.pk)
+    return [user for user in candidates if phone in (normalize_benin_phone(user.username), normalize_benin_phone(user.phone))]
 
 
 class PasswordChangeThrottle(_LiveRateThrottle):
@@ -642,6 +718,41 @@ class PasswordChangeView(FrenchThrottleMixin, APIView):
         password_reset.change_password(user, password)
         refresh = RefreshToken.for_user(user)
         return Response({"detail": "Mot de passe modifié.", "access": str(refresh.access_token), "refresh": str(refresh)})
+
+
+class EmailCodeThrottle(SimpleRateThrottle):
+    """Envois de code de vérification par compte."""
+
+    scope = "email_code"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {"scope": self.scope, "ident": request.user.pk}
+
+
+class EmailCodeSendView(FrenchThrottleMixin, APIView):
+    """Envoie un code à l'e-mail du compte. E-mail non configuré ou en échec : 503 et message clair, jamais 500."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [EmailCodeThrottle]
+
+    def post(self, request):
+        if request.user.email_verified:
+            return Response({"detail": "Votre e-mail est déjà vérifié."})
+        try:
+            email_verification.send_code(request.user)
+        except email_verification.EmailNotSent as error:
+            return Response({"detail": str(error), "email_sent": False}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"detail": f"Code envoyé à {request.user.email}. Il est valable 30 minutes.", "email_sent": True})
+
+
+class EmailVerifyView(FrenchThrottleMixin, APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [PasswordChangeThrottle]
+
+    def post(self, request):
+        if not email_verification.verify_code(request.user, request.data.get("code")):
+            raise ValidationError({"code": [email_verification.WRONG_CODE_MESSAGE]})
+        return Response({"detail": "E-mail vérifié.", "user": UserSerializer(request.user).data})
 
 
 class PasswordResetRequestView(FrenchThrottleMixin, APIView):
@@ -770,6 +881,8 @@ class AcceptStaffInvitationView(FrenchThrottleMixin, APIView):
             )
         if user:
             user.email = invitation.email
+            # L'invitation a été reçue à cette adresse : elle est vérifiée.
+            user.email_verified = True
             # Fermeture de toutes les sessions ouvertes du compte existant.
             password_reset.change_password(user, password)
             user.role = role
@@ -782,6 +895,7 @@ class AcceptStaffInvitationView(FrenchThrottleMixin, APIView):
             user = User.objects.create_user(
                 username=username,
                 email=invitation.email,
+                email_verified=True,
                 password=password,
                 role=role,
                 is_staff=True,
@@ -1458,8 +1572,46 @@ class UserViewSet(viewsets.ModelViewSet):
                 {"email_sent": False, "link": "", "detail": "Lien impossible à créer : l'adresse du site (PUBLIC_WEB_URL) n'est pas configurée."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        reason = "le client n'a pas d'e-mail" if not user.email else "l'e-mail n'a pas pu être envoyé"
+        reason = (
+            "le client n'a pas d'e-mail" if not user.email
+            else "son e-mail n'est pas vérifié" if not user.email_verified
+            else "l'e-mail n'a pas pu être envoyé"
+        )
         return Response({"email_sent": False, "link": url, "detail": f"Lien créé, mais {reason} : copiez-le et transmettez-le au client."})
+
+
+class CounterTicketSearchThrottle(SimpleRateThrottle):
+    """Recherches de billet par agent du guichet."""
+
+    scope = "counter_ticket_search"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {"scope": self.scope, "ident": request.user.pk}
+
+
+def counter_ticket_matches(query, limit=20):
+    """Billets d'une référence exacte ou d'un téléphone (fin du numéro, 6 chiffres au moins) ; None si la requête ne convient pas."""
+    from django.db.models import F, Func, Value
+
+    if not query:
+        return None
+    if re.fullmatch(r"(?i)AX-[A-Z0-9-]+", query):
+        return list(Ticket.objects.filter(reference__iexact=query).select_related("trip", "seat", "booking")[:1])
+    phone = normalize_benin_phone(query)
+    digits = phone[4:] if phone else re.sub(r"[\s.()-]", "", query)
+    if not re.fullmatch(r"\d{6,}", digits):
+        return None
+    return list(
+        Ticket.objects.annotate(phone_digits=Func(F("passenger_phone"), Value(r"\D"), Value(""), Value("g"), function="regexp_replace"))
+        .filter(phone_digits__endswith=digits)
+        .select_related("trip", "seat", "booking")
+        .order_by("-created_at")[:limit]
+    )
+
+
+def mask_query(query):
+    """Requête masquée pour le journal : seuls les 2 derniers caractères restent lisibles."""
+    return "*" * max(0, len(query) - 2) + query[-2:]
 
 
 class TicketViewSet(viewsets.ModelViewSet):
@@ -1489,6 +1641,24 @@ class TicketViewSet(viewsets.ModelViewSet):
             )
         return queryset
 
+    def get_throttles(self):
+        if self.action == "counter_search":
+            return [CounterTicketSearchThrottle()]
+        return super().get_throttles()
+
+    @action(detail=False, methods=["get"], url_path="counter-search")
+    def counter_search(self, request):
+        """
+        Guichet : retrouver le billet d'un client par sa référence exacte ou son téléphone (complet ou ses 6 derniers
+        chiffres au moins). Jamais de recherche par nom. Lecture seule : l'annulation reste à l'administrateur.
+        """
+        query = " ".join(str(request.query_params.get("q") or "").split())
+        tickets = counter_ticket_matches(query)
+        if tickets is None:
+            raise ValidationError({"q": ["Saisissez la référence du billet (AX-…) ou le téléphone : au moins 6 chiffres."]})
+        logger.info("Recherche de billet au guichet : agent %s, requête %s, %s résultat(s).", request.user.pk, mask_query(query), len(tickets))
+        return Response(TicketSerializer(tickets, many=True, context={"request": request}).data)
+
     def get_permissions(self):
         # Les actions ayant leurs propres règles d'accès les gardent : cette méthode remplace
         # sinon celles déclarées sur l'action (défaut corrigé : scan et changement d'état ouverts à tout compte).
@@ -1496,6 +1666,8 @@ class TicketViewSet(viewsets.ModelViewSet):
             return [IsControllerOrAdmin()]
         if self.action == "transition":
             return [IsAxisAdmin()]
+        if self.action == "counter_search":
+            return [IsCounterOrAdmin()]
         # Vente et encaissement : client connecté (ses propres billets), guichet ou admin.
         if self.action in {"create", "pay"}:
             return [IsClientCounterOrAdmin()]
@@ -1713,7 +1885,6 @@ class BookingViewSet(viewsets.ModelViewSet):
                 customer=customer,
                 contact_phone=data.get("contact_phone", ""),
                 contact_email=data.get("contact_email", ""),
-                buyer_ifu=data.get("buyer_ifu", ""),
                 origin=data.get("origin") or None,
                 destination=data.get("destination") or None,
                 boarding_point=b_point,
@@ -2461,7 +2632,12 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
             arrival = confirm_trip_arrival(trip, int(stop), actor=request.user)
         except DjangoValidationError as exc:
             raise service_validation_error(exc, staff=True)
-        return Response({"stop": arrival.location.name, "confirmed_at": arrival.confirmed_at})
+        # Avertissement : un arrêt situé plus loin sur la ligne est déjà confirmé.
+        sequence = [location.pk for location in trip.route.get_stops_sequence()]
+        position = sequence.index(arrival.location_id)
+        further = trip.stop_arrivals.filter(location_id__in=sequence[position + 1:]).select_related("location").first()
+        warning = f"Attention : l'arrivée à {further.location.name}, plus loin sur la ligne, est déjà confirmée." if further else ""
+        return Response({"stop": arrival.location.name, "confirmed_at": arrival.confirmed_at, "warning": warning})
 
     @action(detail=False, methods=["get"])
     def today(self, request):
@@ -2587,7 +2763,6 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                         idempotency_key=key,
                         # Tout agent vend après l'heure : seuls les départs du jour passent _sellable_trips.
                         allow_departed=True,
-                        buyer_ifu=str(request.data.get("buyer_ifu") or ""),
                         origin=origin,
                         destination=destination,
                         boarding_point=boarding_point,

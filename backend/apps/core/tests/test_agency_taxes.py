@@ -187,7 +187,9 @@ class TicketPrintInfoTests(APITestCase):
         self.assertEqual(info["agency"]["legal_name"], "TEST Raison sociale")
         self.assertEqual((info["price_incl_tax"], info["price_excl_tax"]), (1000, 847))
         self.assertEqual(info["tax_lines"][0]["amount"], 153)
-        self.assertEqual(info["buyer_ifu"], "TEST-ACHETEUR")
+        # L'IFU de l'acheteur n'est plus imprimé, même s'il reste en base.
+        self.assertNotIn("buyer_ifu", info)
+        self.assertNotIn("TEST-ACHETEUR", str(info))
 
     def test_bank_accounts_are_never_exposed(self):
         self.fill_agency()
@@ -243,14 +245,9 @@ class BuyerIfuTests(APITestCase):
             format="json",
         )
 
-    def test_optional_ifu_is_stored(self):
-        self.assertEqual(self.book(self.seats[0], "").status_code, 201)
-        response = self.book(self.seats[1], " TEST 123 ")
+    def test_buyer_ifu_is_no_longer_taken(self):
+        """Champ retiré de la saisie : une ancienne application qui l'envoie réserve quand même, sans rien enregistrer."""
+        response = self.book(self.seats[0], "TEST 123")
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(Booking.objects.get(pk=response.data["id"]).buyer_ifu, "TEST 123")
-
-    def test_invalid_ifu_is_refused_clearly(self):
-        response = self.book(self.seats[0], "<script>")
-        self.assertEqual(response.status_code, 400)
-        self.assertFalse(Booking.objects.exists())
-        self.assertFalse(Ticket.objects.exists())
+        self.assertEqual(Booking.objects.get(pk=response.data["id"]).buyer_ifu, "")
+        self.assertNotIn("buyer_ifu", response.data)

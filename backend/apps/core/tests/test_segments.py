@@ -319,6 +319,14 @@ class StaffSaleSegmentTests(SegmentsTestCase):
         self.trip.refresh_from_db()
         self.assertEqual(self.trip.status, Trip.Status.COMPLETED)
 
+    def test_earlier_stop_after_a_further_one_warns_the_controller(self):
+        middle = [location.name for location in self.trip.route.get_stops_sequence()][1:-1]
+        self.assertGreaterEqual(len(middle), 2)
+        self.assertEqual(self.arrive(middle[1]).data["warning"], "")
+        late = self.arrive(middle[0])
+        self.assertEqual(late.status_code, 200)
+        self.assertIn(middle[1], late.data["warning"])
+
     def test_an_admin_cannot_end_a_future_trip(self):
         """Essai depuis un compte admin (qui voit les départs à venir) : le voyage de demain reste vendable."""
         admin = User.objects.create_user(username="test-admin-arr", password="secret", role=User.Role.ADMIN)

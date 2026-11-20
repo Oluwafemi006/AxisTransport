@@ -80,3 +80,10 @@ class ParcelBusPositionTests(APITestCase):
         self.assertEqual({first.status_code, second.status_code, third.status_code}, {404})
         self.assertEqual(first.data, second.data)
         self.assertEqual(first.data, third.data)
+
+    def test_most_advanced_stop_wins_over_the_latest_confirmation(self):
+        self.set_status(Parcel.Status.IN_TRANSIT)
+        controller = self.context["controller"]
+        TripStopArrival.objects.create(trip=self.trip, location=self.trip.route.destination, confirmed_by=controller)
+        TripStopArrival.objects.create(trip=self.trip, location=self.middle, confirmed_by=controller)
+        self.assertEqual(self.track().data["bus"]["last_stop"], "Ville arrivée")

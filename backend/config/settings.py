@@ -141,6 +141,10 @@ REST_FRAMEWORK = {
         "password_reset_email": os.environ.get("AXIS_PASSWORD_RESET_RATE_EMAIL", "3/hour"),
         "password_reset_address": os.environ.get("AXIS_PASSWORD_RESET_RATE_ADDRESS", "20/hour"),
         "password_change": os.environ.get("AXIS_PASSWORD_CHANGE_RATE", "10/hour"),
+        # Codes de vérification de l'e-mail envoyés par compte.
+        "email_code": os.environ.get("AXIS_EMAIL_CODE_RATE", "5/hour"),
+        # Recherche de billet par un agent du guichet (par agent).
+        "counter_ticket_search": os.environ.get("AXIS_COUNTER_TICKET_SEARCH_RATE", "60/hour"),
         # Réservations en ligne : créations par adresse IP (large : réseaux mobiles partagés) et par téléphone.
         "booking_address": os.environ.get("AXIS_BOOKING_RATE_ADDRESS", "30/hour"),
         "booking_phone": os.environ.get("AXIS_BOOKING_RATE_PHONE", "6/hour"),

@@ -40,14 +40,14 @@ class RolePermissionTests(APITestCase):
         response = self.client.post(
             "/api/auth/register/",
             {
-                "username": "new-client",
+                "phone": "0100000011",
                 "password": "A-strong-client-password-2026",
                 "first_name": "Nouveau",
                 "role": User.Role.ADMIN,
             },
         )
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(User.objects.get(username="new-client").role, User.Role.CLIENT)
+        self.assertEqual(User.objects.get(username="+2290100000011").role, User.Role.CLIENT)
 
     def test_controller_cannot_transition_parcel(self):
         parcel = Parcel.objects.create(

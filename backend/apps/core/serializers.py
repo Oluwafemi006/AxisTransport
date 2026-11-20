@@ -60,8 +60,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "username", "email", "first_name", "last_name", "phone", "role", "role_display", "is_active", "must_change_password", "password"]
-        read_only_fields = ["is_active", "must_change_password"]
+        fields = ["id", "username", "email", "first_name", "last_name", "phone", "role", "role_display", "is_active", "must_change_password", "email_verified", "password"]
+        read_only_fields = ["is_active", "must_change_password", "email_verified"]
 
     def validate_password(self, value):
         validate_password(value)
@@ -524,7 +524,6 @@ def ticket_print_info(ticket):
         "paid": paid,
         "sale": sale,
         "payment_mode": payment_mode,
-        "buyer_ifu": booking.buyer_ifu if booking else "",
         "boarding_place": (origin.address or "").strip() if origin else "",
         "origin": origin.name if origin else "",
         "destination": destination.name if destination else "",
@@ -697,7 +696,6 @@ class BookingCreateSerializer(serializers.Serializer):
     alighting_point = serializers.IntegerField(required=False, allow_null=True)
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
-    buyer_ifu = serializers.CharField(max_length=30, required=False, allow_blank=True)
     passengers = BookingCreatePassengerSerializer(many=True, allow_empty=False, min_length=1, max_length=8)
 
     def validate(self, attrs):
@@ -756,7 +754,6 @@ class BookingSerializer(serializers.ModelSerializer):
             "customer_detail",
             "contact_phone",
             "contact_email",
-            "buyer_ifu",
             "status",
             "status_display",
             "client_status_display",

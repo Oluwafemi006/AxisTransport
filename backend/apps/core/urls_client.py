@@ -507,7 +507,6 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
                 customer=customer,
                 contact_phone=data.get("contact_phone", ""),
                 contact_email=data.get("contact_email", ""),
-                buyer_ifu=data.get("buyer_ifu", ""),
                 origin=data.get("origin"),
                 destination=data.get("destination"),
                 boarding_point=b_point,
