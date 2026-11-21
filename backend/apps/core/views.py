@@ -2239,6 +2239,11 @@ class DashboardView(APIView):
                         for r in RentalBooking.objects.filter(status=RentalBooking.Status.ACTIVE).select_related("vehicle").order_by("ends_at")[:20]
                     ],
                     "rentals_active_count": RentalBooking.objects.filter(status=RentalBooking.Status.ACTIVE).count(),
+                    "rentals_requested": [
+                        {"id": r.id, "reference": r.reference, "vehicle": r.vehicle.name, "starts_at": r.starts_at}
+                        for r in RentalBooking.objects.filter(status=RentalBooking.Status.REQUESTED).select_related("vehicle").order_by("starts_at")[:20]
+                    ],
+                    "rentals_requested_count": RentalBooking.objects.filter(status=RentalBooking.Status.REQUESTED).count(),
                 },
                 "revenue": {
                     "total": headline["gross_revenue"],

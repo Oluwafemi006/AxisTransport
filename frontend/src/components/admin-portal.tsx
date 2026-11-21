@@ -36,6 +36,8 @@ type Dashboard = {
     parcels_awaiting_pickup_count: number;
     rentals_active: Array<{ id: number; reference: string; vehicle: string; ends_at: string }>;
     rentals_active_count: number;
+    rentals_requested?: Array<{ id: number; reference: string; vehicle: string; starts_at: string }>;
+    rentals_requested_count?: number;
   };
 };
 
@@ -235,7 +237,8 @@ function DashboardPanel({ data, trips, onReport, onGo }: { data: Dashboard | nul
 
 // Ce qui attend une action, quel que soit le jour : jamais masqué par le filtre « aujourd'hui ».
 function ToHandle({ block, onGo }: { block: NonNullable<Dashboard["to_handle"]>; onGo: (tab: AdminTab) => void }) {
-  const empty = !block.parcels_awaiting_pickup_count && !block.rentals_active_count;
+  const requested = block.rentals_requested_count ?? 0;
+  const empty = !block.parcels_awaiting_pickup_count && !block.rentals_active_count && !requested;
   return (
     <section className="card mt-5">
       <SectionHeading eyebrow="Tous les jours confondus" title="À traiter" />
@@ -253,7 +256,11 @@ function ToHandle({ block, onGo }: { block: NonNullable<Dashboard["to_handle"]>;
             <ul className="mt-2 space-y-1 text-sm">
               {block.rentals_active.map((row) => <li key={row.id} className="break-words">{row.reference} · {row.vehicle} · fin {formatDate(row.ends_at)}</li>)}
             </ul>
-            {block.rentals_active_count > 0 && <button type="button" className="secondary-button mt-2" onClick={() => onGo("locations")}>Ouvrir les locations</button>}
+            <p className="mt-3 font-semibold">Demandes de location à confirmer : {requested}</p>
+            <ul className="mt-2 space-y-1 text-sm">
+              {(block.rentals_requested || []).map((row) => <li key={row.id} className="break-words">{row.reference} · {row.vehicle} · début {formatDate(row.starts_at)}</li>)}
+            </ul>
+            {(block.rentals_active_count > 0 || requested > 0) && <button type="button" className="secondary-button mt-2" onClick={() => onGo("locations")}>Ouvrir les locations</button>}
           </div>
         </div>
       )}

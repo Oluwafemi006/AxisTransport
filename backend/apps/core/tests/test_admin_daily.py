@@ -56,6 +56,15 @@ class AdminDailyTests(APITestCase):
         self.assertEqual(block["parcels_awaiting_pickup_count"], 1)
         self.assertEqual([row["id"] for row in block["rentals_active"]], [self.active_rental.id])
         self.assertEqual(block["rentals_active_count"], 1)
+        self.assertEqual(block["rentals_requested_count"], 0)
+
+    def test_to_handle_keeps_requested_rentals(self):
+        start = timezone.now() + timedelta(days=30)
+        requested = RentalBooking.objects.create(
+            vehicle=self.active_rental.vehicle, customer=self.context["client"], starts_at=start, ends_at=start + timedelta(days=1),
+        )
+        block = self.client.get("/api/v1/dashboard/").json()["to_handle"]
+        self.assertEqual([row["id"] for row in block["rentals_requested"]], [requested.id])
 
     def test_parcel_list_by_day_all_days_and_status(self):
         day = self.client.get("/api/v1/parcels/", {"start": self.today.isoformat()}).json()["results"]
