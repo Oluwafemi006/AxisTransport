@@ -360,3 +360,14 @@ test("rappel e-mail : client sans e-mail vérifié seulement", async () => {
   assert.equal(needsEmailReminder(null), false);
   assert.match(EMAIL_REMINDER_TEXT, /Sans e-mail, vous devrez contacter l’agence\.$/);
 });
+
+test("filtre des listes admin : jour par défaut, période, tous les jours", async () => {
+  const rules = await import(pathToFileURL(compiled).href);
+  const today = rules.todayPeriod("2026-11-20");
+  assert.equal(rules.periodParams(today), "?start=2026-11-20");
+  assert.equal(rules.periodParams({ ...today, mode: "all" }), "");
+  assert.equal(rules.periodParams({ ...today, mode: "all" }, "ARRIVED"), "?status=ARRIVED");
+  assert.equal(rules.periodParams({ mode: "period", day: "", start: "2026-11-01", end: "2026-11-20" }, "PAID"), "?start=2026-11-01&end=2026-11-20&status=PAID");
+  assert.equal(rules.periodParams({ mode: "period", day: "", start: "2026-11-20", end: "2026-11-01" }), null);
+  assert.equal(rules.periodParams({ ...today, day: "" }), null);
+});

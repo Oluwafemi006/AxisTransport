@@ -1631,6 +1631,11 @@ class TicketViewSet(viewsets.ModelViewSet):
             return queryset.none()
         if trip:
             queryset = queryset.filter(trip_id=trip)
+        if self.request.user.role == User.Role.ADMIN and self.action == "list":
+            bounds = _list_period(self.request)
+            if bounds:
+                queryset = queryset.filter(trip__departure_at__gte=bounds[0], trip__departure_at__lt=bounds[1])
+            queryset = _status_filter(queryset, self.request, Ticket.Status)
         # Recherche de l'admin : référence, nom ou téléphone du passager.
         search = (self.request.query_params.get("q") or "").strip()
         if search and self.request.user.role == User.Role.ADMIN:
@@ -1947,7 +1952,18 @@ class ParcelViewSet(viewsets.ModelViewSet):
         if self.request.user.role == User.Role.CLIENT:
             queryset = queryset.filter(customer=self.request.user)
         tracking = self.request.query_params.get("tracking_number")
-        return queryset.filter(tracking_number=tracking) if tracking else queryset
+        if tracking:
+            return queryset.filter(tracking_number=tracking)
+        if self.request.user.role == User.Role.ADMIN and self.action == "list":
+            bounds = _list_period(self.request)
+            if bounds:
+                # Colis du jour : départ du bus ce jour-là ; un colis sans départ affecté compte au jour de son enregistrement.
+                queryset = queryset.filter(
+                    Q(trip__departure_at__gte=bounds[0], trip__departure_at__lt=bounds[1])
+                    | Q(trip__isnull=True, created_at__gte=bounds[0], created_at__lt=bounds[1])
+                )
+            queryset = _status_filter(queryset, self.request, Parcel.Status)
+        return queryset
 
     def perform_create(self, serializer):
         is_client = self.request.user.role == User.Role.CLIENT
@@ -2076,6 +2092,12 @@ class RentalBookingViewSet(viewsets.ModelViewSet):
         if self.request.user.role == User.Role.CLIENT:
             return queryset.filter(customer=self.request.user)
         if self.request.user.role == User.Role.ADMIN:
+            if self.action == "list":
+                bounds = _list_period(self.request)
+                if bounds:
+                    # Location du jour : en cours à un moment de la période.
+                    queryset = queryset.filter(starts_at__lt=bounds[1], ends_at__gt=bounds[0])
+                queryset = _status_filter(queryset, self.request, RentalBooking.Status)
             return queryset
         return queryset.none()
 
@@ -2133,6 +2155,25 @@ def _report_period(request, *, default_start):
     return start, end
 
 
+def _list_period(request):
+    """Filtre « jour / période » des listes du personnel (?start=&end=, heure du Bénin) ; None = tous les jours."""
+    if not request.query_params.get("start"):
+        return None
+    start, end = _report_period(request, default_start=timezone.localdate())
+    if not request.query_params.get("end"):
+        end = start
+    return reporting.period_bounds(start, end)
+
+
+def _status_filter(queryset, request, choices):
+    status_value = (request.query_params.get("status") or "").strip()
+    if not status_value:
+        return queryset
+    if status_value not in choices.values:
+        raise ValidationError({"status": "Statut inconnu."})
+    return queryset.filter(status=status_value)
+
+
 class DashboardView(APIView):
     """
     Accueil administrateur. Sans paramètre : la période est aujourd'hui (heure du Bénin).
@@ -2155,6 +2196,7 @@ class DashboardView(APIView):
             checked=Count("tickets", filter=Q(tickets__status__in=[Ticket.Status.CHECKED, Ticket.Status.COMPLETED]), distinct=True),
         )
         headline = reporting.headline(start, end)
+        first, after = reporting.period_bounds(start, end)
         return Response(
             {
                 "period": {"start": start, "end": end},
@@ -2176,6 +2218,28 @@ class DashboardView(APIView):
                     .order_by("status")
                 ),
                 "parcels_summary": headline["parcels"],
+                # Colis du jour : départ du bus dans la période ; compteur à part pour ceux enregistrés.
+                "parcels_day": {
+                    "departing": Parcel.objects.filter(trip__departure_at__gte=first, trip__departure_at__lt=after)
+                    .exclude(status=Parcel.Status.CANCELLED).count(),
+                    "registered": Parcel.objects.filter(created_at__gte=first, created_at__lt=after).count(),
+                },
+                # À traiter, quel que soit le jour : jamais masqué par le filtre de date.
+                "to_handle": {
+                    "parcels_awaiting_pickup": [
+                        {"id": p.id, "tracking_number": p.tracking_number, "destination": p.destination.name, "status_display": p.get_status_display()}
+                        for p in Parcel.objects.filter(status__in=[Parcel.Status.ARRIVED, Parcel.Status.READY_FOR_PICKUP])
+                        .select_related("destination").order_by("updated_at")[:20]
+                    ],
+                    "parcels_awaiting_pickup_count": Parcel.objects.filter(
+                        status__in=[Parcel.Status.ARRIVED, Parcel.Status.READY_FOR_PICKUP]
+                    ).count(),
+                    "rentals_active": [
+                        {"id": r.id, "reference": r.reference, "vehicle": r.vehicle.name, "ends_at": r.ends_at}
+                        for r in RentalBooking.objects.filter(status=RentalBooking.Status.ACTIVE).select_related("vehicle").order_by("ends_at")[:20]
+                    ],
+                    "rentals_active_count": RentalBooking.objects.filter(status=RentalBooking.Status.ACTIVE).count(),
+                },
                 "revenue": {
                     "total": headline["gross_revenue"],
                     "by_payment_method": list(

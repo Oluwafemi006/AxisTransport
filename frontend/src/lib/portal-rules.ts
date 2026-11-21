@@ -412,3 +412,26 @@ export function counterSearchError(query: string): string | null {
   if (/^\d{6,}$/.test(digits)) return null;
   return "Saisissez la référence du billet (AX-…) ou le téléphone : au moins 6 chiffres. La recherche par nom n’est pas possible.";
 }
+
+// Filtre des listes admin : un jour (par défaut aujourd'hui), une période, ou tous les jours.
+export type ListPeriod = { mode: "day" | "period" | "all"; day: string; start: string; end: string };
+
+export function todayPeriod(today: string = beninDateKey()): ListPeriod {
+  return { mode: "day", day: today, start: today, end: today };
+}
+
+// Paramètres envoyés au serveur (c'est lui qui filtre) ; null si la période saisie est incomplète ou inversée.
+export function periodParams(period: ListPeriod, status = ""): string | null {
+  const params = new URLSearchParams();
+  if (period.mode === "day") {
+    if (!period.day) return null;
+    params.set("start", period.day);
+  } else if (period.mode === "period") {
+    if (!period.start || !period.end || period.end < period.start) return null;
+    params.set("start", period.start);
+    params.set("end", period.end);
+  }
+  if (status) params.set("status", status);
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
