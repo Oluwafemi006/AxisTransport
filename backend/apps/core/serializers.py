@@ -88,8 +88,32 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
+# Liens de carte acceptés : https, Google Maps seulement (lien court ou adresse complète).
+MAP_URL_MESSAGE = "Collez un lien Google Maps en https (maps.app.goo.gl, google.com/maps ou share.google)."
+
+
+def clean_map_url(value):
+    from urllib.parse import urlsplit
+
+    value = (value or "").strip()
+    if not value:
+        return ""
+    parts = urlsplit(value)
+    host = (parts.hostname or "").lower()
+    allowed = (
+        host == "maps.app.goo.gl"
+        or host == "share.google"
+        or (host in {"google.com", "www.google.com"} and (parts.path == "/maps" or parts.path.startswith("/maps/")))
+    )
+    if parts.scheme != "https" or not allowed or parts.username or parts.password or parts.port:
+        raise serializers.ValidationError(MAP_URL_MESSAGE)
+    return value
+
+
 class BoardingPointSerializer(serializers.ModelSerializer):
     location_name = serializers.CharField(source="location.name", read_only=True)
+    # Champ texte : un seul message (clean_map_url) au lieu du « URL valide » générique.
+    map_url = serializers.CharField(required=False, allow_blank=True, max_length=500)
     is_used = serializers.SerializerMethodField()
 
     class Meta:
@@ -101,6 +125,7 @@ class BoardingPointSerializer(serializers.ModelSerializer):
             "name",
             "active",
             "order",
+            "map_url",
             "is_used",
             "created_at",
             "updated_at",
@@ -112,6 +137,9 @@ class BoardingPointSerializer(serializers.ModelSerializer):
         if not value:
             raise serializers.ValidationError("Le nom du point d'embarquement est obligatoire.")
         return value
+
+    def validate_map_url(self, value):
+        return clean_map_url(value)
 
     def get_is_used(self, obj):
         return (
@@ -126,7 +154,7 @@ def _active_boarding_points_payload(location):
     if not location:
         return []
     return [
-        {"id": pt.id, "name": pt.name, "order": pt.order, "active": pt.active}
+        {"id": pt.id, "name": pt.name, "order": pt.order, "active": pt.active, "map_url": pt.map_url}
         for pt in location.boarding_points.filter(active=True).order_by("order", "name", "id")
     ]
 
@@ -957,6 +985,7 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
     destination = serializers.SerializerMethodField()
     boarding_point_name = serializers.CharField(read_only=True)
     alighting_point_name = serializers.CharField(read_only=True)
+    boarding_map_url = serializers.SerializerMethodField()
     boarding_display = serializers.CharField(read_only=True)
     alighting_display = serializers.CharField(read_only=True)
     departure_at = serializers.SerializerMethodField()
@@ -984,6 +1013,7 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
             "destination",
             "boarding_point_name",
             "alighting_point_name",
+            "boarding_map_url",
             "boarding_display",
             "alighting_display",
             "segment_label",
@@ -1002,6 +1032,10 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
 
     def get_print_info(self, obj):
         return ticket_print_info(obj)
+
+    def get_boarding_map_url(self, obj):
+        point = getattr(obj, "boarding_point", None)
+        return point.map_url if point is not None else ""
 
     def get_arrival_at(self, obj):
         return serializers.DateTimeField().to_representation(obj.trip.arrival_at) if obj.trip.arrival_at else None

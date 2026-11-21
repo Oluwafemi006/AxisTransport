@@ -23,6 +23,7 @@ export interface BoardingPoint {
   name: string;
   active: boolean;
   order: number;
+  map_url?: string;
   is_used?: boolean;
 }
 

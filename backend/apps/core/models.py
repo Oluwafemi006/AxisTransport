@@ -99,6 +99,8 @@ class BoardingPoint(TimeStampedModel):
     name = models.CharField(max_length=160)
     active = models.BooleanField(default=True)
     order = models.PositiveSmallIntegerField(default=1, help_text="Ordre d'affichage")
+    # Lien Google Maps saisi dans /admin (bouton « Itinéraire ») ; vide = pas de bouton. Validé par le sérialiseur.
+    map_url = models.URLField("Lien Google Maps", max_length=500, blank=True, default="")
 
     class Meta:
         ordering = ["location__name", "order", "name"]

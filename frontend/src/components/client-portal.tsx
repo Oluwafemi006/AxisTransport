@@ -1410,6 +1410,13 @@ function Tickets({
                         <small style={{ color: 'var(--mute)', display: 'block', marginTop: '4px' }}>{BOARDING_POINT_HELP}</small>
                       </>
                     )}
+                    {(() => {
+                      // Itinéraire du point choisi (lien saisi dans /admin) ; nouvel onglet.
+                      const chosen = activeBoardingPoints.length === 1 ? activeBoardingPoints[0] : activeBoardingPoints.find((p) => String(p.id) === boardingPointId);
+                      return chosen?.map_url ? (
+                        <a href={chosen.map_url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: '6px', fontSize: '13px', fontWeight: 700 }}>Itinéraire</a>
+                      ) : null;
+                    })()}
                   </div>
                 )}
                 {activeAlightingPoints.length > 0 && (

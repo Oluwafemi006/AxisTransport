@@ -2179,13 +2179,13 @@ function BoardingPointsPanel({ locations, onChanged }: { locations: Location[]; 
   const [notice, setNotice] = useState<NoticeState>(null);
   const [busy, setBusy] = useState(false);
   const [newPoint, setNewPoint] = useState({ location: "", name: "", order: "1" });
-  const [drafts, setDrafts] = useState<Record<number, { name: string; order: string; active: boolean }>>({});
+  const [drafts, setDrafts] = useState<Record<number, { name: string; order: string; active: boolean; map_url: string }>>({});
 
   const load = useCallback(async () => {
     try {
       const rows = await apiList<BoardingPoint>("/boarding-points/?all=true");
       setPoints(rows);
-      setDrafts(Object.fromEntries(rows.map((pt) => [pt.id, { name: pt.name, order: String(pt.order), active: pt.active }])));
+      setDrafts(Object.fromEntries(rows.map((pt) => [pt.id, { name: pt.name, order: String(pt.order), active: pt.active, map_url: pt.map_url ?? "" }])));
     } catch (reason) {
       setNotice(failure(reason, "Les points d’embarquement n’ont pas pu être chargés."));
     }
@@ -2228,6 +2228,7 @@ function BoardingPointsPanel({ locations, onChanged }: { locations: Location[]; 
           name: draft.name.trim(),
           order: Number(draft.order) || 1,
           active: draft.active,
+          map_url: draft.map_url.trim(),
         }),
       });
       feedback.success(`Point « ${draft.name.trim()} » mis à jour.`);
@@ -2266,19 +2267,20 @@ function BoardingPointsPanel({ locations, onChanged }: { locations: Location[]; 
           <EmptyState title="Aucun point configuré" text="Ajoutez un point d’embarquement pour une ville dans le formulaire ci-contre." />
         ) : (
           <div className="table-scroll">
-            <table className="staff-table min-w-[680px]">
+            <table className="staff-table min-w-[880px]">
               <thead>
                 <tr>
                   <th>Ville</th>
                   <th>Nom du point</th>
                   <th>Ordre</th>
+                  <th>Lien Google Maps</th>
                   <th>Actif</th>
                   <th className="text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {points.map((pt) => {
-                  const draft = drafts[pt.id] ?? { name: pt.name, order: String(pt.order), active: pt.active };
+                  const draft = drafts[pt.id] ?? { name: pt.name, order: String(pt.order), active: pt.active, map_url: pt.map_url ?? "" };
                   return (
                     <tr key={pt.id}>
                       <td className="strong">{pt.location_name}</td>
@@ -2298,6 +2300,18 @@ function BoardingPointsPanel({ locations, onChanged }: { locations: Location[]; 
                           aria-label={`Ordre ${pt.name}`}
                           value={draft.order}
                           onChange={(e) => setDrafts({ ...drafts, [pt.id]: { ...draft, order: e.target.value } })}
+                        />
+                      </td>
+                      <td>
+                        {/* Saisi ici par l'agence ; vérifié par le serveur (https, Google Maps). Vide : pas de bouton « Itinéraire ». */}
+                        <input
+                          className="field min-w-48"
+                          type="url"
+                          inputMode="url"
+                          aria-label={`Lien Google Maps ${pt.name}`}
+                          placeholder="https://maps.app.goo.gl/…"
+                          value={draft.map_url}
+                          onChange={(e) => setDrafts({ ...drafts, [pt.id]: { ...draft, map_url: e.target.value } })}
                         />
                       </td>
                       <td>
