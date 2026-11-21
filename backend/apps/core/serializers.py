@@ -17,6 +17,7 @@ from .models import (
     PaymentMethod,
     Passenger,
     RentalBooking,
+    RentalZone,
     Route,
     Seat,
     SystemSetting,
@@ -830,8 +831,23 @@ class ParcelSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class RentalZoneSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RentalZone
+        fields = ["id", "name", "active", "position"]
+
+
+# Champs exigés pour toute nouvelle demande de location (mêmes libellés sur le site et dans l'application).
+RENTAL_REQUIRED_FIELDS = {
+    "renter_full_name": "Indiquez le nom et les prénoms.",
+    "cip_number": "Indiquez le numéro du CIP.",
+    "licence_number": "Indiquez le numéro du permis de conduire.",
+}
+
+
 class RentalBookingSerializer(serializers.ModelSerializer):
     vehicle_detail = PublicVehicleSerializer(source="vehicle", read_only=True)
+    zone_name = serializers.CharField(source="zone.name", read_only=True, default="")
     customer_detail = UserSerializer(source="customer", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
 
@@ -850,6 +866,19 @@ class RentalBookingSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
+        if self.instance is None:
+            errors = {}
+            for field, message in RENTAL_REQUIRED_FIELDS.items():
+                attrs[field] = str(attrs.get(field) or "").strip()
+                if not attrs[field]:
+                    errors[field] = message
+            zone = attrs.get("zone")
+            if zone is None:
+                errors["zone"] = "Choisissez la zone de circulation du véhicule."
+            elif not zone.active:
+                errors["zone"] = "Cette zone de circulation n'est plus proposée."
+            if errors:
+                raise serializers.ValidationError(errors)
         # Nouvelle demande : le début ne peut pas être déjà passé.
         if self.instance is None and attrs.get("starts_at") and attrs["starts_at"] <= timezone.now():
             raise serializers.ValidationError({"starts_at": "Le début de la location doit être dans le futur."})

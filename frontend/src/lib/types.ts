@@ -259,6 +259,11 @@ export interface RentalBooking {
   deposit_amount?: string | null;
   customer_detail?: User;
   created_at?: string;
+  renter_full_name?: string;
+  cip_number?: string;
+  licence_number?: string;
+  zone?: number | null;
+  zone_name?: string;
 }
 
 export interface PaymentMethod {

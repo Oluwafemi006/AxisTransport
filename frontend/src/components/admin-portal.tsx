@@ -143,7 +143,7 @@ export function AdminPortal() {
           {tab === "billets" && <TicketsPanel settings={settings} onChanged={load} />}
           {tab === "points" && <BoardingPointsPanel locations={locations} onChanged={load} />}
           {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
-          {tab === "locations" && <RentalPanel />}
+          {tab === "locations" && <><RentalPanel /><RentalZonesPanel /></>}
           {tab === "flotte" && <FleetPanel locations={locations} vehicles={vehicles} onChanged={load} />}
           {tab === "tarifs" && <PricingPanel routes={routes} fares={fares} flags={flags} payments={payments} settings={settings} onChanged={load} />}
           {tab === "villes" && <LinePanel locations={locations} onChanged={load} />}
@@ -1529,9 +1529,10 @@ function RentalPanel() {
                     <StatusBadge tone={rental.status === "CANCELLED" ? "grey" : rental.status === "COMPLETED" ? "green" : "blue"}>{rental.status_display}</StatusBadge>
                   </div>
                   <p className="mt-1 text-slate-500">
-                    Du {formatDate(rental.starts_at)} au {formatDate(rental.ends_at)}{rental.with_driver ? " · avec chauffeur" : ""}
+                    Du {formatDate(rental.starts_at)} au {formatDate(rental.ends_at)}{rental.with_driver ? " · avec chauffeur" : ""}{rental.zone_name ? ` · zone : ${rental.zone_name}` : ""}
                     {rental.customer_detail ? ` · ${[rental.customer_detail.first_name, rental.customer_detail.last_name].filter(Boolean).join(" ") || rental.customer_detail.username}${rental.customer_detail.phone ? ` · ${rental.customer_detail.phone}` : ""}` : ""}
                   </p>
+                  {rental.renter_full_name && <p className="mt-1 break-words">Conducteur : {rental.renter_full_name} · CIP {rental.cip_number || "—"} · permis {rental.licence_number || "—"}</p>}
                   {open && (
                     <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
                       <label className="block"><span className="field-label">Montant (FCFA)</span><input className="field" inputMode="numeric" value={draft.total} placeholder="À renseigner" onChange={(e) => setAmounts({ ...amounts, [rental.id]: { ...draft, total: e.target.value } })} /></label>
@@ -1632,6 +1633,59 @@ function rentalPayload(form: RentalForm) {
     driver_available: form.driver_available || form.driver_required, driver_required: form.driver_required,
     brand: form.brand, model_name: form.model_name, transmission: form.transmission, fuel: form.fuel,
   };
+}
+
+// Zones de circulation proposées aux clients : saisies ici, jamais dans le code. Une zone utilisée se désactive, ne se supprime pas.
+function RentalZonesPanel() {
+  const feedback = useActionFeedback();
+  const [zones, setZones] = useState<Array<{ id: number; name: string; active: boolean; position: number }> | null>(null);
+  const [name, setName] = useState("");
+  const load = useCallback(async () => {
+    try { setZones(await apiList("/rental-zones/?all=true")); }
+    catch (reason) { feedback.failure(reason, "Les zones n’ont pas pu être chargées."); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function add(event: FormEvent) {
+    event.preventDefault();
+    if (!name.trim()) return;
+    try {
+      await apiFetch("/rental-zones/", { method: "POST", body: JSON.stringify({ name: name.trim(), position: zones?.length ?? 0 }) });
+      setName("");
+      feedback.success("Zone ajoutée.");
+      await load();
+    } catch (reason) { feedback.failure(reason, "La zone n’a pas été ajoutée."); }
+  }
+
+  async function toggle(zone: { id: number; name: string; active: boolean }) {
+    try {
+      await apiFetch(`/rental-zones/${zone.id}/`, { method: "PATCH", body: JSON.stringify({ active: !zone.active }) });
+      feedback.success(`Zone ${zone.name} ${zone.active ? "désactivée" : "réactivée"}.`);
+      await load();
+    } catch (reason) { feedback.failure(reason, "La zone n’a pas été modifiée."); }
+  }
+
+  return (
+    <section className="card mt-5">
+      <SectionHeading eyebrow="Choix obligatoire dans chaque demande" title="Zones de circulation" />
+      <form onSubmit={add} className="mb-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+        <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nom de la zone" aria-label="Nom de la zone" />
+        <button className="primary-button" disabled={!name.trim()}>Ajouter</button>
+      </form>
+      {zones === null ? <Loading /> : zones.length === 0 ? <EmptyState title="Aucune zone" text="Tant qu’aucune zone n’est saisie, les clients ne peuvent pas envoyer de demande de location." /> : (
+        <ul className="space-y-2">
+          {zones.map((zone) => (
+            <li key={zone.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm">
+              <span className="min-w-0 flex-1 break-words font-semibold">{zone.name}</span>
+              <StatusBadge tone={zone.active ? "green" : "grey"}>{zone.active ? "Proposée" : "Désactivée"}</StatusBadge>
+              <button type="button" className="secondary-button" onClick={() => void toggle(zone)}>{zone.active ? "Désactiver" : "Réactiver"}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 function RentalFields({ form, onChange }: { form: RentalForm; onChange: (patch: Partial<RentalForm>) => void }) {

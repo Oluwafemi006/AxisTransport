@@ -324,6 +324,11 @@ class ApiClient {
     return _list('/client/locations/', (json) => Place.fromJson(json));
   }
 
+  /// Zones de circulation actives (liste publique gérée dans /admin).
+  Future<List<RentalZone>> rentalZones() {
+    return _list('/rental-zones/', (json) => RentalZone.fromJson(json));
+  }
+
   Future<List<Vehicle>> rentalVehicles() {
     return _list('/client/vehicles/', (json) => Vehicle.fromJson(json));
   }
@@ -395,6 +400,10 @@ class ApiClient {
     required DateTime startsAt,
     required DateTime endsAt,
     required bool withDriver,
+    required String renterFullName,
+    required String cipNumber,
+    required String licenceNumber,
+    required int zone,
   }) async {
     final payload = await _request<Map<String, dynamic>>(
       '/client/rentals/',
@@ -403,6 +412,10 @@ class ApiClient {
         'starts_at': startsAt.toUtc().toIso8601String(),
         'ends_at': endsAt.toUtc().toIso8601String(),
         'with_driver': withDriver,
+        'renter_full_name': renterFullName.trim(),
+        'cip_number': cipNumber.trim(),
+        'licence_number': licenceNumber.trim(),
+        'zone': zone,
       },
       auth: true,
     );

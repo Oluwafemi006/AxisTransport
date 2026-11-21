@@ -95,11 +95,19 @@ class _Phase5FakeApi extends ApiClient {
   Future<List<RentalBooking>> rentals() async => [];
 
   @override
+  Future<List<RentalZone>> rentalZones() async =>
+      const [RentalZone(id: 1, name: 'Zone TEST')];
+
+  @override
   Future<RentalBooking> createRental({
     required int vehicle,
     required DateTime startsAt,
     required DateTime endsAt,
     required bool withDriver,
+    required String renterFullName,
+    required String cipNumber,
+    required String licenceNumber,
+    required int zone,
   }) async {
     lastCreatedVehicleId = vehicle;
     lastCreatedWithDriver = withDriver;

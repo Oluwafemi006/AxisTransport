@@ -1072,6 +1072,20 @@ class ParcelStatusHistory(models.Model):
         ordering = ["changed_at"]
 
 
+class RentalZone(TimeStampedModel):
+    """Zone de circulation proposée pour une location ; la liste est saisie dans /admin, jamais dans le code."""
+
+    name = models.CharField(max_length=120, unique=True)
+    active = models.BooleanField(default=True)
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["position", "name"]
+
+    def __str__(self):
+        return self.name
+
+
 class RentalBooking(TimeStampedModel):
     class Status(models.TextChoices):
         REQUESTED = "REQUESTED", "Demandée"
@@ -1086,6 +1100,12 @@ class RentalBooking(TimeStampedModel):
     starts_at = models.DateTimeField()
     ends_at = models.DateTimeField()
     with_driver = models.BooleanField(default=False)
+    # Saisis à la demande (obligatoires pour une nouvelle demande, vides pour les anciennes) ;
+    # effacés à la suppression du compte (account_deletion.py).
+    renter_full_name = models.CharField(max_length=160, blank=True, default="")
+    cip_number = models.CharField(max_length=40, blank=True, default="")
+    licence_number = models.CharField(max_length=40, blank=True, default="")
+    zone = models.ForeignKey(RentalZone, on_delete=models.PROTECT, null=True, blank=True, related_name="rentals")
     identity_document = models.FileField(upload_to="rental-documents/identity/", null=True, blank=True)
     driving_licence = models.FileField(upload_to="rental-documents/licence/", null=True, blank=True)
     deposit_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)

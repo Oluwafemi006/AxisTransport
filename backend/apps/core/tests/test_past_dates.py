@@ -8,7 +8,7 @@ from rest_framework.test import APITestCase
 from apps.core.models import Booking, PaymentMethod, RentalBooking, Ticket, Trip, User, Vehicle
 from apps.core.services import DEPARTED_MESSAGE, reserve_booking, validate_ticket
 
-from .factories import build_operational_context
+from .factories import build_operational_context, rental_identity
 
 
 class DepartedTripTests(APITestCase):
@@ -136,7 +136,7 @@ class PastRentalStartTests(APITestCase):
     def ask(self, starts_at):
         return self.client.post(
             "/api/v1/client/rentals/",
-            {"vehicle": self.vehicle.pk, "starts_at": starts_at.isoformat(), "ends_at": (starts_at + timedelta(days=2)).isoformat()},
+            {"vehicle": self.vehicle.pk, "starts_at": starts_at.isoformat(), "ends_at": (starts_at + timedelta(days=2)).isoformat(), **rental_identity()},
             format="json",
         )
 

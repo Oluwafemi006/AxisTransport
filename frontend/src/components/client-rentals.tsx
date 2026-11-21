@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { apiFetch, formatDate, money } from "@/lib/api";
-import { beninDateKey, beninDateTimeToIso, rentalDailyRate, rentalDays, rentalFormulas, rentalPeriodError, rentalStatusTone } from "@/lib/portal-rules";
+import { beninDateKey, beninDateTimeToIso, rentalDailyRate, rentalDays, rentalFormulas, rentalPeriodError, rentalIdentityError, rentalStatusTone, type RentalIdentity } from "@/lib/portal-rules";
 import type { RentalBooking, User, Vehicle } from "@/lib/types";
 import { CarIcon } from "./icons";
 import { LoginCard } from "./login-card";
+import { RentalIdentityFields, emptyRentalIdentity } from "./rental-identity-fields";
 
 // Location de véhicules : même parcours que l'application (mobile-flutter/lib/features/rentals/rentals_screen.dart).
 // Tarifs, formules et disponibilité viennent de la Flotte (serveur). Le site ne calcule aucun montant :
@@ -135,6 +136,7 @@ function RentalRequest({ vehicle, user, onAuthenticated, onBack, onSent }: {
   const [endsAt, setEndsAt] = useState(initial.end);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  const [identity, setIdentity] = useState<RentalIdentity>(() => ({ ...emptyRentalIdentity, renter_full_name: [user?.first_name, user?.last_name].filter(Boolean).join(" ") }));
   const today = beninDateKey();
   const periodError = rentalPeriodError(startsAt, endsAt, today);
   const days = rentalDays(startsAt, endsAt);
@@ -146,11 +148,13 @@ function RentalRequest({ vehicle, user, onAuthenticated, onBack, onSent }: {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (periodError) { setError(periodError); return; }
+    const missing = rentalIdentityError(identity);
+    if (missing) { setError(missing); return; }
     setSending(true); setError("");
     try {
       const rental = await apiFetch<RentalBooking>("/client/rentals/", {
         method: "POST",
-        body: JSON.stringify({ vehicle: vehicle.id, starts_at: beninDateTimeToIso(startsAt), ends_at: beninDateTimeToIso(endsAt), with_driver: withDriver }),
+        body: JSON.stringify({ vehicle: vehicle.id, starts_at: beninDateTimeToIso(startsAt), ends_at: beninDateTimeToIso(endsAt), with_driver: withDriver, ...identity, zone: Number(identity.zone) }),
       });
       await onSent(`Demande ${rental.reference} envoyée (${rental.status_display}).`);
     } catch (reason) {
@@ -197,6 +201,9 @@ function RentalRequest({ vehicle, user, onAuthenticated, onBack, onSent }: {
           </div>
           <p style={{ fontSize: "12px", color: "var(--mute)", marginTop: "6px" }}>Heure du Bénin.</p>
           {periodError && <p className="rental-error">{periodError}</p>}
+
+          <p className="rental-label">CONDUCTEUR</p>
+          <RentalIdentityFields value={identity} onChange={(next) => { setIdentity(next); setError(""); }} />
 
           <p className="rental-info">Aucun paiement maintenant. L’agence vous appelle pour confirmer, puis vous réglez à la remise du véhicule.</p>
 

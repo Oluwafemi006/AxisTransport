@@ -14,7 +14,7 @@ from rest_framework.test import APITestCase
 from apps.core import photo_storage
 from apps.core.models import RentalBooking, User, Vehicle
 
-from .factories import build_operational_context
+from .factories import build_operational_context, rental_identity
 
 VEHICLES = "/api/v1/vehicles/"
 PUBLIC = "/api/v1/client/vehicles/"
@@ -111,7 +111,7 @@ class VehicleFleetTests(APITestCase):
         self.client.force_authenticate(self.context["client"])
         start = timezone.now() + timedelta(days=3)
         return self.client.post(RENTALS, {
-            "vehicle": vehicle.pk, "starts_at": start.isoformat(), "ends_at": (start + timedelta(days=1)).isoformat(), **extra,
+            "vehicle": vehicle.pk, "starts_at": start.isoformat(), "ends_at": (start + timedelta(days=1)).isoformat(), **rental_identity(), **extra,
         }, format="json")
 
     def test_rental_request_accepted_only_for_an_active_unarchived_vehicle(self):

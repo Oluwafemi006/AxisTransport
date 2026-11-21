@@ -435,3 +435,25 @@ export function periodParams(period: ListPeriod, status = ""): string | null {
   const text = params.toString();
   return text ? `?${text}` : "";
 }
+
+// Demande de location : champs obligatoires, mêmes libellés et messages que le serveur et l'application.
+export type RentalIdentity = { renter_full_name: string; cip_number: string; licence_number: string; zone: string };
+export const RENTAL_IDENTITY_LABELS: Record<keyof RentalIdentity, string> = {
+  renter_full_name: "Nom et prénoms",
+  cip_number: "Numéro du CIP",
+  licence_number: "Numéro du permis de conduire",
+  zone: "Zone de circulation",
+};
+const RENTAL_IDENTITY_MESSAGES: Record<keyof RentalIdentity, string> = {
+  renter_full_name: "Indiquez le nom et les prénoms.",
+  cip_number: "Indiquez le numéro du CIP.",
+  licence_number: "Indiquez le numéro du permis de conduire.",
+  zone: "Choisissez la zone de circulation du véhicule.",
+};
+
+export function rentalIdentityError(values: RentalIdentity): string | null {
+  for (const key of Object.keys(RENTAL_IDENTITY_MESSAGES) as Array<keyof RentalIdentity>) {
+    if (!String(values[key] || "").trim()) return RENTAL_IDENTITY_MESSAGES[key];
+  }
+  return null;
+}

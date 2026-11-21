@@ -77,6 +77,7 @@ def delete_client_account(user, password):
         sender_name=ANONYMOUS_NAME, sender_phone="", recipient_name=ANONYMOUS_NAME, recipient_phone="",
         pickup_recipient_identity="",
     )
+    RentalBooking.objects.filter(customer=user).update(renter_full_name=ANONYMOUS_NAME, cip_number="", licence_number="")
     PasswordResetCode.objects.filter(user=user).delete()
     PasswordResetLink.objects.filter(user=user).delete()
     user.username = f"supprime-{user.pk}-{uuid.uuid4().hex[:8]}"

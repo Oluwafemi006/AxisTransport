@@ -371,3 +371,13 @@ test("filtre des listes admin : jour par défaut, période, tous les jours", asy
   assert.equal(rules.periodParams({ mode: "period", day: "", start: "2026-11-20", end: "2026-11-01" }), null);
   assert.equal(rules.periodParams({ ...today, day: "" }), null);
 });
+
+test("location : champs obligatoires, mêmes messages que le serveur", async () => {
+  const rules = await import(pathToFileURL(compiled).href);
+  const full = { renter_full_name: "Locataire TEST", cip_number: "CIP-TEST", licence_number: "PERMIS-TEST", zone: "1" };
+  assert.equal(rules.rentalIdentityError(full), null);
+  assert.equal(rules.rentalIdentityError({ ...full, renter_full_name: "  " }), "Indiquez le nom et les prénoms.");
+  assert.equal(rules.rentalIdentityError({ ...full, cip_number: "" }), "Indiquez le numéro du CIP.");
+  assert.equal(rules.rentalIdentityError({ ...full, licence_number: "" }), "Indiquez le numéro du permis de conduire.");
+  assert.equal(rules.rentalIdentityError({ ...full, zone: "" }), "Choisissez la zone de circulation du véhicule.");
+});

@@ -1080,6 +1080,17 @@ class Parcel {
   }
 }
 
+/// Zone de circulation proposée pour une location (saisie dans /admin).
+class RentalZone {
+  const RentalZone({required this.id, required this.name});
+
+  final int id;
+  final String name;
+
+  factory RentalZone.fromJson(Map<String, dynamic> json) =>
+      RentalZone(id: json['id'] as int, name: (json['name'] ?? '').toString());
+}
+
 class RentalBooking {
   const RentalBooking({
     required this.id,

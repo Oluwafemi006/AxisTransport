@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CounterPanel } from "./admin-portal";
 import { TicketFinder } from "./ticket-finder";
+import { CounterRentals } from "./counter-rentals";
 import { SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
 import { SessionExpiredDialog } from "./session-expired";
@@ -65,6 +66,7 @@ export function CounterPortal() {
       {user && <TicketFinder />}
       {user && <SoldToday />}
       {user && <ParcelPrices />}
+      {user && <CounterRentals />}
     </StaffShell>
     </>
   );

@@ -75,7 +75,7 @@ ${contactBlock(contact)}
 <li><strong>Compte client</strong> : identifiant, prénom, nom, téléphone, e-mail et mot de passe (gardé sous forme chiffrée, jamais lisible).</li>
 <li><strong>Billets</strong> : nom et téléphone de chaque passager, téléphone et e-mail de contact, trajet, siège, points de montée et de descente, montant.</li>
 <li><strong>Colis</strong> : nom et téléphone de l’expéditeur et du destinataire, description du colis, photos du colis prises par le personnel, identité de la personne qui le retire.</li>
-<li><strong>Locations</strong> : véhicule, dates, option chauffeur, montant et caution fixés par l’agence.</li>
+<li><strong>Locations</strong> : véhicule, dates, option chauffeur, nom et prénoms du conducteur, numéros du CIP et du permis de conduire, zone de circulation, montant et caution fixés par l’agence.</li>
 <li><strong>Paiements</strong> : montant, numéro de la transaction Mobile Money et statut du paiement.</li>
 <li><strong>Contrôle des billets</strong> : heure du contrôle et agent qui l’a fait.</li>
 <li><strong>Historique</strong> : les modifications faites sur un compte, une location ou un billet sont enregistrées, avec leur date et leur auteur.</li>
@@ -150,7 +150,7 @@ export function accountDeletionPage(contact: PrivacyContact): string {
 <ul>
 <li>Les billets (trajet, siège, date, montant, statut) et les réservations.</li>
 <li>Les paiements (montant, date, numéro de transaction Mobile Money).</li>
-<li>Les colis et les locations déjà enregistrés, sans nom ni téléphone.</li>
+<li>Les colis et les locations déjà enregistrés, sans nom, téléphone ni numéro de CIP ou de permis.</li>
 </ul>
 <p>Ces données ne permettent plus de vous identifier par votre nom ou vos coordonnées. Elles sont gardées pour la comptabilité de l’agence.</p>
 <p>Limite : les notes libres écrites par le personnel dans l’historique d’un billet ou d’un colis ne sont pas modifiées.</p>

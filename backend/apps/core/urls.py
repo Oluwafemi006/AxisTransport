@@ -23,6 +23,7 @@ from .views import (
     SegmentFareViewSet,
     PaymentMethodViewSet,
     RentalBookingViewSet,
+    RentalZoneViewSet,
     RouteViewSet,
     SeatViewSet,
     SystemSettingViewSet,
@@ -54,6 +55,7 @@ router.register("tickets", TicketViewSet)
 router.register("bookings", BookingViewSet)
 router.register("parcels", ParcelViewSet)
 router.register("rentals", RentalBookingViewSet)
+router.register("rental-zones", RentalZoneViewSet)
 router.register("payment-methods", PaymentMethodViewSet)
 router.register("payment-incidents", PaymentIncidentViewSet)
 router.register("segment-fares", SegmentFareViewSet)

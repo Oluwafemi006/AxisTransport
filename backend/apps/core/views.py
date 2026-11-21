@@ -47,6 +47,7 @@ from .models import (
     PaymentAttempt,
     PaymentMethod,
     RentalBooking,
+    RentalZone,
     Route,
     Seat,
     SystemSetting,
@@ -98,6 +99,7 @@ from .serializers import (
     PublicTicketDetailSerializer,
     PublicVehicleSerializer,
     RentalBookingSerializer,
+    RentalZoneSerializer,
     RouteSerializer,
     SeatSerializer,
     SystemSettingSerializer,
@@ -2051,6 +2053,26 @@ class ParcelViewSet(viewsets.ModelViewSet):
         return Response(ParcelSerializer(parcel).data)
 
 
+class RentalZoneViewSet(viewsets.ModelViewSet):
+    """Zones de circulation : lues par tous (actives seulement), gérées par l'admin ; jamais supprimées si utilisées."""
+
+    queryset = RentalZone.objects.all()
+    serializer_class = RentalZoneSerializer
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def get_permissions(self):
+        if self.action in {"list", "retrieve"}:
+            return [AllowAny()]
+        return [IsAxisAdmin()]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user.is_authenticated and user.role == User.Role.ADMIN and self.request.query_params.get("all") == "true":
+            return queryset
+        return queryset.filter(active=True)
+
+
 class RentalBookingViewSet(viewsets.ModelViewSet):
     """Demandes de location : le client demande, l'admin gère (« manage », journalisé) ; jamais de suppression."""
 
@@ -2083,15 +2105,40 @@ class RentalBookingViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == "create":
             return [IsClient()]
-        if self.action in {"update", "partial_update", "destroy"}:
+        if self.action in {"update", "partial_update", "destroy", "manage", "changes"}:
+            # Avant : « manage » et « changes » retombaient sur « connecté » (un client gérait sa propre location).
             return [IsAxisAdmin()]
+        if self.action == "counter":
+            return [IsCounterOrAdmin()]
         return [IsAuthenticated()]
+
+    @action(detail=False, methods=["post"], permission_classes=[IsCounterOrAdmin])
+    def counter(self, request):
+        """
+        Demande enregistrée au guichet pour un client présent : rattachée à son compte (retrouvé par téléphone),
+        mêmes champs obligatoires que la demande en ligne ; journalisée avec l'agent. Ni véhicule ni prix modifiés.
+        """
+        phone = normalize_benin_phone(request.data.get("customer_phone"))
+        if not phone:
+            raise ValidationError({"customer_phone": "Numéro du client invalide : 10 chiffres commençant par 01."})
+        matches = [user for user in accounts_with_phone(phone) if user.role == User.Role.CLIENT and user.is_active]
+        if len(matches) != 1:
+            raise ValidationError({"customer_phone": "Aucun compte client unique pour ce numéro : le client s'inscrit d'abord avec son téléphone."})
+        data = {key: request.data.get(key) for key in (
+            "vehicle", "starts_at", "ends_at", "with_driver", "renter_full_name", "cip_number", "licence_number", "zone",
+        ) if key in request.data}
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        rental = serializer.save(customer=matches[0])
+        RentalChange.objects.create(rental=rental, actor=request.user, detail="Demande enregistrée au guichet pour un client présent.")
+        return Response(self.get_serializer(rental).data, status=status.HTTP_201_CREATED)
 
     def get_queryset(self):
         queryset = super().get_queryset()
         if self.request.user.role == User.Role.CLIENT:
             return queryset.filter(customer=self.request.user)
-        if self.request.user.role == User.Role.ADMIN:
+        # Guichet : consultation seulement (la gestion « manage » et les montants restent à l'admin).
+        if self.request.user.role in {User.Role.ADMIN, User.Role.COUNTER}:
             if self.action == "list":
                 bounds = _list_period(self.request)
                 if bounds:
