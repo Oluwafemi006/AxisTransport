@@ -128,7 +128,7 @@ export function ActivationCard({ token }: { token?: string | null }) {
               Pour la vente de billets au guichet et le contrôle des passagers sur le terrain, installez l’application mobile Axis Transport.
             </p>
             <a
-              href="https://play.google.com/store/apps/details?id=com.axis.transport"
+              href="https://play.google.com/store/apps/details?id=com.axistransport.axis_transport_flutter"
               target="_blank"
               rel="noopener noreferrer"
               className="mt-3 inline-block text-xs font-semibold text-blue-600 hover:underline"
