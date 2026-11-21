@@ -14,6 +14,21 @@ const segmentFareMissingCode = 'segment_fare_missing';
 const segmentFareMissingMessage =
     "Tarif non disponible pour ce trajet. Choisissez un autre trajet ou contactez l'agence.";
 
+/// En-tête qui identifie l'application auprès du serveur (le site ne l'envoie pas).
+const mobileAppHeader = 'X-Axis-Client';
+const mobileAppHeaderValue = 'app-mobile';
+
+/// Refus du serveur : un compte administrateur ne se connecte pas dans l'application.
+const adminNotAllowedCode = 'admin_not_allowed_in_app';
+const adminNotAllowedMessage =
+    'Un compte administrateur ne se connecte pas dans l\'application : utilisez le portail /admin du site.';
+
+bool isAdminRefusal(Object error) {
+  if (error is! ApiException) return false;
+  final data = error.data;
+  return data is Map && data['code'] == adminNotAllowedCode;
+}
+
 class ApiException implements Exception {
   ApiException(this.message, {this.statusCode, this.data});
   final String message;
@@ -57,7 +72,10 @@ class ApiClient {
             baseUrl: AppConfig.apiUrl,
             connectTimeout: const Duration(seconds: 12),
             receiveTimeout: const Duration(seconds: 20),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              mobileAppHeader: mobileAppHeaderValue,
+            },
           ),
         );
     _dio.interceptors.add(
@@ -715,6 +733,9 @@ class ApiClient {
   /// Appelé quand le renouvellement de la session échoue (jeton expiré ou fermé) : l'interface prévient l'utilisateur.
   void Function()? onSessionLost;
 
+  /// Vrai si la dernière session perdue l'a été parce que le serveur refuse un compte administrateur.
+  bool lastLossWasAdminRefusal = false;
+
   Future<bool> _refreshSession() async {
     if (_refreshLock != null) return _refreshLock!.future;
     final lock = Completer<bool>();
@@ -736,7 +757,8 @@ class ApiClient {
       );
       lock.complete(true);
       return true;
-    } catch (_) {
+    } catch (error) {
+      lastLossWasAdminRefusal = isAdminRefusal(error);
       await logout();
       lock.complete(false);
       onSessionLost?.call();

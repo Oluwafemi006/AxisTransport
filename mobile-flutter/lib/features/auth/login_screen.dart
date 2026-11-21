@@ -1,3 +1,4 @@
+import '../../core/api_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -126,6 +127,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          if (ref.watch(sessionProvider).adminRefused) ...[
+                            Container(
+                              key: const Key('admin-refused-banner'),
+                              padding: const EdgeInsets.all(AxisSpacing.sm),
+                              margin: const EdgeInsets.only(bottom: AxisSpacing.sm),
+                              decoration: BoxDecoration(
+                                color: tokens.danger.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(AxisRadius.sm),
+                              ),
+                              child: Text(
+                                adminNotAllowedMessage,
+                                style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
                           if (_query(context)['expiree'] == '1') ...[
                             Container(
                               key: const Key('session-expired-banner'),

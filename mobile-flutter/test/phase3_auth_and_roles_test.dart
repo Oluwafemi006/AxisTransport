@@ -284,9 +284,12 @@ void main() {
 
     testWidgets('Connexion : validation champs obligatoires et gestion erreur API', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          theme: AxisTheme.light(),
-          home: const LoginScreen(),
+        ProviderScope(
+          overrides: [apiClientProvider.overrideWithValue(_MockApi())],
+          child: MaterialApp(
+            theme: AxisTheme.light(),
+            home: const LoginScreen(),
+          ),
         ),
       );
 

@@ -37,6 +37,7 @@ class User {
   bool get needsEmailReminder => isClient && !emailVerified;
 
   bool get isClient => role == 'CLIENT';
+  bool get isAdmin => role == 'ADMIN';
 
   /// Personnel Axis : guichet, contrôleur, administrateur (rôle renvoyé par le serveur).
   bool get isStaff => const {'COUNTER', 'CONTROLLER', 'ADMIN'}.contains(role);

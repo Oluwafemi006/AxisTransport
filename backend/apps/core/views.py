@@ -24,10 +24,10 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
-from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 
 from . import email_verification, password_reset, reporting
 from .phone import normalize_benin_phone
@@ -607,6 +607,34 @@ class FrenchThrottleMixin:
         raise TooManyAttempts(wait)
 
 
+# L'application mobile s'identifie par cet en-tête (api_client.dart) ; le site ne l'envoie jamais.
+MOBILE_APP_HEADER = "HTTP_X_AXIS_CLIENT"
+MOBILE_APP_VALUE = "app-mobile"
+ADMIN_IN_APP_MESSAGE = "Un compte administrateur ne se connecte pas dans l'application : utilisez le portail /admin du site."
+
+
+class AdminNotAllowedInApp(PermissionDenied):
+    default_detail = ADMIN_IN_APP_MESSAGE
+    default_code = "admin_not_allowed_in_app"
+
+
+def from_mobile_app(request):
+    return request is not None and request.META.get(MOBILE_APP_HEADER, "").strip().lower() == MOBILE_APP_VALUE
+
+
+def refuse_admin_in_app(request, user):
+    """Seul le rôle ADMIN est refusé, et seulement depuis l'application ; les autres rôles ne changent pas."""
+    if user is None or user.role != User.Role.ADMIN:
+        return
+    if from_mobile_app(request):
+        logger.info("Connexion ADMIN refusée depuis l'application (compte %s).", user.pk)
+        # Le code est dans le corps : l'application reconnaît ce refus et déconnecte avec ce message.
+        raise AdminNotAllowedInApp({"detail": ADMIN_IN_APP_MESSAGE, "code": AdminNotAllowedInApp.default_code})
+    # Mesure des anciennes versions de l'application (sans en-tête) : client HTTP de Dart.
+    if request is not None and request.META.get("HTTP_USER_AGENT", "").startswith("Dart/"):
+        logger.warning("Connexion ADMIN sans en-tête d'application mais client Dart (ancienne version ?) : compte %s.", user.pk)
+
+
 class AxisTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
     L'identifiant exact passe toujours en premier : les comptes existants (dont ceux de test du Play Store)
@@ -621,7 +649,26 @@ class AxisTokenObtainPairSerializer(TokenObtainPairSerializer):
                 matches = accounts_with_phone(phone)
                 if len(matches) == 1:
                     attrs[self.username_field] = matches[0].username
+        data = super().validate(attrs)
+        refuse_admin_in_app(self.context.get("request"), self.user)
+        return data
+
+
+class AxisTokenRefreshSerializer(TokenRefreshSerializer):
+    """Renouvellement : même refus pour un ADMIN dans l'application, vérifié avant toute rotation du jeton."""
+
+    def validate(self, attrs):
+        try:
+            user_id = RefreshToken(attrs["refresh"]).payload.get("user_id")
+        except TokenError:
+            user_id = None  # Jeton invalide : la réponse habituelle de simplejwt suit.
+        if user_id is not None:
+            refuse_admin_in_app(self.context.get("request"), User.objects.filter(pk=user_id).first())
         return super().validate(attrs)
+
+
+class AxisTokenRefreshView(TokenRefreshView):
+    serializer_class = AxisTokenRefreshSerializer
 
 
 class AxisTokenObtainPairView(FrenchThrottleMixin, TokenObtainPairView):

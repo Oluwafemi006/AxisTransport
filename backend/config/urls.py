@@ -2,11 +2,11 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
-from rest_framework_simplejwt.views import TokenRefreshView
 
 from apps.core.views import (
     AcceptStaffInvitationView,
     AxisTokenObtainPairView,
+    AxisTokenRefreshView,
     MeView,
     PasswordChangeView,
     EmailCodeSendView,
@@ -24,7 +24,7 @@ urlpatterns = [
 
     # ── Auth (partagée, utilisée par toutes les surfaces) ──────────────────
     path("api/v1/auth/token/", AxisTokenObtainPairView.as_view(), name="v1_token_obtain_pair"),
-    path("api/v1/auth/token/refresh/", TokenRefreshView.as_view(), name="v1_token_refresh"),
+    path("api/v1/auth/token/refresh/", AxisTokenRefreshView.as_view(), name="v1_token_refresh"),
     path("api/v1/auth/register/", RegisterView.as_view(), name="v1_register"),
     path("api/v1/auth/me/", MeView.as_view(), name="v1_me"),
     path("api/v1/auth/password/change/", PasswordChangeView.as_view(), name="v1_password_change"),
@@ -48,10 +48,10 @@ urlpatterns = [
     # NE PAS SUPPRIMER avant validation complète de la migration.
     # Ces routes seront dépréciées en Phase C (après basculement Flutter).
     path("api/v1/auth/token/", AxisTokenObtainPairView.as_view(), name="v1_token_obtain_pair_compat"),
-    path("api/v1/auth/token/refresh/", TokenRefreshView.as_view(), name="v1_token_refresh_compat"),
+    path("api/v1/auth/token/refresh/", AxisTokenRefreshView.as_view(), name="v1_token_refresh_compat"),
     path("api/v1/", include("apps.core.urls")),
     path("api/auth/token/", AxisTokenObtainPairView.as_view(), name="token_obtain_pair"),
-    path("api/auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("api/auth/token/refresh/", AxisTokenRefreshView.as_view(), name="token_refresh"),
     path("api/", include("apps.core.urls")),
 ]
 

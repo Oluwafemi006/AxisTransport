@@ -15,7 +15,8 @@ class SessionRouterNotifier extends ChangeNotifier {
     if (_session.user?.id != newSession.user?.id ||
         _session.user?.role != newSession.user?.role ||
         _session.ready != newSession.ready ||
-        _session.expired != newSession.expired) {
+        _session.expired != newSession.expired ||
+        _session.adminRefused != newSession.adminRefused) {
       _session = newSession;
       notifyListeners();
     }
@@ -25,7 +26,12 @@ class SessionRouterNotifier extends ChangeNotifier {
 final sessionRouterNotifier = SessionRouterNotifier();
 
 class SessionState {
-  const SessionState({this.user, this.ready = false, this.expired = false});
+  const SessionState({
+    this.user,
+    this.ready = false,
+    this.expired = false,
+    this.adminRefused = false,
+  });
 
   final User? user;
   final bool ready;
@@ -33,11 +39,15 @@ class SessionState {
   /// Vrai quand la session vient d'expirer pendant l'utilisation (et non à l'ouverture de l'application).
   final bool expired;
 
+  /// Vrai quand un compte administrateur vient d'être refusé : la connexion affiche le message.
+  final bool adminRefused;
+
   SessionState copyWith({User? user, bool? ready, bool clearUser = false}) {
     return SessionState(
       user: clearUser ? null : user ?? this.user,
       ready: ready ?? this.ready,
       expired: expired,
+      adminRefused: adminRefused,
     );
   }
 }
@@ -58,6 +68,13 @@ class SessionNotifier extends Notifier<SessionState> {
     try {
       // L'interface affichée dépend uniquement du rôle renvoyé par le serveur.
       final user = await _api.me();
+      // Un administrateur n'utilise jamais l'application (le serveur refuse aussi sa connexion).
+      if (user.isAdmin) {
+        await _api.logout();
+        state = const SessionState(ready: true, adminRefused: true);
+        sessionRouterNotifier.update(state);
+        return;
+      }
       if (!user.isClient && !user.isStaff) {
         await _api.logout();
         state = const SessionState(ready: true);
@@ -87,6 +104,12 @@ class SessionNotifier extends Notifier<SessionState> {
 
   void _sessionLost() {
     if (state.user == null) return;
+    if (_api.lastLossWasAdminRefusal) {
+      _api.lastLossWasAdminRefusal = false;
+      state = const SessionState(ready: true, adminRefused: true);
+      sessionRouterNotifier.update(state);
+      return;
+    }
     state = const SessionState(ready: true, expired: true);
     sessionRouterNotifier.update(state);
   }
@@ -94,6 +117,7 @@ class SessionNotifier extends Notifier<SessionState> {
   Future<void> login(String username, String password) async {
     await _api.login(username, password);
     await restore();
+    if (state.adminRefused) throw ApiException(adminNotAllowedMessage);
     if (state.user == null) {
       throw ApiException('Ce compte ne peut pas utiliser l\'application.');
     }
