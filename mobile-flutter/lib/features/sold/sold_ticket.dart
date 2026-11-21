@@ -11,6 +11,7 @@ class SoldTicket {
     required this.soldAt,
     required this.soldByName,
     required this.publicUrl,
+    this.whatsappNumber = '',
   });
 
   factory SoldTicket.fromJson(Map<String, dynamic> json) => SoldTicket(
@@ -24,6 +25,7 @@ class SoldTicket {
     soldAt: DateTime.tryParse(json['sold_at'] as String? ?? '')?.toLocal(),
     soldByName: json['sold_by_name'] as String? ?? '',
     publicUrl: json['public_url'] as String? ?? '',
+    whatsappNumber: json['whatsapp_number'] as String? ?? '',
   );
 
   final String reference;
@@ -37,18 +39,27 @@ class SoldTicket {
   final String soldByName;
   final String publicUrl;
 
+  /// Numéro WhatsApp calculé par le serveur (phone.py), chiffres seuls avec indicatif ; vide si inconnu.
+  final String whatsappNumber;
+
   String get message {
     final link = publicUrl.isEmpty ? '' : ' : $publicUrl';
     return 'Bonjour $passengerName, voici votre billet AXIS Transport $reference$link';
   }
 }
 
-/// Lien WhatsApp du billet : texte prérempli. Numéro du passager seulement s'il est au format
-/// international (« + » ou « 00 ») ; sinon WhatsApp laisse l'agent choisir le contact (aucun indicatif deviné).
-Uri whatsappTicketUri(SoldTicket ticket) {
+/// Numéro de la discussion WhatsApp : celui du serveur, sinon le numéro du passager déjà au format
+/// international (« + » ou « 00 ») ; vide si aucun numéro n'est sûr (aucun indicatif deviné ici).
+String whatsappNumberOf(SoldTicket ticket) {
+  if (RegExp(r'^\d{8,15}$').hasMatch(ticket.whatsappNumber)) return ticket.whatsappNumber;
   final compact = ticket.passengerPhone.replaceAll(RegExp(r'[\s.\-()]'), '');
-  final match = RegExp(r'^(?:\+|00)(\d{1,15})$').firstMatch(compact);
-  final path = match == null ? '' : match.group(1)!;
+  final match = RegExp(r'^(?:\+|00)(\d{8,15})$').firstMatch(compact);
+  return match == null ? '' : match.group(1)!;
+}
+
+/// Lien WhatsApp du billet : discussion du client ouverte directement, message prérempli.
+Uri whatsappTicketUri(SoldTicket ticket) {
+  final path = whatsappNumberOf(ticket);
   return Uri.parse('https://wa.me/$path?text=${Uri.encodeComponent(ticket.message)}');
 }
 

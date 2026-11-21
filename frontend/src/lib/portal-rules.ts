@@ -82,11 +82,13 @@ export function whatsappHref(text: string | null | undefined): string | null {
   return match ? `https://wa.me/${match[1]}` : null;
 }
 
-// Envoi d'un billet par WhatsApp : message et lien du billet préremplis. Numéro du passager seulement s'il est
-// au format international ; sinon WhatsApp demande à l'agent de choisir le contact (aucun indicatif deviné).
-export function soldTicketWhatsappHref(ticket: { reference: string; passenger_name: string; passenger_phone: string }, link: string): string {
+// Envoi d'un billet par WhatsApp : message et lien du billet préremplis. Numéro calculé par le serveur
+// (`whatsapp_number`, phone.py) ; à défaut, numéro du passager déjà au format international ; sinon, repli :
+// WhatsApp demande à l'agent de choisir le contact (aucun indicatif deviné ici).
+export function soldTicketWhatsappHref(ticket: { reference: string; passenger_name: string; passenger_phone: string; whatsapp_number?: string | null }, link: string): string {
   const text = `Bonjour ${ticket.passenger_name}, voici votre billet AXIS Transport ${ticket.reference} : ${link}`;
-  const base = whatsappHref(ticket.passenger_phone) ?? "https://wa.me/";
+  const server = /^\d{8,15}$/.test(ticket.whatsapp_number ?? "") ? `https://wa.me/${ticket.whatsapp_number}` : null;
+  const base = server ?? whatsappHref(ticket.passenger_phone) ?? "https://wa.me/";
   return `${base}?text=${encodeURIComponent(text)}`;
 }
 

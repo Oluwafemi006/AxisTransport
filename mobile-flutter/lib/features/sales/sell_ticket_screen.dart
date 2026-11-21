@@ -201,6 +201,7 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
     soldAt: null,
     soldByName: '',
     publicUrl: ticket.publicUrl,
+    whatsappNumber: ticket.whatsappNumber,
   );
 
   Future<void> _share(SaleTicket ticket) async {
@@ -208,6 +209,11 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen>
   }
 
   Future<void> _sendWhatsapp(SaleTicket ticket) async {
+    // Aucun numéro connu : repli sur le partage du téléphone (choix du contact).
+    if (whatsappNumberOf(_sold(ticket)).isEmpty) {
+      await _share(ticket);
+      return;
+    }
     var opened = false;
     try {
       opened = await launchUrl(whatsappTicketUri(_sold(ticket)), mode: LaunchMode.externalApplication);

@@ -195,3 +195,30 @@ class CounterTicketSearchTests(APITestCase):
     def test_counter_cannot_cancel(self):
         response = self.client.post(f"/api/v1/tickets/{self.ticket.pk}/transition/", {"status": "CANCELLED"}, format="json")
         self.assertEqual(response.status_code, 403)
+
+
+class WhatsappNumberTests(SimpleTestCase):
+    def test_benin_numbers_and_international_only(self):
+        from apps.core.phone import whatsapp_number
+
+        self.assertEqual(whatsapp_number("01 00 00 00 09"), "2290100000009")
+        self.assertEqual(whatsapp_number("+229 01 00 00 00 09"), "2290100000009")
+        self.assertEqual(whatsapp_number("+33 6 00 00 00 09"), "33600000009")
+        self.assertEqual(whatsapp_number("0600000009"), None)  # aucun indicatif deviné
+        self.assertEqual(whatsapp_number("", "01 00 00 00 08"), "2290100000008")
+        self.assertIsNone(whatsapp_number("", None, "TEST"))
+
+
+class TicketWhatsappTests(APITestCase):
+    def test_ticket_exposes_the_number_from_passenger_then_client_account(self):
+        context = build_operational_context()
+        booking = make_booking(context, customer=context["client"], seats=1)
+        ticket = booking.tickets.get()
+        ticket.passenger_phone = "01 00 00 00 09"
+        ticket.save(update_fields=["passenger_phone"])
+        self.client.force_authenticate(context["admin"])
+        self.assertEqual(self.client.get(f"/api/v1/tickets/{ticket.pk}/").json()["whatsapp_number"], "2290100000009")
+        ticket.passenger_phone = ""
+        ticket.save(update_fields=["passenger_phone"])
+        User.objects.filter(pk=context["client"].pk).update(phone="0100000008")
+        self.assertEqual(self.client.get(f"/api/v1/tickets/{ticket.pk}/").json()["whatsapp_number"], "2290100000008")

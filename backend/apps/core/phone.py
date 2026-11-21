@@ -20,3 +20,20 @@ def normalize_benin_phone(value):
     if re.fullmatch(r"01\d{8}", text):
         return f"+229{text}"
     return None
+
+
+def whatsapp_number(*candidates):
+    """
+    Numéro pour un lien wa.me (chiffres seuls, indicatif compris) : premier numéro reconnu parmi les candidats.
+    Béninois : forme unique de normalize_benin_phone ; autre pays : seulement s'il est déjà écrit en international
+    (« + » ou « 00 »). Aucun indicatif n'est deviné ; None si aucun numéro n'est sûr.
+    """
+    for value in candidates:
+        benin = normalize_benin_phone(value)
+        if benin:
+            return benin[1:]
+        text = _SEPARATORS.sub("", str(value or "").strip())
+        match = re.fullmatch(r"(?:\+|00)(\d{8,15})", text)
+        if match:
+            return match.group(1)
+    return None

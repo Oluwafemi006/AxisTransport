@@ -190,7 +190,11 @@ class SaleTicket {
     this.alightingDisplay = '',
     this.printInfo,
     this.qrToken = '',
+    this.whatsappNumber = '',
   });
+
+  /// Numéro WhatsApp calculé par le serveur (passager ou compte client), chiffres seuls ; vide si inconnu.
+  final String whatsappNumber;
 
   /// Jeton lu par le scanner ; vide tant que le billet n'est pas émis.
   final String qrToken;
@@ -238,6 +242,7 @@ class SaleTicket {
       amount: _num(json['amount']),
       currency: json['currency'] as String? ?? 'XOF',
       publicUrl: json['public_url'] as String? ?? '',
+      whatsappNumber: json['whatsapp_number'] as String? ?? '',
       boardingDisplay: bDisp.isNotEmpty ? bDisp : (info?.boardingDisplay.trim() ?? ''),
       alightingDisplay: aDisp.isNotEmpty ? aDisp : (info?.alightingDisplay.trim() ?? ''),
       printInfo: info,

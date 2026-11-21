@@ -6,6 +6,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 from .password_reset import change_password
+from .phone import whatsapp_number
 from .models import (
     BoardingPoint,
     Booking,
@@ -553,6 +554,7 @@ class TicketSerializer(serializers.ModelSerializer):
     status_history = TicketStatusHistorySerializer(many=True, read_only=True)
     controls = TicketControlSerializer(many=True, read_only=True)
     public_url = serializers.SerializerMethodField()
+    whatsapp_number = serializers.SerializerMethodField()
     print_info = serializers.SerializerMethodField()
     origin_detail = LocationSerializer(source="boarding_location", read_only=True)
     destination_detail = LocationSerializer(source="alighting_location", read_only=True)
@@ -574,6 +576,7 @@ class TicketSerializer(serializers.ModelSerializer):
             "print_info",
             "booking",
             "public_url",
+            "whatsapp_number",
             "trip",
             "trip_detail",
             "origin",
@@ -614,6 +617,9 @@ class TicketSerializer(serializers.ModelSerializer):
 
     def get_public_url(self, obj):
         return public_ticket_url(obj)
+
+    def get_whatsapp_number(self, obj):
+        return ticket_whatsapp_number(obj)
 
     def get_print_info(self, obj):
         return ticket_print_info(obj)
@@ -1162,3 +1168,11 @@ class AgencySettingChangeSerializer(serializers.ModelSerializer):
 
     def get_changed_by_name(self, obj):
         return _display_name(obj.changed_by) or "—"
+
+
+def ticket_whatsapp_number(ticket):
+    """Numéro WhatsApp du billet : téléphone du passager, sinon celui du compte client qui l'a acheté."""
+    customer = ticket.customer or getattr(ticket.booking, "customer", None)
+    # Jamais le téléphone d'un agent : seul un compte client compte (une vente au guichet n'a pas de client).
+    customer_phone = customer.phone if customer is not None and customer.role == User.Role.CLIENT else ""
+    return whatsapp_number(ticket.passenger_phone, customer_phone)

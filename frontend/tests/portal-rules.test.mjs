@@ -381,3 +381,11 @@ test("location : champs obligatoires, mêmes messages que le serveur", async () 
   assert.equal(rules.rentalIdentityError({ ...full, licence_number: "" }), "Indiquez le numéro du permis de conduire.");
   assert.equal(rules.rentalIdentityError({ ...full, zone: "" }), "Choisissez la zone de circulation du véhicule.");
 });
+
+test("WhatsApp : numéro du serveur d'abord, repli sur le choix du contact", async () => {
+  const rules = await import(pathToFileURL(compiled).href);
+  const ticket = { reference: "AX-TEST", passenger_name: "Passager TEST", passenger_phone: "01 00 00 00 09" };
+  assert.ok(rules.soldTicketWhatsappHref({ ...ticket, whatsapp_number: "2290100000009" }, "https://site.test/t/AX-TEST").startsWith("https://wa.me/2290100000009?text="));
+  assert.ok(rules.soldTicketWhatsappHref({ ...ticket, whatsapp_number: null }, "https://site.test/t/AX-TEST").startsWith("https://wa.me/?text="));
+  assert.ok(decodeURIComponent(rules.soldTicketWhatsappHref({ ...ticket, whatsapp_number: "2290100000009" }, "https://site.test/t/AX-TEST")).includes("Bonjour Passager TEST, voici votre billet AXIS Transport AX-TEST : https://site.test/t/AX-TEST"));
+});

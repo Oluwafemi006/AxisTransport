@@ -171,6 +171,7 @@ export interface Ticket {
   amount: string;
   currency: string;
   created_at: string;
+  whatsapp_number?: string | null;
 }
 
 export interface BookingPassenger {
@@ -512,6 +513,7 @@ export interface SoldTicket {
   seat: string;
   passenger_name: string;
   passenger_phone: string;
+  whatsapp_number?: string | null;
   amount_fcfa: number;
   status: string;
   status_display: string;
