@@ -898,7 +898,12 @@ export function CounterPanel({ onChanged, space, onHome }: { onChanged: () => Pr
   useEffect(() => { void loadSeats(tripId); }, [tripId, loadSeats]);
 
   function chooseRoute(label: string) { setRouteLabel(label); setPairKey(""); setTripId(""); setSeat(""); setMethodId(null); }
-  function choosePair(key: string) { setPairKey(key); setTripId(""); setSeat(""); setMethodId(null); }
+  // Après le choix du trajet, on amène le formulaire en haut de l'écran (mesuré : il était sous la ligne de flottaison).
+  const saleForm = useRef<HTMLElement>(null);
+  function choosePair(key: string) {
+    setPairKey(key); setTripId(""); setSeat(""); setMethodId(null);
+    window.setTimeout(() => saleForm.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
 
   function clearForm() {
     setSeat(""); setName(""); setPhone(""); setMethodId(null); setSaleKey(null);
@@ -1074,6 +1079,12 @@ export function CounterPanel({ onChanged, space, onHome }: { onChanged: () => Pr
   const issued = booking?.status === "CONFIRMED";
   const pending = booking?.status === "HELD";
   const ticket = booking?.tickets?.[0];
+  // Numéro WhatsApp connu du serveur (passager ou compte client) : prérempli, l'agent peut le corriger.
+  const knownWhatsapp = ticket?.whatsapp_number ?? "";
+  useEffect(() => {
+    if (knownWhatsapp && !whatsapp) { setWhatsappCode("+229"); setWhatsapp(`+${knownWhatsapp}`); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [knownWhatsapp]);
 
   if (saleTrips === null) return <Loading />;
   return (
@@ -1101,7 +1112,7 @@ export function CounterPanel({ onChanged, space, onHome }: { onChanged: () => Pr
         )}
       </section>
 
-      <section className="card min-w-0">
+      <section ref={saleForm} className="card min-w-0 scroll-mt-4">
         <SectionHeading eyebrow="Vente" title="Vendre un billet" />
         {!pair ? <p className="text-sm text-slate-500">Choisissez d’abord un trajet ci-dessus.</p> : (
           <form onSubmit={sell} className="space-y-4">
@@ -1120,14 +1131,6 @@ export function CounterPanel({ onChanged, space, onHome }: { onChanged: () => Pr
                 {alightingPoints.length > 0 && <Select label={`Débarquement (${pair.destination})`} value={alightingPointId} onChange={setAlightingPointId} options={alightingPoints.map((point) => [String(point.id), point.name])} required={alightingPoints.length > 1} />}
               </div>
             )}
-            {selectedTrip && (
-              <div>
-                <span className="field-label">Siège (Libre · Retenu · Occupé)</span>
-                {seats.length === 0 ? <p className="text-sm text-slate-500">Chargement des sièges…</p> : (
-                  <div className="overflow-x-auto"><BusSeatMap seats={seats} selectedSeatIds={seat ? [Number(seat)] : []} onToggleSeat={(item) => setSeat(String(item.id))} maxSeats={1} /></div>
-                )}
-              </div>
-            )}
             <Input label="Nom du passager" value={name} onChange={setName} />
             <Input label="Téléphone du passager" type="tel" value={phone} onChange={setPhone} />
             {quotes.length > 0 && (
@@ -1141,9 +1144,20 @@ export function CounterPanel({ onChanged, space, onHome }: { onChanged: () => Pr
                 {quote && <p className="mt-2 text-xs text-slate-500">{quote.online ? "Une demande de paiement s’ouvre pour le téléphone du passager ; le billet est émis dès la confirmation." : "Encaissez le montant exact avant de valider."}</p>}
               </div>
             )}
-            <button className="primary-button w-full" disabled={busy || pending || !selectedTrip || !quote}>
-              {busy ? "Patientez…" : quote ? `${quote.online ? "Demander le paiement de" : "Encaisser"} ${money(quote.total, quote.currency)}` : "Choisissez un moyen de paiement"}
-            </button>
+            {selectedTrip && (
+              <div>
+                <span className="field-label">Siège (Libre · Retenu · Occupé)</span>
+                {seats.length === 0 ? <p className="text-sm text-slate-500">Chargement des sièges…</p> : (
+                  <div className="overflow-x-auto"><BusSeatMap seats={seats} selectedSeatIds={seat ? [Number(seat)] : []} onToggleSeat={(item) => setSeat(String(item.id))} maxSeats={1} /></div>
+                )}
+              </div>
+            )}
+            {/* Bouton collé en bas de l'écran : visible pendant tout le remplissage (plan des sièges compris). */}
+            <div className="sticky bottom-0 z-10 -mx-1 bg-white px-1 pb-3 pt-2 shadow-[0_-8px_12px_-12px_rgba(0,0,0,.35)]">
+              <button className="primary-button w-full" disabled={busy || pending || !selectedTrip || !quote}>
+                {busy ? "Patientez…" : quote ? `${quote.online ? "Demander le paiement de" : "Encaisser"} ${money(quote.total, quote.currency)}` : "Choisissez un moyen de paiement"}
+              </button>
+            </div>
           </form>
         )}
       </section>
