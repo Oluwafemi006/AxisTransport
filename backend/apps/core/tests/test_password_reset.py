@@ -208,6 +208,7 @@ class ProvisionalPasswordTests(APITestCase):
         blocked = self.client.get("/api/v1/staff/sales/options/")
         self.assertEqual(blocked.status_code, 403)
         self.assertEqual(blocked.json()["detail"], "Choisissez un nouveau mot de passe avant de continuer.")
+        self.assertEqual(blocked.json()["code"], "password_change_required")
         self.assertEqual(self.client.patch(ME, {"email": "x.test@exemple.test"}, format="json").status_code, 403)
         changed = self.client.post(CHANGE, {"current_password": OLD, "new_password": NEW}, format="json")
         self.assertEqual(changed.status_code, 200, changed.data)

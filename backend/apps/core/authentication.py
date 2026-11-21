@@ -30,7 +30,8 @@ class AxisJWTAuthentication(JWTAuthentication):
             path = request.path
             allowed = path.endswith(PASSWORD_CHANGE_PATHS[1]) or (path.endswith(PASSWORD_CHANGE_PATHS[0]) and request.method == "GET")
             if not allowed:
-                raise PasswordChangeRequired()
+                # Le code est dans le corps : l'application relit le compte et ouvre l'écran de changement.
+                raise PasswordChangeRequired({"detail": PasswordChangeRequired.default_detail, "code": PasswordChangeRequired.default_code})
         return result
 
     def get_user(self, validated_token):

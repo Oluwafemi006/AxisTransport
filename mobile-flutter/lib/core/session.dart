@@ -57,6 +57,7 @@ class SessionNotifier extends Notifier<SessionState> {
   SessionState build() {
     // Session perdue en cours d'utilisation : retour à la connexion avec un message (voir globalRoleRedirect).
     _api.onSessionLost = _sessionLost;
+    _api.onPasswordChangeRequired = _passwordChangeRequired;
     Future.microtask(restore);
     sessionRouterNotifier.update(const SessionState());
     return const SessionState();
@@ -99,6 +100,20 @@ class SessionNotifier extends Notifier<SessionState> {
     } catch (_) {
       state = const SessionState(ready: true);
       sessionRouterNotifier.update(state);
+    }
+  }
+
+  bool _rereading = false;
+
+  /// Relit le compte (GET /auth/me/ reste permis) : must_change_password passe à vrai et le routeur
+  /// ouvre l'écran de changement de mot de passe. Un seul relecture à la fois.
+  Future<void> _passwordChangeRequired() async {
+    if (_rereading || state.user == null || state.user!.mustChangePassword) return;
+    _rereading = true;
+    try {
+      await restore();
+    } finally {
+      _rereading = false;
     }
   }
 

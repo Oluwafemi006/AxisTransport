@@ -23,6 +23,9 @@ const adminNotAllowedCode = 'admin_not_allowed_in_app';
 const adminNotAllowedMessage =
     'Un compte administrateur ne se connecte pas dans l\'application : utilisez le portail /admin du site.';
 
+/// Refus du serveur : mot de passe provisoire à remplacer avant toute autre action.
+const passwordChangeRequiredCode = 'password_change_required';
+
 bool isAdminRefusal(Object error) {
   if (error is! ApiException) return false;
   final data = error.data;
@@ -91,6 +94,16 @@ class ApiClient {
         },
         onError: (error, handler) async {
           final request = error.requestOptions;
+          // Mot de passe réinitialisé par l'admin pendant la session : on prévient la session,
+          // qui relit le compte et ouvre l'écran de changement (au lieu d'un écran vide).
+          final body = error.response?.data;
+          if (error.response?.statusCode == 403 &&
+              body is Map &&
+              body['code'] == passwordChangeRequiredCode) {
+            onPasswordChangeRequired?.call();
+            handler.next(error);
+            return;
+          }
           final alreadyRetried = request.extra['retried'] == true;
           if (error.response?.statusCode != 401 ||
               request.extra['auth'] != true ||
@@ -732,6 +745,9 @@ class ApiClient {
 
   /// Appelé quand le renouvellement de la session échoue (jeton expiré ou fermé) : l'interface prévient l'utilisateur.
   void Function()? onSessionLost;
+
+  /// Appelé quand le serveur exige un nouveau mot de passe (compte réinitialisé par l'admin).
+  void Function()? onPasswordChangeRequired;
 
   /// Vrai si la dernière session perdue l'a été parce que le serveur refuse un compte administrateur.
   bool lastLossWasAdminRefusal = false;
