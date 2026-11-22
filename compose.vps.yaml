@@ -27,6 +27,13 @@ x-backend-environment: &backend-environment
   FEDAPAY_WEBHOOK_TOLERANCE_SECONDS: ${FEDAPAY_WEBHOOK_TOLERANCE_SECONDS:-300}
   FEDAPAY_CALLBACK_URL: ${FEDAPAY_CALLBACK_URL:-}
   PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
+  # Messagerie (invitations, mot de passe oublié) : valeurs dans .env.vps uniquement ; vide = aucun e-mail ne part.
+  EMAIL_HOST: ${EMAIL_HOST:-}
+  EMAIL_PORT: ${EMAIL_PORT:-587}
+  EMAIL_USE_TLS: ${EMAIL_USE_TLS:-true}
+  EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+  EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+  DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-${EMAIL_HOST_USER:-}}
   # Un seul proxy (Caddy) devant l'API : sert à lire la vraie adresse IP du visiteur pour les limites de requêtes.
   AXIS_NUM_PROXIES: ${AXIS_NUM_PROXIES:-1}
   AXIS_CACHE_DIR: /tmp/axis-cache
