@@ -102,6 +102,20 @@ class RateTests(Base):
             self.book()
             self.assertEqual(self.book("+229 0100000009").status_code, 429)
 
+    def test_refused_attempts_do_not_count_and_message_says_what_to_do(self):
+        with rates(booking_address="100/hour", booking_phone="2/hour"):
+            # Dix essais refusés (trajet inconnu) : aucun ne compte.
+            for _ in range(10):
+                refused = self.client.post(BOOKINGS, {"trip": 999999, "contact_phone": "0100000009",
+                                           "passengers": [{"full_name": "TEST", "phone": "0100000009"}]}, format="json")
+                self.assertEqual(refused.status_code, 400)
+            self.assertEqual(self.book().status_code, 201)
+            self.assertEqual(self.book().status_code, 201)
+            blocked = self.book()
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("Payez ou annulez", blocked.data["detail"])
+        self.assertIn("réessayez dans", blocked.data["detail"])
+
     def test_normalize_phone(self):
         self.assertEqual({normalize_phone(v) for v in ("0100000009", "+229 01 00 00 00 09", "00229 01 00 00 00 09", "22901 00 00 00 09")}, {"0100000009"})
 

@@ -98,6 +98,8 @@ from .views import (
     TicketLookupView,
     BookingAddressThrottle,
     BookingPhoneThrottle,
+    BOOKING_LIMIT_PREFIX,
+    TooManyAttempts,
     checkout_response,
     refund_due_response,
     service_validation_error,
@@ -432,6 +434,9 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
         # Création ouverte (invité + client), retrieve/pay restreints à l'owner/guest.
         return [AllowAny()]
 
+    def throttled(self, request, wait):
+        raise TooManyAttempts(wait, prefix=BOOKING_LIMIT_PREFIX)
+
     def get_throttles(self):
         # Limites anti-abus seulement sur la création (pas sur la consultation ni le paiement).
         if self.action == "create":
@@ -515,6 +520,8 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
             )
         except (DjangoValidationError, ImproperlyConfigured) as exc:
             raise service_validation_error(exc)
+        # Seule une réservation créée compte dans la limite par compte ou téléphone.
+        BookingPhoneThrottle().record_success(request, self)
         booking = self.BASE_QUERYSET.get(pk=booking.pk)
         extra = {"guest_access_token": guest_token} if guest_token else {}
         return Response(self._serialized_booking(booking, **extra), status=status.HTTP_201_CREATED)

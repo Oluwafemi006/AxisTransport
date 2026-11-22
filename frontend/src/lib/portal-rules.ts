@@ -459,3 +459,6 @@ export function rentalIdentityError(values: RentalIdentity): string | null {
   }
   return null;
 }
+
+// Montée à un arrêt intermédiaire : mot pour mot le texte de l'application (trip_results_screen.dart).
+export const ONBOARD_ONLY_MESSAGE = "Montée à bord, auprès du contrôleur : cette montée ne s’achète pas en ligne.";

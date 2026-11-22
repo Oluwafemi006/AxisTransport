@@ -146,8 +146,8 @@ REST_FRAMEWORK = {
         # Recherche de billet par un agent du guichet (par agent).
         "counter_ticket_search": os.environ.get("AXIS_COUNTER_TICKET_SEARCH_RATE", "60/hour"),
         # Réservations en ligne : créations par adresse IP (large : réseaux mobiles partagés) et par téléphone.
-        "booking_address": os.environ.get("AXIS_BOOKING_RATE_ADDRESS", "30/hour"),
-        "booking_phone": os.environ.get("AXIS_BOOKING_RATE_PHONE", "6/hour"),
+        "booking_address": os.environ.get("AXIS_BOOKING_RATE_ADDRESS", "60/hour"),
+        "booking_phone": os.environ.get("AXIS_BOOKING_RATE_PHONE", "10/hour"),
         # « Retrouver mon billet » : essais par adresse IP et par référence.
         "ticket_lookup_address": os.environ.get("AXIS_TICKET_LOOKUP_RATE_ADDRESS", "10/hour"),
         "ticket_lookup_reference": os.environ.get("AXIS_TICKET_LOOKUP_RATE_REFERENCE", "5/hour"),

@@ -4,7 +4,7 @@ import { PasswordInput } from "./password-input";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail, sendEmailCode, verifyEmailCode } from "@/lib/api";
-import { BOARDING_POINT_HELP, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, boardingFieldLabel, resizePassengers, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, parcelBusText, needsEmailReminder, EMAIL_REMINDER_TEXT, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
+import { BOARDING_POINT_HELP, ONBOARD_ONLY_MESSAGE, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, boardingFieldLabel, resizePassengers, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, parcelBusText, needsEmailReminder, EMAIL_REMINDER_TEXT, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { ClientTabBar, type ClientTab } from "./client-tab-bar";
@@ -810,6 +810,9 @@ function Tickets({
   const [message, setMessage] = useState("");
   const selectedTrip = segmentTrips.find((trip) => String(trip.id) === tripId) || trips.find((trip) => String(trip.id) === tripId);
   const effectiveOriginId = originId || searchOrigin || (selectedTrip ? String(selectedTrip.route_detail.origin) : "");
+  // Même règle que l'application et le serveur (services.reserve_booking, terminus_boarding_only) :
+  // en ligne, la montée se fait au départ du parcours ; ailleurs, elle se paie à bord.
+  const onboardOnly = !!selectedTrip && !!effectiveOriginId && String(selectedTrip.route_detail.origin) !== effectiveOriginId;
   const effectiveDestId = destinationId || searchDestination || (selectedTrip ? String(selectedTrip.route_detail.destination) : "");
 
   const getActivePointsForCity = useCallback((cityIdStr: string) => {
@@ -1180,6 +1183,7 @@ function Tickets({
 
   // Action unique : réserver les sièges puis ouvrir le paiement, dans un seul enchaînement.
   async function payNow(event: FormEvent) {
+    if (onboardOnly) { event.preventDefault(); return; }
     event.preventDefault();
     if (locked.current || held || !singleQuote) return;
     locked.current = true;
@@ -1198,6 +1202,7 @@ function Tickets({
 
   // Plusieurs moyens de paiement en ligne (ou aucun) : la réservation d'abord, le choix du moyen ensuite.
   async function reserveOnly(event: FormEvent) {
+    if (onboardOnly) { event.preventDefault(); return; }
     event.preventDefault();
     if (locked.current || held) return;
     locked.current = true;
@@ -1363,7 +1368,7 @@ function Tickets({
 
             {chosenSegment && !chosenSegment.online_boarding && (
               <p role="status" style={{ marginTop: '10px', padding: '12px 14px', borderRadius: '12px', background: 'var(--warnbg)', color: 'var(--warn)', fontWeight: 600 }}>
-                {chosenSegment.origin} → {chosenSegment.destination} : {money(chosenSegment.price_fcfa)}. Montée à bord, auprès du contrôleur.
+                {chosenSegment.origin} → {chosenSegment.destination} : {money(chosenSegment.price_fcfa)}. {ONBOARD_ONLY_MESSAGE}
               </p>
             )}
 
@@ -1507,7 +1512,12 @@ function Tickets({
                 </div>
               </div>
             )}
-            {!held && !issued && (singleQuote ? (
+            {onboardOnly && !held && !issued && (
+              <p role="status" style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '12px', background: 'var(--warnbg)', color: 'var(--warn)', fontWeight: 600 }}>
+                {ONBOARD_ONLY_MESSAGE}
+              </p>
+            )}
+            {!held && !issued && !onboardOnly && (singleQuote ? (
               <button className="btn p" style={{ marginTop: '16px', width: '100%' }} disabled={busy || !tripId || passengers.length === 0}>
                 {busy ? "Patientez…" : !tripId ? "Choisissez un départ" : `Payer ${money(singleQuote.total, singleQuote.currency)}${passengers.length > 1 ? ` (${passengers.length} billets)` : ""}`}
               </button>

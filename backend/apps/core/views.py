@@ -412,11 +412,11 @@ def phone_digits_valid(phone):
 class TooManyAttempts(Throttled):
     """Blocage temporaire, avec un message en français sans jargon ; l'en-tête Retry-After est conservé."""
 
-    def __init__(self, wait):
+    def __init__(self, wait, prefix="Trop de tentatives"):
         minutes = max(1, math.ceil(wait / 60)) if wait else 1
         super().__init__(
             wait=None,
-            detail=f"Trop de tentatives, réessayez dans {minutes} minute{'s' if minutes > 1 else ''}.",
+            detail=f"{prefix}, réessayez dans {minutes} minute{'s' if minutes > 1 else ''}.",
         )
         self.wait = math.ceil(wait) if wait else None
 
@@ -470,14 +470,52 @@ class PasswordResetEmailThrottle(_LiveRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": ident} if email else None
 
 
+# Message des limites de réservation : dit quoi faire, pas seulement d'attendre.
+BOOKING_LIMIT_PREFIX = (
+    "Vous avez créé beaucoup de réservations en peu de temps. Payez ou annulez celle en attente "
+    "(« Mes billets »), ou appelez l'agence ; sinon"
+)
+
+
 class BookingAddressThrottle(_AddressThrottle):
+    """Toutes les tentatives par adresse IP (anti-rafale). Seuil large : une même IP peut servir tout un réseau mobile."""
+
     scope = "booking_address"
 
 
 class BookingPhoneThrottle(_LiveRateThrottle):
-    """Créations de réservation par compte client, sinon par téléphone de contact normalisé."""
+    """
+    Réservations CRÉÉES par compte client, sinon par téléphone de contact normalisé.
+    Un essai refusé (siège pris, montée à bord, champ manquant…) ne compte pas : le client peut corriger et réessayer.
+    La vue appelle `record_success` après une création réussie.
+    """
 
     scope = "booking_phone"
+
+    def allow_request(self, request, view):
+        if self.rate is None:
+            return True
+        self.key = self.get_cache_key(request, view)
+        if self.key is None:
+            return True
+        self.now = self.timer()
+        self.history = [moment for moment in self.cache.get(self.key, []) if moment > self.now - self.duration]
+        if len(self.history) >= self.num_requests:
+            return self.throttle_failure()
+        return True
+
+    def record_success(self, request, view):
+        self.rate = self.get_rate()
+        if self.rate is None:
+            return
+        self.num_requests, self.duration = self.parse_rate(self.rate)
+        key = self.get_cache_key(request, view)
+        if key is None:
+            return
+        now = self.timer()
+        history = [moment for moment in self.cache.get(key, []) if moment > now - self.duration]
+        history.insert(0, now)
+        self.cache.set(key, history, self.duration)
 
     def get_cache_key(self, request, view):
         from .booking_limits import normalize_phone
