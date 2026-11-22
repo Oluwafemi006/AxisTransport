@@ -368,9 +368,8 @@ export function ClientPortal() {
                   <div className="f">
                     <label>Passagers</label>
                     <select value={searchPassengers} onChange={(e) => setSearchPassengers(Number(e.target.value) || 1)}>
-                      <option value="1">1 passager</option>
-                      <option value="2">2 passagers</option>
-                      <option value="3">3 passagers</option>
+                      {/* Même limite que le serveur et l'application : 8 passagers par achat. */}
+                      {Array.from({ length: 8 }, (_, index) => index + 1).map((count) => <option key={count} value={count}>{count} passager{count > 1 ? "s" : ""}</option>)}
                     </select>
                   </div>
                   <button className="btn p" onClick={() => void runSearch()}>Rechercher</button>
