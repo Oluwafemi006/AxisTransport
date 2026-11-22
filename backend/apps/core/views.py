@@ -29,10 +29,11 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 
-from . import email_verification, password_reset, reporting
+from . import cash_closing, email_verification, password_reset, reporting
 from .phone import normalize_benin_phone
 from .models import (
     RentalChange,
+    CashHandover,
     LineChange,
     BoardingPoint,
     Booking,
@@ -3213,3 +3214,52 @@ class StaffInvitationViewSet(viewsets.GenericViewSet):
         invitation.save(update_fields=["expires_at"])
         sent, error = _send_invitation(invitation)
         return Response(_invitation_payload(invitation, email_sent=sent, email_error=error))
+
+
+class CashHandoverViewSet(viewsets.GenericViewSet):
+    """
+    Clôtures de caisse, gérées par l'administrateur qui reçoit les espèces.
+    L'agent déclare son montant à l'admin ; le montant attendu n'apparaît qu'avec la clôture enregistrée.
+    Ni modification ni suppression : une erreur se rattrape par une correction.
+    """
+
+    permission_classes = [IsAxisAdmin]
+    queryset = CashHandover.objects.select_related("agent", "received_by", "corrects")
+
+    @staticmethod
+    def payload(row):
+        name = lambda user: (user.get_full_name() or user.username) if user else ""
+        return {
+            "id": row.id, "agent": row.agent_id, "agent_name": name(row.agent), "period_start": row.period_start,
+            "period_end": row.period_end, "expected_fcfa": row.expected_fcfa, "declared_fcfa": row.declared_fcfa,
+            "difference_fcfa": row.difference_fcfa, "received_by_name": name(row.received_by),
+            "corrects": row.corrects_id, "note": row.note, "created_at": row.created_at,
+        }
+
+    def list(self, request):
+        rows = self.get_queryset()
+        agent = request.query_params.get("agent")
+        if agent:
+            rows = rows.filter(agent_id=agent)
+        return Response([self.payload(row) for row in rows[:200]])
+
+    def create(self, request):
+        agent = get_object_or_404(User, pk=request.data.get("agent"))
+        try:
+            row = cash_closing.close_cash(
+                agent=agent, declared=request.data.get("declared_fcfa"), received_by=request.user, note=request.data.get("note", ""),
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"detail": exc.messages})
+        return Response(self.payload(row), status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def correct(self, request, pk=None):
+        try:
+            row = cash_closing.correct_cash(
+                original=self.get_object(), declared=request.data.get("declared_fcfa"),
+                received_by=request.user, note=request.data.get("note", ""),
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"detail": exc.messages})
+        return Response(self.payload(row), status=status.HTTP_201_CREATED)

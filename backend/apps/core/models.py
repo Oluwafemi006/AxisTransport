@@ -1516,3 +1516,34 @@ class RentalChange(models.Model):
 
     def __str__(self):
         return self.detail
+
+
+class CashHandover(models.Model):
+    """
+    Clôture de caisse d'un agent (guichet ou contrôleur) : espèces remises à l'administrateur.
+    Jamais modifiée ni supprimée : une erreur se rattrape par une ligne de correction (`corrects`).
+    Le montant attendu est calculé par le serveur (cash_closing.py), comme le résumé du jour.
+    """
+
+    agent = models.ForeignKey(User, on_delete=models.PROTECT, related_name="cash_handovers")
+    period_start = models.DateTimeField()
+    period_end = models.DateTimeField()
+    expected_fcfa = models.PositiveIntegerField()
+    declared_fcfa = models.PositiveIntegerField()
+    difference_fcfa = models.IntegerField()
+    received_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="cash_handovers_received")
+    corrects = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="corrections")
+    note = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            # Deux clôtures (hors corrections) ne peuvent pas commencer au même instant pour un même agent.
+            models.UniqueConstraint(
+                fields=["agent", "period_start"], condition=models.Q(corrects__isnull=True), name="unique_cash_period_per_agent"
+            ),
+        ]
+
+    def __str__(self):
+        return f"Clôture {self.agent_id} {self.period_end:%Y-%m-%d %H:%M}"
