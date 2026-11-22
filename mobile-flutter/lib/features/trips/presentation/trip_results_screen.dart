@@ -476,6 +476,7 @@ class _TripResultCard extends ConsumerWidget {
     // Pas d'heure de passage aux arrêts intermédiaires : l'heure d'embarquement ne vaut qu'au départ du bus.
     final boardsAtLineOrigin =
         search == null || search!.originId == trip.route.origin?.id;
+    final chosenTitle = segmentTitle(trip, search);
 
     return AxisCard(
       padding: const EdgeInsets.all(AxisSpacing.s16),
@@ -491,12 +492,21 @@ class _TripResultCard extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Titre : le trajet choisi (ex. Savè → Bohicon), pas la ligne complète.
                     Text(
-                      departure,
-                      style: theme.textTheme.displaySmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                      ),
+                      chosenTitle,
+                      key: const Key('trip-card-title'),
+                      style: theme.textTheme.titleMedium?.copyWith(color: axis.ink, fontWeight: FontWeight.w800),
                     ),
+                    // Grande heure seulement quand le client monte au départ du bus : aucune heure de passage
+                    // n'est affichée pour un arrêt intermédiaire (elle ressemblerait à l'heure de cet arrêt).
+                    if (boardsAtLineOrigin)
+                      Text(
+                        departure,
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
                     if (lineOrigin.isNotEmpty) ...[
                       const SizedBox(height: AxisSpacing.s4),
                       Text(
@@ -621,4 +631,21 @@ class _TripResultCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+
+/// Titre de la carte : villes de la recherche, retrouvées sur la ligne du départ ; sinon la ligne complète.
+String segmentTitle(Trip trip, TripSearch? search) {
+  if (search == null) return trip.route.label;
+  String? nameOf(int id) {
+    for (final stop in trip.route.stops) {
+      if (stop.id == id) return stop.name;
+    }
+    if (trip.route.origin?.id == id) return trip.route.origin!.name;
+    if (trip.route.destination?.id == id) return trip.route.destination!.name;
+    return null;
+  }
+
+  final from = nameOf(search.originId), to = nameOf(search.destinationId);
+  return from != null && to != null ? '$from → $to' : trip.route.label;
 }

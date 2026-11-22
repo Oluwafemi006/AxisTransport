@@ -5,13 +5,13 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail, sendEmailCode, verifyEmailCode } from "@/lib/api";
 import { BOARDING_POINT_HELP, ONBOARD_ONLY_MESSAGE, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, boardingFieldLabel, resizePassengers, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, parcelBusText, needsEmailReminder, EMAIL_REMINDER_TEXT, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
-import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
+import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { ClientTabBar, type ClientTab } from "./client-tab-bar";
 import { BOOKING_STEPS, bookingStep, clientLocationSearch, hasCompleteSearch, readClientLocation, searchSummary, shiftDayKey } from "@/lib/search-url";
 import { SwapIcon } from "./icons";
 import { Rentals } from "./client-rentals";
-import { BusIcon, CarIcon, CheckCircleIcon, CheckIcon, PackageIcon, PhoneIcon, TicketIcon } from "./icons";
+import { CarIcon, CheckCircleIcon, CheckIcon, PackageIcon, PhoneIcon, TicketIcon } from "./icons";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
 import { useSessionGuard } from "@/lib/use-session";
 import { ForcedPasswordChange } from "./forced-password-change";
@@ -32,7 +32,6 @@ export function ClientPortal() {
   const [parcels, setParcels] = useState<Parcel[]>([]);
   const [rentals, setRentals] = useState<RentalBooking[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [banner, setBanner] = useState<TripBanner | null>(null);
   const [nextAvailable, setNextAvailable] = useState<NextAvailable | null>(null);
   // Coordonnées lues dans les réglages admin ; vides tant qu'elles ne sont pas renseignées.
   const [contact, setContact] = useState<Contact>({ contact_phone: "", contact_whatsapp: "" });
@@ -86,7 +85,6 @@ export function ClientPortal() {
       setLocations(activeLocations);
       setVehicles(rentalVehicles);
       setPaymentMethods(methods);
-      apiFetch<TripBanner>("/client/trips/banner/", {}, false).then(setBanner).catch(() => undefined);
       apiFetch<Contact>("/client/contact/", {}, false).then(setContact).catch(() => undefined);
       await loadPrivate();
     } catch (reason) {
@@ -287,7 +285,7 @@ export function ClientPortal() {
     <div className="client-site">
       <div className="top">
         <div className="wrap">
-          <span>{banner?.banner_text ? banner.banner_text.split('.')[0] : "Voyages interurbains au Bénin"}</span>
+          <span>Voyages interurbains au Bénin</span>
           {contact.contact_phone && <span>Téléphone : <PhoneText value={contact.contact_phone} /></span>}
           <WhatsAppIcon value={contact.contact_whatsapp} />
           <span>Voyagez en toute confiance</span>
@@ -338,15 +336,6 @@ export function ClientPortal() {
                   <small>AXIS TRANSPORT</small>
                   <h1>Voyagez simplement avec AXIS Transport</h1>
                   <p>Réservez votre place en ligne, payez par Mobile Money et voyagez avec un billet électronique.</p>
-                  {banner?.banner_text ? (
-                    <div className="axe" style={{ padding: '12px 20px', fontSize: '15px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '10px', lineHeight: 1.4 }}>
-                      {/* Icône dans la même bulle que le texte : sinon, sur téléphone, le texte long passe sous l'icône. */}
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
-                        <BusIcon size={22} style={{ flex: 'none' }} />
-                        <span style={{ background: 'none', border: 'none', padding: 0 }}>{banner.banner_text}</span>
-                      </span>
-                    </div>
-                  ) : null}
                 </div>
               </div>
 

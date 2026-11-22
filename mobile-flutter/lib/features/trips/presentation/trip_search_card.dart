@@ -176,6 +176,7 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
                         ? null
                         : (value) => setState(() {
                             _originId = value;
+                            if (_destinationId == value) _destinationId = null;
                             _error = null;
                           }),
                   ),
@@ -184,8 +185,9 @@ class _TripSearchCardState extends ConsumerState<TripSearchCard> {
                     label: 'Arrivée',
                     dotColor: axis.accent,
                     dotHaloColor: axis.accentSoft,
-                    value: _destinationId,
-                    places: _places,
+                    value: _destinationId == _originId ? null : _destinationId,
+                    // La ville de départ n'est pas proposée comme arrivée (comme sur le site).
+                    places: _places.where((place) => place.id != _originId).toList(),
                     onChanged: _loading
                         ? null
                         : (value) => setState(() {
