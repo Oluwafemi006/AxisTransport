@@ -6,6 +6,13 @@ Statuts : à faire · en cours · à valider par Eddy · terminée · fusionnée
 | Tâche | Branche | Outil | Statut |
 |---|---|---|---|
 | Comptes allégés : inscription téléphone + mot de passe (le numéro est l'identifiant), e-mail vérifié par code (migration 0031), IFU acheteur retiré, recherche de billet au guichet (référence ou téléphone), terminus confirmé avant de terminer le voyage, arrêt le plus avancé dans le suivi | `cc/comptes-allege` | Claude Code | à valider par Eddy |
+| Admin journalier : tableau de bord du jour, bloc « À traiter », filtres jour / période / statut | `cc/admin-journalier` | Claude Code | à valider par Eddy |
+| Location : nom, CIP, permis, zone de circulation (migration 0032), guichet consulte et enregistre ; correctif permissions « manage » | `cc/location-champs` | Claude Code | à valider par Eddy |
+| Compte ADMIN refusé dans l'application | `cc/app-sans-admin` | Claude Code | à valider par Eddy |
+| Mot de passe provisoire relu, WhatsApp direct, formulaire de vente, lien Google Maps des points (migration 0033) | `cc/vente-whatsapp-carte` | Claude Code | à valider par Eddy |
+| Retours testeurs : limites de réservation, montée intermédiaire bloquée sur le site, recherche et billet, clôture de caisse (migration 0034) | `cc/correctifs-testeurs` | Claude Code | à valider par Eddy |
+| Recherche jusqu'à 8 passagers, lien Play Store corrigé (hors chaîne) | `cc/site-passagers-lien` | Claude Code | à valider par Eddy |
+| Variables SMTP transmises au serveur (hors chaîne) | `cc/smtp-vps` | Claude Code | à valider par Eddy |
 | Lot 3 : suivi colis — dernière ville confirmée du bus (chargé ou en route, heure du Bénin), ligne du trajet sur le site et l'app, photos agrandissables sur le site, colis annulé sans erreur 500 | `cc/suivi-colis-bus` | Claude Code | à valider par Eddy |
 | Lots 2 + 5 : recherche dans l'adresse, résumé au lieu de tout redemander, aucun départ (prochain départ, jours voisins), inversion, quatre étapes, heure du Bénin, champs 16 px, indicatif WhatsApp ; app : retour des résultats, raccourcis vers les résultats, session expirée | `cc/recherche-flux` | Claude Code | à valider par Eddy |
 | Lot 1a : vente Mobile Money du personnel — retour FedaPay par espace (liste fixe), page de retour qui vérifie seule, fenêtre d'origine mise à jour, ventes en attente, copier/partager le billet, bouton Accueil | `cc/vente-momo-retour` | Claude Code | à valider par Eddy |
