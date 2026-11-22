@@ -31,4 +31,22 @@ void main() {
   test('montant affiché en FCFA', () {
     expect(formatFcfa(7500), '7 500 FCFA');
   });
+
+  test('numéro calculé par le serveur : discussion ouverte directement', () {
+    final ticket = SoldTicket(
+      reference: 'AX-TEST', route: 'TEST', seat: '1', passengerName: 'Passager TEST', passengerPhone: '01 00 00 00 09',
+      amountFcfa: 1, statusDisplay: 'Émis', soldAt: null, soldByName: '', publicUrl: 'https://site.test/t/AX-TEST',
+      whatsappNumber: '2290100000009',
+    );
+    expect(whatsappNumberOf(ticket), '2290100000009');
+    expect(whatsappTicketUri(ticket).toString(), startsWith('https://wa.me/2290100000009?text='));
+  });
+
+  test('aucun numéro sûr : vide (repli sur le partage)', () {
+    final ticket = SoldTicket(
+      reference: 'AX-TEST', route: 'TEST', seat: '1', passengerName: 'Passager TEST', passengerPhone: '97000000',
+      amountFcfa: 1, statusDisplay: 'Émis', soldAt: null, soldByName: '', publicUrl: '',
+    );
+    expect(whatsappNumberOf(ticket), isEmpty);
+  });
 }

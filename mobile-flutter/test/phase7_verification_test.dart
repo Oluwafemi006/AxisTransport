@@ -94,11 +94,8 @@ class _Phase7Api extends ApiClient {
 
   @override
   Future<void> register({
-    required String username,
-    required String password,
-    required String firstName,
     required String phone,
-    String? lastName,
+    required String password,
     String? email,
   }) async {
     role = 'CLIENT';
@@ -246,12 +243,8 @@ void main() {
           tester.element(find.byType(AxisTransportApp)),
         );
         await container.read(sessionProvider.notifier).register(
-          username: 'client_test',
-          password: 'password123',
-          firstName: 'Awa',
-          phone: '+2290197000000',
-          lastName: 'TEST',
-          email: 'awa@test.bj',
+          phone: '0100000009',
+          password: 'TEST-password123',
         );
         await tester.pumpAndSettle();
 

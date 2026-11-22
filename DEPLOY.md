@@ -63,6 +63,8 @@ Points d'attention :
 | `AXIS_PASSWORD_RESET_RATE_EMAIL` | Mot de passe oublié : demandes de code par adresse e-mail. | `3/hour` (proposition) |
 | `AXIS_PASSWORD_RESET_RATE_ADDRESS` | Mot de passe oublié : demandes de code par adresse IP. | `20/hour` (proposition) |
 | `AXIS_PASSWORD_CHANGE_RATE` | Changement de mot de passe depuis le profil : essais par compte connecté. | `10/hour` (proposition) |
+| `AXIS_EMAIL_CODE_RATE` | Codes de vérification de l'e-mail envoyés par compte. | `5/hour` (proposition) |
+| `AXIS_COUNTER_TICKET_SEARCH_RATE` | Recherches de billet par agent du guichet. | `60/hour` (proposition) |
 | `AXIS_PASSWORD_RESET_CONFIRM_RATE` | Mot de passe oublié : saisies du code par adresse IP. | `30/hour` (proposition) |
 
 **Limite de connexion : fonctionnement et seuils proposés** (propositions techniques, pas des règles de la direction ; modifiables par les variables ci-dessus) :
@@ -79,6 +81,8 @@ Points d'attention :
 | `AXIS_PAYMENT_REFRESH_RATE` | Bouton « Vérifier mon paiement » (site et app) : demandes par adresse IP, chacune interroge FedaPay. | `20/min` (proposition) |
 | `AXIS_CACHE_DIR` | Dossier du cache (compteurs de limite de requêtes). | Dossier accessible en écriture ; par défaut le dossier temporaire du système |
 | `AXIS_NUM_PROXIES` | Nombre de proxys devant l'API, pour lire la vraie adresse IP du client. | `1` derrière un seul proxy |
+| `AXIS_BOOKING_RATE_ADDRESS` | Réservations en ligne : tentatives par adresse IP (une IP peut regrouper tout un réseau mobile). | `60/hour` |
+| `AXIS_BOOKING_RATE_PHONE` | Réservations en ligne **créées** par compte client ou téléphone ; un essai refusé ne compte pas. | `10/hour` |
 | `AXIS_PAYMENT_SIMULATION` | Paiement simulé. Sans effet quand `DJANGO_DEBUG` est faux. | absente |
 | `EMAIL_HOST` | Hôte SMTP pour l'envoi d'e-mails (invitations du personnel, codes « mot de passe oublié »). **Aucune valeur par défaut** : vide, aucun e-mail ne part (l'écran le dit). | `smtp.exemple.test` |
 | `EMAIL_PORT` | Port SMTP. | `587` |

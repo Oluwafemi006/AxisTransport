@@ -37,6 +37,27 @@ String? rentalPeriodError(DateTime startsAt, DateTime endsAt, DateTime today) {
   return null;
 }
 
+/// Champs obligatoires de la demande : mêmes libellés et messages que le site et le serveur.
+const rentalFullNameLabel = 'Nom et prénoms';
+const rentalCipLabel = 'Numéro du CIP';
+const rentalLicenceLabel = 'Numéro du permis de conduire';
+const rentalZoneLabel = 'Zone de circulation';
+
+String? rentalIdentityError({
+  required String fullName,
+  required String cipNumber,
+  required String licenceNumber,
+  required int? zone,
+}) {
+  if (fullName.trim().isEmpty) return 'Indiquez le nom et les prénoms.';
+  if (cipNumber.trim().isEmpty) return 'Indiquez le numéro du CIP.';
+  if (licenceNumber.trim().isEmpty) {
+    return 'Indiquez le numéro du permis de conduire.';
+  }
+  if (zone == null) return 'Choisissez la zone de circulation du véhicule.';
+  return null;
+}
+
 /// Écran client de location de véhicules (`Location.html`).
 class RentalsScreen extends ConsumerStatefulWidget {
   const RentalsScreen({super.key});
@@ -775,10 +796,39 @@ class _RentalDetailScreenState extends ConsumerState<RentalDetailScreen> {
   bool _conditionsExpanded = true;
   bool _sending = false;
   String? _error;
+  final _fullName = TextEditingController();
+  final _cip = TextEditingController();
+  final _licence = TextEditingController();
+  int? _zone;
+  List<RentalZone>? _zones;
+  bool _zonesFailed = false;
+
+  @override
+  void dispose() {
+    _fullName.dispose();
+    _cip.dispose();
+    _licence.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadZones() async {
+    try {
+      final zones = await ref.read(apiClientProvider).rentalZones();
+      if (mounted) setState(() => _zones = zones);
+    } on ApiException {
+      if (mounted) setState(() => _zonesFailed = true);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    final user = ref.read(sessionProvider).user;
+    if (user != null) {
+      _fullName.text =
+          [user.firstName, user.lastName].where((part) => part.trim().isNotEmpty).join(' ');
+    }
+    _loadZones();
     if (widget.vehicle.onlyWithDriver) {
       _withDriver = true;
     } else if (!widget.vehicle.driverAvailable) {
@@ -871,6 +921,16 @@ class _RentalDetailScreenState extends ConsumerState<RentalDetailScreen> {
       setState(() => _error = periodError);
       return;
     }
+    final identityError = rentalIdentityError(
+      fullName: _fullName.text,
+      cipNumber: _cip.text,
+      licenceNumber: _licence.text,
+      zone: _zone,
+    );
+    if (identityError != null) {
+      setState(() => _error = identityError);
+      return;
+    }
     setState(() {
       _sending = true;
       _error = null;
@@ -881,6 +941,10 @@ class _RentalDetailScreenState extends ConsumerState<RentalDetailScreen> {
             startsAt: _startsAt,
             endsAt: _endsAt,
             withDriver: _withDriver,
+            renterFullName: _fullName.text,
+            cipNumber: _cip.text,
+            licenceNumber: _licence.text,
+            zone: _zone!,
           );
       if (!mounted) return;
       final message =
@@ -898,6 +962,20 @@ class _RentalDetailScreenState extends ConsumerState<RentalDetailScreen> {
         });
       }
     }
+  }
+
+  Widget _identityField(TextEditingController controller, String label, String key) {
+    return TextField(
+      key: Key(key),
+      controller: controller,
+      textCapitalization: key == 'rental-full-name'
+          ? TextCapitalization.words
+          : TextCapitalization.characters,
+      decoration: InputDecoration(labelText: label),
+      onChanged: (_) {
+        if (_error != null) setState(() => _error = null);
+      },
+    );
   }
 
   @override
@@ -1180,6 +1258,39 @@ class _RentalDetailScreenState extends ConsumerState<RentalDetailScreen> {
                               ],
                             ],
                           ),
+                        ),
+
+                        const SizedBox(height: AxisSpacing.s14),
+
+                        // ── Conducteur : champs obligatoires ─────────────────
+                        Text('CONDUCTEUR', style: theme.textTheme.labelSmall),
+                        const SizedBox(height: AxisSpacing.s8),
+                        _identityField(_fullName, rentalFullNameLabel, 'rental-full-name'),
+                        const SizedBox(height: AxisSpacing.s10),
+                        _identityField(_cip, rentalCipLabel, 'rental-cip'),
+                        const SizedBox(height: AxisSpacing.s10),
+                        _identityField(_licence, rentalLicenceLabel, 'rental-licence'),
+                        const SizedBox(height: AxisSpacing.s10),
+                        DropdownButtonFormField<int>(
+                          key: const Key('rental-zone'),
+                          initialValue: _zone,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: rentalZoneLabel,
+                            helperText: _zonesFailed
+                                ? 'Liste indisponible, réessayez plus tard.'
+                                : (_zones != null && _zones!.isEmpty
+                                    ? 'À renseigner par l’agence.'
+                                    : null),
+                          ),
+                          items: [
+                            for (final zone in _zones ?? const <RentalZone>[])
+                              DropdownMenuItem(value: zone.id, child: Text(zone.name)),
+                          ],
+                          onChanged: (value) => setState(() {
+                            _zone = value;
+                            _error = null;
+                          }),
                         ),
 
                         const SizedBox(height: AxisSpacing.s14),

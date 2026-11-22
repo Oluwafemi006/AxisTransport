@@ -214,7 +214,10 @@ class _SoldTicketScreenState extends ConsumerState<SoldTicketScreen> {
                       key: const Key('sold-whatsapp'),
                       label: 'Envoyer par WhatsApp',
                       icon: const Icon(Icons.chat),
-                      onPressed: () => _open(whatsappTicketUri(ticket)),
+                      // Sans numéro connu : partage du téléphone en repli.
+                      onPressed: () => whatsappNumberOf(ticket).isEmpty
+                          ? SharePlus.instance.share(ShareParams(text: ticket.message))
+                          : _open(whatsappTicketUri(ticket)),
                     ),
                     const SizedBox(height: AxisSpacing.sm),
                     AxisButton(

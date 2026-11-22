@@ -538,16 +538,6 @@ def _tax_snapshot(price):
     return {"price_excl_tax": excl, "tax_lines": lines}
 
 
-def clean_buyer_ifu(value):
-    """IFU de l'acheteur, facultatif : texte court sans mise en forme imposée (format officiel non vérifié ici)."""
-    text = " ".join(str(value or "").split())
-    if len(text) > 30:
-        raise ValidationError("L'IFU de l'acheteur ne doit pas dépasser 30 caractères.")
-    if text and not re.fullmatch(r"[A-Za-z0-9 ./-]+", text):
-        raise ValidationError("L'IFU de l'acheteur ne peut contenir que des lettres, des chiffres, des espaces, « . », « / » ou « - ».")
-    return text
-
-
 def parse_fcfa_amount(value):
     """Prix saisi par l'administrateur : nombre entier de francs CFA, strictement positif."""
     text = str(value).strip().replace(" ", "").replace("\u202f", "").replace("\xa0", "") if value is not None else ""
@@ -923,7 +913,6 @@ def reserve_booking(
     channel=Ticket.Channel.ONLINE,
     sold_by=None,
     idempotency_key="",
-    buyer_ifu="",
     allow_departed=False,
     origin=None,
     destination=None,
@@ -936,7 +925,6 @@ def reserve_booking(
     `terminus_boarding_only` : vente en ligne, montée au départ du parcours seulement (les autres montées se font à bord).
     Départ déjà parti : refusé, sauf `allow_departed` (vente du personnel), et alors seulement s'il part aujourd'hui.
     """
-    buyer_ifu = clean_buyer_ifu(buyer_ifu)
     if not 1 <= len(passengers) <= 8:
         raise ValidationError("Une réservation doit contenir entre 1 et 8 passagers.")
 
@@ -1031,7 +1019,6 @@ def reserve_booking(
         guest_token_hash=hash_guest_token(guest_token) if guest_token else "",
         sold_by=sold_by,
         idempotency_key=idempotency_key,
-        buyer_ifu=buyer_ifu,
         origin=origin_loc,
         destination=dest_loc,
         boarding_point=b_point,

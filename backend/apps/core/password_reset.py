@@ -29,10 +29,10 @@ def normalize_email(value):
 
 
 def _client_for(email):
-    """Le client de cette adresse. Une adresse partagée par plusieurs comptes passe par un administrateur."""
+    """Le client de cette adresse vérifiée (une adresse non vérifiée peut être une faute de frappe). Une adresse partagée par plusieurs comptes passe par un administrateur."""
     if not email:
         return None
-    clients = list(User.objects.filter(email__iexact=email, role=User.Role.CLIENT, is_active=True)[:2])
+    clients = list(User.objects.filter(email__iexact=email, email_verified=True, role=User.Role.CLIENT, is_active=True)[:2])
     if len(clients) > 1:
         logger.warning("Mot de passe oublié : adresse partagée par plusieurs comptes, aucun code envoyé.")
     return clients[0] if len(clients) == 1 else None
@@ -69,7 +69,7 @@ def link_url(token):
 
 def _send_link(user, url):
     """Vrai si l'e-mail est parti. Aucun envoi sans adresse e-mail ou sans adresse du site."""
-    if not user.email or not url:
+    if not user.email or not user.email_verified or not url:
         return False
     hours = int(LINK_LIFETIME.total_seconds() // 3600)
     try:

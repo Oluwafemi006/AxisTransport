@@ -30,6 +30,8 @@ class User(AbstractUser):
     password_changed_at = models.DateTimeField(null=True, blank=True, editable=False)
     # Mot de passe provisoire saisi par un administrateur : à remplacer à la première connexion.
     must_change_password = models.BooleanField(default=False)
+    # E-mail confirmé par un code reçu à cette adresse : seule condition pour « mot de passe oublié ».
+    email_verified = models.BooleanField(default=False)
 
     @property
     def is_axis_staff(self):
@@ -97,6 +99,8 @@ class BoardingPoint(TimeStampedModel):
     name = models.CharField(max_length=160)
     active = models.BooleanField(default=True)
     order = models.PositiveSmallIntegerField(default=1, help_text="Ordre d'affichage")
+    # Lien Google Maps saisi dans /admin (bouton « Itinéraire ») ; vide = pas de bouton. Validé par le sérialiseur.
+    map_url = models.URLField("Lien Google Maps", max_length=500, blank=True, default="")
 
     class Meta:
         ordering = ["location__name", "order", "name"]
@@ -647,7 +651,7 @@ class Booking(TimeStampedModel):
     reservation_expires_at = models.DateTimeField(null=True, blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     currency = models.CharField(max_length=3, default="XOF")
-    # IFU de l'acheteur, facultatif, saisi à la réservation ; imprimé sur le billet s'il est rempli.
+    # IFU de l'acheteur : plus saisi ni imprimé ; les anciennes valeurs restent (vidées à la suppression du compte).
     buyer_ifu = models.CharField(max_length=30, blank=True)
     origin = models.ForeignKey(
         Location,
@@ -1070,6 +1074,20 @@ class ParcelStatusHistory(models.Model):
         ordering = ["changed_at"]
 
 
+class RentalZone(TimeStampedModel):
+    """Zone de circulation proposée pour une location ; la liste est saisie dans /admin, jamais dans le code."""
+
+    name = models.CharField(max_length=120, unique=True)
+    active = models.BooleanField(default=True)
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["position", "name"]
+
+    def __str__(self):
+        return self.name
+
+
 class RentalBooking(TimeStampedModel):
     class Status(models.TextChoices):
         REQUESTED = "REQUESTED", "Demandée"
@@ -1084,6 +1102,12 @@ class RentalBooking(TimeStampedModel):
     starts_at = models.DateTimeField()
     ends_at = models.DateTimeField()
     with_driver = models.BooleanField(default=False)
+    # Saisis à la demande (obligatoires pour une nouvelle demande, vides pour les anciennes) ;
+    # effacés à la suppression du compte (account_deletion.py).
+    renter_full_name = models.CharField(max_length=160, blank=True, default="")
+    cip_number = models.CharField(max_length=40, blank=True, default="")
+    licence_number = models.CharField(max_length=40, blank=True, default="")
+    zone = models.ForeignKey(RentalZone, on_delete=models.PROTECT, null=True, blank=True, related_name="rentals")
     identity_document = models.FileField(upload_to="rental-documents/identity/", null=True, blank=True)
     driving_licence = models.FileField(upload_to="rental-documents/licence/", null=True, blank=True)
     deposit_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -1492,3 +1516,34 @@ class RentalChange(models.Model):
 
     def __str__(self):
         return self.detail
+
+
+class CashHandover(models.Model):
+    """
+    Clôture de caisse d'un agent (guichet ou contrôleur) : espèces remises à l'administrateur.
+    Jamais modifiée ni supprimée : une erreur se rattrape par une ligne de correction (`corrects`).
+    Le montant attendu est calculé par le serveur (cash_closing.py), comme le résumé du jour.
+    """
+
+    agent = models.ForeignKey(User, on_delete=models.PROTECT, related_name="cash_handovers")
+    period_start = models.DateTimeField()
+    period_end = models.DateTimeField()
+    expected_fcfa = models.PositiveIntegerField()
+    declared_fcfa = models.PositiveIntegerField()
+    difference_fcfa = models.IntegerField()
+    received_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="cash_handovers_received")
+    corrects = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="corrections")
+    note = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            # Deux clôtures (hors corrections) ne peuvent pas commencer au même instant pour un même agent.
+            models.UniqueConstraint(
+                fields=["agent", "period_start"], condition=models.Q(corrects__isnull=True), name="unique_cash_period_per_agent"
+            ),
+        ]
+
+    def __str__(self):
+        return f"Clôture {self.agent_id} {self.period_end:%Y-%m-%d %H:%M}"

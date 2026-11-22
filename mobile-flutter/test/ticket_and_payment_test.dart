@@ -121,7 +121,7 @@ void main() {
       );
     });
 
-    test('billet payé : « Payé », vente, mode de paiement, IFU acheteur et bas de billet', () {
+    test('billet payé : « Payé », vente, mode de paiement, sans IFU acheteur, bas de billet', () {
       final json = {
         ..._ticket().toJson(),
         'status': 'ISSUED',
@@ -152,7 +152,7 @@ void main() {
       expect(fields['Statut'], 'Payé');
       expect(fields['Vente'], 'Vendeur : Agent TEST');
       expect(fields['Mode de paiement'], 'Espèces');
-      expect(fields['IFU de l\'acheteur'], 'TEST-ACHETEUR');
+      expect(fields.containsKey('IFU de l\'acheteur'), isFalse);
       expect(fields['Lieu d\'embarquement'], 'TEST gare');
       // Sans IFU de l'agence, aucune décomposition HT / TVA.
       expect(fields.keys, isNot(contains('Prix HT')));

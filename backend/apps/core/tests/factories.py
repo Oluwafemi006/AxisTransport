@@ -48,3 +48,11 @@ def build_operational_context(*, trip_date=None):
         "admin": admin,
     }
 
+
+
+def rental_identity():
+    """Champs obligatoires d'une nouvelle demande de location (valeurs fictives, zone créée à la volée)."""
+    from apps.core.models import RentalZone
+
+    zone, _ = RentalZone.objects.get_or_create(name="Zone TEST")
+    return {"renter_full_name": "Locataire TEST", "cip_number": "CIP-TEST", "licence_number": "PERMIS-TEST", "zone": zone.pk}

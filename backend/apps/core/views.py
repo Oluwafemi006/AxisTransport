@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import logging
 import math
 import re
 from decimal import Decimal, InvalidOperation
@@ -23,13 +24,16 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
-from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 
-from . import password_reset, reporting
+from . import cash_closing, email_verification, password_reset, reporting
+from .phone import normalize_benin_phone
 from .models import (
     RentalChange,
+    CashHandover,
     LineChange,
     BoardingPoint,
     Booking,
@@ -44,6 +48,7 @@ from .models import (
     PaymentAttempt,
     PaymentMethod,
     RentalBooking,
+    RentalZone,
     Route,
     Seat,
     SystemSetting,
@@ -95,6 +100,8 @@ from .serializers import (
     PublicTicketDetailSerializer,
     PublicVehicleSerializer,
     RentalBookingSerializer,
+    RentalZoneSerializer,
+    ticket_whatsapp_number,
     RouteSerializer,
     SeatSerializer,
     SystemSettingSerializer,
@@ -146,6 +153,8 @@ from .services import (
     transition_ticket,
     validate_ticket,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def service_validation_error(exc, *, staff=False):
@@ -311,8 +320,12 @@ def parcel_bus_position(parcel):
     trip = parcel.trip
     if trip is None or parcel.status not in PARCEL_BUS_STATUSES:
         return None
-    stops = [location.name for location in trip.route.get_stops_sequence()]
-    arrival = trip.stop_arrivals.select_related("location").order_by("-confirmed_at", "-id").first()
+    sequence = list(trip.route.get_stops_sequence())
+    stops = [location.name for location in sequence]
+    # L'arrêt le plus avancé sur la ligne, même si les confirmations sont arrivées dans le désordre.
+    order = {location.pk: index for index, location in enumerate(sequence)}
+    arrivals = list(trip.stop_arrivals.select_related("location"))
+    arrival = max(arrivals, key=lambda item: order.get(item.location_id, -1), default=None)
     return {
         "stops": stops,
         "departure_at": timezone.localtime(trip.departure_at).isoformat(),
@@ -356,16 +369,30 @@ class MeView(APIView):
         if not request.data or set(request.data) - set(self.PROFILE_FIELDS):
             raise ValidationError({"detail": "Seuls le prénom, le nom, le téléphone et l'e-mail peuvent être modifiés ici."})
         data = {key: str(request.data.get(key) or "").strip() for key in request.data}
-        # Prénom et téléphone ne peuvent pas être effacés : ils identifient le client au guichet et au contrôle.
-        for key, message in (("first_name", "Le prénom est obligatoire."), ("phone", "Le numéro de téléphone est obligatoire.")):
-            if key in data and not data[key]:
-                raise ValidationError({key: [message]})
-        if "phone" in data and not phone_digits_valid(data["phone"]):
-            raise ValidationError({"phone": ["Numéro de téléphone invalide."]})
+        # Téléphone, et prénom une fois saisi, ne peuvent pas être effacés : ils identifient le client au guichet.
+        # Un compte créé avec le seul téléphone (inscription allégée) ajoute son prénom plus tard.
+        if "phone" in data and not data["phone"]:
+            raise ValidationError({"phone": ["Le numéro de téléphone est obligatoire."]})
+        if "first_name" in data and not data["first_name"] and user.first_name:
+            raise ValidationError({"first_name": ["Le prénom est obligatoire."]})
+        if "phone" in data:
+            phone = normalize_benin_phone(data["phone"])
+            if phone is None:
+                raise ValidationError({"phone": ["Numéro béninois attendu : 10 chiffres commençant par 01."]})
+            if phone != normalize_benin_phone(user.phone) and phone_account_exists(phone, exclude=user):
+                raise ValidationError({"phone": ["Ce numéro est déjà utilisé par un autre compte."]})
+            data["phone"] = phone
+        if "email" in data:
+            data["email"] = data["email"].lower()
         before = {key: getattr(user, key) for key in self.PROFILE_FIELDS}
         serializer = UserSerializer(user, data=data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        if before["email"] != user.email:
+            # Nouvelle adresse : plus vérifiée tant que le code n'est pas saisi.
+            user.email_verified = False
+            user.save(update_fields=["email_verified"])
+            email_verification.forget_code(user)
         changed = [label for key, label in self.PROFILE_FIELDS.items() if before[key] != getattr(user, key)]
         if changed:
             AccountChange.objects.create(
@@ -386,11 +413,11 @@ def phone_digits_valid(phone):
 class TooManyAttempts(Throttled):
     """Blocage temporaire, avec un message en français sans jargon ; l'en-tête Retry-After est conservé."""
 
-    def __init__(self, wait):
+    def __init__(self, wait, prefix="Trop de tentatives"):
         minutes = max(1, math.ceil(wait / 60)) if wait else 1
         super().__init__(
             wait=None,
-            detail=f"Trop de tentatives, réessayez dans {minutes} minute{'s' if minutes > 1 else ''}.",
+            detail=f"{prefix}, réessayez dans {minutes} minute{'s' if minutes > 1 else ''}.",
         )
         self.wait = math.ceil(wait) if wait else None
 
@@ -444,14 +471,52 @@ class PasswordResetEmailThrottle(_LiveRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": ident} if email else None
 
 
+# Message des limites de réservation : dit quoi faire, pas seulement d'attendre.
+BOOKING_LIMIT_PREFIX = (
+    "Vous avez créé beaucoup de réservations en peu de temps. Payez ou annulez celle en attente "
+    "(« Mes billets »), ou appelez l'agence ; sinon"
+)
+
+
 class BookingAddressThrottle(_AddressThrottle):
+    """Toutes les tentatives par adresse IP (anti-rafale). Seuil large : une même IP peut servir tout un réseau mobile."""
+
     scope = "booking_address"
 
 
 class BookingPhoneThrottle(_LiveRateThrottle):
-    """Créations de réservation par compte client, sinon par téléphone de contact normalisé."""
+    """
+    Réservations CRÉÉES par compte client, sinon par téléphone de contact normalisé.
+    Un essai refusé (siège pris, montée à bord, champ manquant…) ne compte pas : le client peut corriger et réessayer.
+    La vue appelle `record_success` après une création réussie.
+    """
 
     scope = "booking_phone"
+
+    def allow_request(self, request, view):
+        if self.rate is None:
+            return True
+        self.key = self.get_cache_key(request, view)
+        if self.key is None:
+            return True
+        self.now = self.timer()
+        self.history = [moment for moment in self.cache.get(self.key, []) if moment > self.now - self.duration]
+        if len(self.history) >= self.num_requests:
+            return self.throttle_failure()
+        return True
+
+    def record_success(self, request, view):
+        self.rate = self.get_rate()
+        if self.rate is None:
+            return
+        self.num_requests, self.duration = self.parse_rate(self.rate)
+        key = self.get_cache_key(request, view)
+        if key is None:
+            return
+        now = self.timer()
+        history = [moment for moment in self.cache.get(key, []) if moment > now - self.duration]
+        history.insert(0, now)
+        self.cache.set(key, history, self.duration)
 
     def get_cache_key(self, request, view):
         from .booking_limits import normalize_phone
@@ -582,9 +647,74 @@ class FrenchThrottleMixin:
         raise TooManyAttempts(wait)
 
 
+# L'application mobile s'identifie par cet en-tête (api_client.dart) ; le site ne l'envoie jamais.
+MOBILE_APP_HEADER = "HTTP_X_AXIS_CLIENT"
+MOBILE_APP_VALUE = "app-mobile"
+ADMIN_IN_APP_MESSAGE = "Un compte administrateur ne se connecte pas dans l'application : utilisez le portail /admin du site."
+
+
+class AdminNotAllowedInApp(PermissionDenied):
+    default_detail = ADMIN_IN_APP_MESSAGE
+    default_code = "admin_not_allowed_in_app"
+
+
+def from_mobile_app(request):
+    return request is not None and request.META.get(MOBILE_APP_HEADER, "").strip().lower() == MOBILE_APP_VALUE
+
+
+def refuse_admin_in_app(request, user):
+    """Seul le rôle ADMIN est refusé, et seulement depuis l'application ; les autres rôles ne changent pas."""
+    if user is None or user.role != User.Role.ADMIN:
+        return
+    if from_mobile_app(request):
+        logger.info("Connexion ADMIN refusée depuis l'application (compte %s).", user.pk)
+        # Le code est dans le corps : l'application reconnaît ce refus et déconnecte avec ce message.
+        raise AdminNotAllowedInApp({"detail": ADMIN_IN_APP_MESSAGE, "code": AdminNotAllowedInApp.default_code})
+    # Mesure des anciennes versions de l'application (sans en-tête) : client HTTP de Dart.
+    if request is not None and request.META.get("HTTP_USER_AGENT", "").startswith("Dart/"):
+        logger.warning("Connexion ADMIN sans en-tête d'application mais client Dart (ancienne version ?) : compte %s.", user.pk)
+
+
+class AxisTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    L'identifiant exact passe toujours en premier : les comptes existants (dont ceux de test du Play Store)
+    se connectent comme avant. Sinon, un numéro béninois, quel que soit son format, retrouve l'unique compte qui le porte.
+    """
+
+    def validate(self, attrs):
+        login = str(attrs.get(self.username_field) or "").strip()
+        if login and not User.objects.filter(username=login).exists():
+            phone = normalize_benin_phone(login)
+            if phone:
+                matches = accounts_with_phone(phone)
+                if len(matches) == 1:
+                    attrs[self.username_field] = matches[0].username
+        data = super().validate(attrs)
+        refuse_admin_in_app(self.context.get("request"), self.user)
+        return data
+
+
+class AxisTokenRefreshSerializer(TokenRefreshSerializer):
+    """Renouvellement : même refus pour un ADMIN dans l'application, vérifié avant toute rotation du jeton."""
+
+    def validate(self, attrs):
+        try:
+            user_id = RefreshToken(attrs["refresh"]).payload.get("user_id")
+        except TokenError:
+            user_id = None  # Jeton invalide : la réponse habituelle de simplejwt suit.
+        if user_id is not None:
+            refuse_admin_in_app(self.context.get("request"), User.objects.filter(pk=user_id).first())
+        return super().validate(attrs)
+
+
+class AxisTokenRefreshView(TokenRefreshView):
+    serializer_class = AxisTokenRefreshSerializer
+
+
 class AxisTokenObtainPairView(FrenchThrottleMixin, TokenObtainPairView):
     """Connexion (jetons JWT). Réponse inchangée, sauf au-delà des seuils : 429 et message clair."""
 
+    serializer_class = AxisTokenObtainPairSerializer
     throttle_classes = [LoginAddressThrottle, LoginAccountThrottle]
 
     def post(self, request, *args, **kwargs):
@@ -605,12 +735,47 @@ class RegisterView(FrenchThrottleMixin, APIView):
     throttle_classes = [RegisterAddressThrottle]
 
     def post(self, request):
-        payload = request.data.copy()
-        payload["role"] = User.Role.CLIENT
+        """Inscription allégée : téléphone et mot de passe ; e-mail, prénom et nom facultatifs. Le numéro est l'identifiant."""
+        phone = normalize_benin_phone(request.data.get("phone"))
+        if phone is None:
+            raise ValidationError({"phone": ["Numéro béninois attendu : 10 chiffres commençant par 01 (ex. : 01 97 00 00 00)."]})
+        if phone_account_exists(phone):
+            raise ValidationError({"phone": ["Un compte existe déjà avec ce numéro. Connectez-vous ou contactez l'agence."]})
+        payload = {
+            "username": phone,
+            "phone": phone,
+            "password": request.data.get("password") or "",
+            "email": str(request.data.get("email") or "").strip().lower(),
+            "first_name": str(request.data.get("first_name") or "").strip(),
+            "last_name": str(request.data.get("last_name") or "").strip(),
+            "role": User.Role.CLIENT,
+        }
+        if not payload["password"]:
+            raise ValidationError({"password": ["Mot de passe requis."]})
         serializer = UserSerializer(data=payload)
         serializer.is_valid(raise_exception=True)
         user = serializer.save(role=User.Role.CLIENT)
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+def phone_account_exists(phone, exclude=None):
+    """Un compte porte déjà ce numéro (identifiant ou téléphone, quel que soit le format enregistré)."""
+    return bool(accounts_with_phone(phone, exclude=exclude))
+
+
+def accounts_with_phone(phone, exclude=None):
+    """Comptes dont l'identifiant ou le téléphone, une fois normalisé, vaut ce numéro."""
+    from django.db.models import F, Func, Value
+
+    tail = phone[-8:]
+    # Chiffres seuls : un ancien numéro enregistré « 01 97 00 00 00 » est retrouvé aussi.
+    candidates = User.objects.annotate(
+        username_digits=Func(F("username"), Value(r"\D"), Value(""), Value("g"), function="regexp_replace"),
+        phone_digits=Func(F("phone"), Value(r"\D"), Value(""), Value("g"), function="regexp_replace"),
+    ).filter(Q(username_digits__endswith=tail) | Q(phone_digits__endswith=tail))
+    if exclude is not None:
+        candidates = candidates.exclude(pk=exclude.pk)
+    return [user for user in candidates if phone in (normalize_benin_phone(user.username), normalize_benin_phone(user.phone))]
 
 
 class PasswordChangeThrottle(_LiveRateThrottle):
@@ -642,6 +807,41 @@ class PasswordChangeView(FrenchThrottleMixin, APIView):
         password_reset.change_password(user, password)
         refresh = RefreshToken.for_user(user)
         return Response({"detail": "Mot de passe modifié.", "access": str(refresh.access_token), "refresh": str(refresh)})
+
+
+class EmailCodeThrottle(SimpleRateThrottle):
+    """Envois de code de vérification par compte."""
+
+    scope = "email_code"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {"scope": self.scope, "ident": request.user.pk}
+
+
+class EmailCodeSendView(FrenchThrottleMixin, APIView):
+    """Envoie un code à l'e-mail du compte. E-mail non configuré ou en échec : 503 et message clair, jamais 500."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [EmailCodeThrottle]
+
+    def post(self, request):
+        if request.user.email_verified:
+            return Response({"detail": "Votre e-mail est déjà vérifié."})
+        try:
+            email_verification.send_code(request.user)
+        except email_verification.EmailNotSent as error:
+            return Response({"detail": str(error), "email_sent": False}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"detail": f"Code envoyé à {request.user.email}. Il est valable 30 minutes.", "email_sent": True})
+
+
+class EmailVerifyView(FrenchThrottleMixin, APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [PasswordChangeThrottle]
+
+    def post(self, request):
+        if not email_verification.verify_code(request.user, request.data.get("code")):
+            raise ValidationError({"code": [email_verification.WRONG_CODE_MESSAGE]})
+        return Response({"detail": "E-mail vérifié.", "user": UserSerializer(request.user).data})
 
 
 class PasswordResetRequestView(FrenchThrottleMixin, APIView):
@@ -770,6 +970,8 @@ class AcceptStaffInvitationView(FrenchThrottleMixin, APIView):
             )
         if user:
             user.email = invitation.email
+            # L'invitation a été reçue à cette adresse : elle est vérifiée.
+            user.email_verified = True
             # Fermeture de toutes les sessions ouvertes du compte existant.
             password_reset.change_password(user, password)
             user.role = role
@@ -782,6 +984,7 @@ class AcceptStaffInvitationView(FrenchThrottleMixin, APIView):
             user = User.objects.create_user(
                 username=username,
                 email=invitation.email,
+                email_verified=True,
                 password=password,
                 role=role,
                 is_staff=True,
@@ -1458,8 +1661,46 @@ class UserViewSet(viewsets.ModelViewSet):
                 {"email_sent": False, "link": "", "detail": "Lien impossible à créer : l'adresse du site (PUBLIC_WEB_URL) n'est pas configurée."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        reason = "le client n'a pas d'e-mail" if not user.email else "l'e-mail n'a pas pu être envoyé"
+        reason = (
+            "le client n'a pas d'e-mail" if not user.email
+            else "son e-mail n'est pas vérifié" if not user.email_verified
+            else "l'e-mail n'a pas pu être envoyé"
+        )
         return Response({"email_sent": False, "link": url, "detail": f"Lien créé, mais {reason} : copiez-le et transmettez-le au client."})
+
+
+class CounterTicketSearchThrottle(SimpleRateThrottle):
+    """Recherches de billet par agent du guichet."""
+
+    scope = "counter_ticket_search"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {"scope": self.scope, "ident": request.user.pk}
+
+
+def counter_ticket_matches(query, limit=20):
+    """Billets d'une référence exacte ou d'un téléphone (fin du numéro, 6 chiffres au moins) ; None si la requête ne convient pas."""
+    from django.db.models import F, Func, Value
+
+    if not query:
+        return None
+    if re.fullmatch(r"(?i)AX-[A-Z0-9-]+", query):
+        return list(Ticket.objects.filter(reference__iexact=query).select_related("trip", "seat", "booking")[:1])
+    phone = normalize_benin_phone(query)
+    digits = phone[4:] if phone else re.sub(r"[\s.()-]", "", query)
+    if not re.fullmatch(r"\d{6,}", digits):
+        return None
+    return list(
+        Ticket.objects.annotate(phone_digits=Func(F("passenger_phone"), Value(r"\D"), Value(""), Value("g"), function="regexp_replace"))
+        .filter(phone_digits__endswith=digits)
+        .select_related("trip", "seat", "booking")
+        .order_by("-created_at")[:limit]
+    )
+
+
+def mask_query(query):
+    """Requête masquée pour le journal : seuls les 2 derniers caractères restent lisibles."""
+    return "*" * max(0, len(query) - 2) + query[-2:]
 
 
 class TicketViewSet(viewsets.ModelViewSet):
@@ -1479,6 +1720,11 @@ class TicketViewSet(viewsets.ModelViewSet):
             return queryset.none()
         if trip:
             queryset = queryset.filter(trip_id=trip)
+        if self.request.user.role == User.Role.ADMIN and self.action == "list":
+            bounds = _list_period(self.request)
+            if bounds:
+                queryset = queryset.filter(trip__departure_at__gte=bounds[0], trip__departure_at__lt=bounds[1])
+            queryset = _status_filter(queryset, self.request, Ticket.Status)
         # Recherche de l'admin : référence, nom ou téléphone du passager.
         search = (self.request.query_params.get("q") or "").strip()
         if search and self.request.user.role == User.Role.ADMIN:
@@ -1489,6 +1735,24 @@ class TicketViewSet(viewsets.ModelViewSet):
             )
         return queryset
 
+    def get_throttles(self):
+        if self.action == "counter_search":
+            return [CounterTicketSearchThrottle()]
+        return super().get_throttles()
+
+    @action(detail=False, methods=["get"], url_path="counter-search")
+    def counter_search(self, request):
+        """
+        Guichet : retrouver le billet d'un client par sa référence exacte ou son téléphone (complet ou ses 6 derniers
+        chiffres au moins). Jamais de recherche par nom. Lecture seule : l'annulation reste à l'administrateur.
+        """
+        query = " ".join(str(request.query_params.get("q") or "").split())
+        tickets = counter_ticket_matches(query)
+        if tickets is None:
+            raise ValidationError({"q": ["Saisissez la référence du billet (AX-…) ou le téléphone : au moins 6 chiffres."]})
+        logger.info("Recherche de billet au guichet : agent %s, requête %s, %s résultat(s).", request.user.pk, mask_query(query), len(tickets))
+        return Response(TicketSerializer(tickets, many=True, context={"request": request}).data)
+
     def get_permissions(self):
         # Les actions ayant leurs propres règles d'accès les gardent : cette méthode remplace
         # sinon celles déclarées sur l'action (défaut corrigé : scan et changement d'état ouverts à tout compte).
@@ -1496,6 +1760,8 @@ class TicketViewSet(viewsets.ModelViewSet):
             return [IsControllerOrAdmin()]
         if self.action == "transition":
             return [IsAxisAdmin()]
+        if self.action == "counter_search":
+            return [IsCounterOrAdmin()]
         # Vente et encaissement : client connecté (ses propres billets), guichet ou admin.
         if self.action in {"create", "pay"}:
             return [IsClientCounterOrAdmin()]
@@ -1713,7 +1979,6 @@ class BookingViewSet(viewsets.ModelViewSet):
                 customer=customer,
                 contact_phone=data.get("contact_phone", ""),
                 contact_email=data.get("contact_email", ""),
-                buyer_ifu=data.get("buyer_ifu", ""),
                 origin=data.get("origin") or None,
                 destination=data.get("destination") or None,
                 boarding_point=b_point,
@@ -1776,7 +2041,18 @@ class ParcelViewSet(viewsets.ModelViewSet):
         if self.request.user.role == User.Role.CLIENT:
             queryset = queryset.filter(customer=self.request.user)
         tracking = self.request.query_params.get("tracking_number")
-        return queryset.filter(tracking_number=tracking) if tracking else queryset
+        if tracking:
+            return queryset.filter(tracking_number=tracking)
+        if self.request.user.role == User.Role.ADMIN and self.action == "list":
+            bounds = _list_period(self.request)
+            if bounds:
+                # Colis du jour : départ du bus ce jour-là ; un colis sans départ affecté compte au jour de son enregistrement.
+                queryset = queryset.filter(
+                    Q(trip__departure_at__gte=bounds[0], trip__departure_at__lt=bounds[1])
+                    | Q(trip__isnull=True, created_at__gte=bounds[0], created_at__lt=bounds[1])
+                )
+            queryset = _status_filter(queryset, self.request, Parcel.Status)
+        return queryset
 
     def perform_create(self, serializer):
         is_client = self.request.user.role == User.Role.CLIENT
@@ -1864,6 +2140,26 @@ class ParcelViewSet(viewsets.ModelViewSet):
         return Response(ParcelSerializer(parcel).data)
 
 
+class RentalZoneViewSet(viewsets.ModelViewSet):
+    """Zones de circulation : lues par tous (actives seulement), gérées par l'admin ; jamais supprimées si utilisées."""
+
+    queryset = RentalZone.objects.all()
+    serializer_class = RentalZoneSerializer
+    http_method_names = ["get", "post", "patch", "head", "options"]
+
+    def get_permissions(self):
+        if self.action in {"list", "retrieve"}:
+            return [AllowAny()]
+        return [IsAxisAdmin()]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+        if user.is_authenticated and user.role == User.Role.ADMIN and self.request.query_params.get("all") == "true":
+            return queryset
+        return queryset.filter(active=True)
+
+
 class RentalBookingViewSet(viewsets.ModelViewSet):
     """Demandes de location : le client demande, l'admin gère (« manage », journalisé) ; jamais de suppression."""
 
@@ -1896,15 +2192,46 @@ class RentalBookingViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == "create":
             return [IsClient()]
-        if self.action in {"update", "partial_update", "destroy"}:
+        if self.action in {"update", "partial_update", "destroy", "manage", "changes"}:
+            # Avant : « manage » et « changes » retombaient sur « connecté » (un client gérait sa propre location).
             return [IsAxisAdmin()]
+        if self.action == "counter":
+            return [IsCounterOrAdmin()]
         return [IsAuthenticated()]
+
+    @action(detail=False, methods=["post"], permission_classes=[IsCounterOrAdmin])
+    def counter(self, request):
+        """
+        Demande enregistrée au guichet pour un client présent : rattachée à son compte (retrouvé par téléphone),
+        mêmes champs obligatoires que la demande en ligne ; journalisée avec l'agent. Ni véhicule ni prix modifiés.
+        """
+        phone = normalize_benin_phone(request.data.get("customer_phone"))
+        if not phone:
+            raise ValidationError({"customer_phone": "Numéro du client invalide : 10 chiffres commençant par 01."})
+        matches = [user for user in accounts_with_phone(phone) if user.role == User.Role.CLIENT and user.is_active]
+        if len(matches) != 1:
+            raise ValidationError({"customer_phone": "Aucun compte client unique pour ce numéro : le client s'inscrit d'abord avec son téléphone."})
+        data = {key: request.data.get(key) for key in (
+            "vehicle", "starts_at", "ends_at", "with_driver", "renter_full_name", "cip_number", "licence_number", "zone",
+        ) if key in request.data}
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        rental = serializer.save(customer=matches[0])
+        RentalChange.objects.create(rental=rental, actor=request.user, detail="Demande enregistrée au guichet pour un client présent.")
+        return Response(self.get_serializer(rental).data, status=status.HTTP_201_CREATED)
 
     def get_queryset(self):
         queryset = super().get_queryset()
         if self.request.user.role == User.Role.CLIENT:
             return queryset.filter(customer=self.request.user)
-        if self.request.user.role == User.Role.ADMIN:
+        # Guichet : consultation seulement (la gestion « manage » et les montants restent à l'admin).
+        if self.request.user.role in {User.Role.ADMIN, User.Role.COUNTER}:
+            if self.action == "list":
+                bounds = _list_period(self.request)
+                if bounds:
+                    # Location du jour : en cours à un moment de la période.
+                    queryset = queryset.filter(starts_at__lt=bounds[1], ends_at__gt=bounds[0])
+                queryset = _status_filter(queryset, self.request, RentalBooking.Status)
             return queryset
         return queryset.none()
 
@@ -1962,6 +2289,25 @@ def _report_period(request, *, default_start):
     return start, end
 
 
+def _list_period(request):
+    """Filtre « jour / période » des listes du personnel (?start=&end=, heure du Bénin) ; None = tous les jours."""
+    if not request.query_params.get("start"):
+        return None
+    start, end = _report_period(request, default_start=timezone.localdate())
+    if not request.query_params.get("end"):
+        end = start
+    return reporting.period_bounds(start, end)
+
+
+def _status_filter(queryset, request, choices):
+    status_value = (request.query_params.get("status") or "").strip()
+    if not status_value:
+        return queryset
+    if status_value not in choices.values:
+        raise ValidationError({"status": "Statut inconnu."})
+    return queryset.filter(status=status_value)
+
+
 class DashboardView(APIView):
     """
     Accueil administrateur. Sans paramètre : la période est aujourd'hui (heure du Bénin).
@@ -1984,6 +2330,7 @@ class DashboardView(APIView):
             checked=Count("tickets", filter=Q(tickets__status__in=[Ticket.Status.CHECKED, Ticket.Status.COMPLETED]), distinct=True),
         )
         headline = reporting.headline(start, end)
+        first, after = reporting.period_bounds(start, end)
         return Response(
             {
                 "period": {"start": start, "end": end},
@@ -2005,6 +2352,33 @@ class DashboardView(APIView):
                     .order_by("status")
                 ),
                 "parcels_summary": headline["parcels"],
+                # Colis du jour : départ du bus dans la période ; compteur à part pour ceux enregistrés.
+                "parcels_day": {
+                    "departing": Parcel.objects.filter(trip__departure_at__gte=first, trip__departure_at__lt=after)
+                    .exclude(status=Parcel.Status.CANCELLED).count(),
+                    "registered": Parcel.objects.filter(created_at__gte=first, created_at__lt=after).count(),
+                },
+                # À traiter, quel que soit le jour : jamais masqué par le filtre de date.
+                "to_handle": {
+                    "parcels_awaiting_pickup": [
+                        {"id": p.id, "tracking_number": p.tracking_number, "destination": p.destination.name, "status_display": p.get_status_display()}
+                        for p in Parcel.objects.filter(status__in=[Parcel.Status.ARRIVED, Parcel.Status.READY_FOR_PICKUP])
+                        .select_related("destination").order_by("updated_at")[:20]
+                    ],
+                    "parcels_awaiting_pickup_count": Parcel.objects.filter(
+                        status__in=[Parcel.Status.ARRIVED, Parcel.Status.READY_FOR_PICKUP]
+                    ).count(),
+                    "rentals_active": [
+                        {"id": r.id, "reference": r.reference, "vehicle": r.vehicle.name, "ends_at": r.ends_at}
+                        for r in RentalBooking.objects.filter(status=RentalBooking.Status.ACTIVE).select_related("vehicle").order_by("ends_at")[:20]
+                    ],
+                    "rentals_active_count": RentalBooking.objects.filter(status=RentalBooking.Status.ACTIVE).count(),
+                    "rentals_requested": [
+                        {"id": r.id, "reference": r.reference, "vehicle": r.vehicle.name, "starts_at": r.starts_at}
+                        for r in RentalBooking.objects.filter(status=RentalBooking.Status.REQUESTED).select_related("vehicle").order_by("starts_at")[:20]
+                    ],
+                    "rentals_requested_count": RentalBooking.objects.filter(status=RentalBooking.Status.REQUESTED).count(),
+                },
                 "revenue": {
                     "total": headline["gross_revenue"],
                     "by_payment_method": list(
@@ -2461,7 +2835,12 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
             arrival = confirm_trip_arrival(trip, int(stop), actor=request.user)
         except DjangoValidationError as exc:
             raise service_validation_error(exc, staff=True)
-        return Response({"stop": arrival.location.name, "confirmed_at": arrival.confirmed_at})
+        # Avertissement : un arrêt situé plus loin sur la ligne est déjà confirmé.
+        sequence = [location.pk for location in trip.route.get_stops_sequence()]
+        position = sequence.index(arrival.location_id)
+        further = trip.stop_arrivals.filter(location_id__in=sequence[position + 1:]).select_related("location").first()
+        warning = f"Attention : l'arrivée à {further.location.name}, plus loin sur la ligne, est déjà confirmée." if further else ""
+        return Response({"stop": arrival.location.name, "confirmed_at": arrival.confirmed_at, "warning": warning})
 
     @action(detail=False, methods=["get"])
     def today(self, request):
@@ -2493,6 +2872,7 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                 "seat": ticket.seat.number,
                 "passenger_name": ticket.passenger_name,
                 "passenger_phone": ticket.passenger_phone,
+                "whatsapp_number": ticket_whatsapp_number(ticket),
                 "amount_fcfa": int(ticket.amount),
                 "status": ticket.status,
                 "status_display": ticket.get_status_display(),
@@ -2587,7 +2967,6 @@ class StaffSaleViewSet(viewsets.GenericViewSet):
                         idempotency_key=key,
                         # Tout agent vend après l'heure : seuls les départs du jour passent _sellable_trips.
                         allow_departed=True,
-                        buyer_ifu=str(request.data.get("buyer_ifu") or ""),
                         origin=origin,
                         destination=destination,
                         boarding_point=boarding_point,
@@ -2835,3 +3214,52 @@ class StaffInvitationViewSet(viewsets.GenericViewSet):
         invitation.save(update_fields=["expires_at"])
         sent, error = _send_invitation(invitation)
         return Response(_invitation_payload(invitation, email_sent=sent, email_error=error))
+
+
+class CashHandoverViewSet(viewsets.GenericViewSet):
+    """
+    Clôtures de caisse, gérées par l'administrateur qui reçoit les espèces.
+    L'agent déclare son montant à l'admin ; le montant attendu n'apparaît qu'avec la clôture enregistrée.
+    Ni modification ni suppression : une erreur se rattrape par une correction.
+    """
+
+    permission_classes = [IsAxisAdmin]
+    queryset = CashHandover.objects.select_related("agent", "received_by", "corrects")
+
+    @staticmethod
+    def payload(row):
+        name = lambda user: (user.get_full_name() or user.username) if user else ""
+        return {
+            "id": row.id, "agent": row.agent_id, "agent_name": name(row.agent), "period_start": row.period_start,
+            "period_end": row.period_end, "expected_fcfa": row.expected_fcfa, "declared_fcfa": row.declared_fcfa,
+            "difference_fcfa": row.difference_fcfa, "received_by_name": name(row.received_by),
+            "corrects": row.corrects_id, "note": row.note, "created_at": row.created_at,
+        }
+
+    def list(self, request):
+        rows = self.get_queryset()
+        agent = request.query_params.get("agent")
+        if agent:
+            rows = rows.filter(agent_id=agent)
+        return Response([self.payload(row) for row in rows[:200]])
+
+    def create(self, request):
+        agent = get_object_or_404(User, pk=request.data.get("agent"))
+        try:
+            row = cash_closing.close_cash(
+                agent=agent, declared=request.data.get("declared_fcfa"), received_by=request.user, note=request.data.get("note", ""),
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"detail": exc.messages})
+        return Response(self.payload(row), status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def correct(self, request, pk=None):
+        try:
+            row = cash_closing.correct_cash(
+                original=self.get_object(), declared=request.data.get("declared_fcfa"),
+                received_by=request.user, note=request.data.get("note", ""),
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError({"detail": exc.messages})
+        return Response(self.payload(row), status=status.HTTP_201_CREATED)

@@ -6,6 +6,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 from .password_reset import change_password
+from .phone import whatsapp_number
 from .models import (
     BoardingPoint,
     Booking,
@@ -17,6 +18,7 @@ from .models import (
     PaymentMethod,
     Passenger,
     RentalBooking,
+    RentalZone,
     Route,
     Seat,
     SystemSetting,
@@ -60,8 +62,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "username", "email", "first_name", "last_name", "phone", "role", "role_display", "is_active", "must_change_password", "password"]
-        read_only_fields = ["is_active", "must_change_password"]
+        fields = ["id", "username", "email", "first_name", "last_name", "phone", "role", "role_display", "is_active", "must_change_password", "email_verified", "password"]
+        read_only_fields = ["is_active", "must_change_password", "email_verified"]
 
     def validate_password(self, value):
         validate_password(value)
@@ -86,8 +88,32 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
+# Liens de carte acceptés : https, Google Maps seulement (lien court ou adresse complète).
+MAP_URL_MESSAGE = "Collez un lien Google Maps en https (maps.app.goo.gl, google.com/maps ou share.google)."
+
+
+def clean_map_url(value):
+    from urllib.parse import urlsplit
+
+    value = (value or "").strip()
+    if not value:
+        return ""
+    parts = urlsplit(value)
+    host = (parts.hostname or "").lower()
+    allowed = (
+        host == "maps.app.goo.gl"
+        or host == "share.google"
+        or (host in {"google.com", "www.google.com"} and (parts.path == "/maps" or parts.path.startswith("/maps/")))
+    )
+    if parts.scheme != "https" or not allowed or parts.username or parts.password or parts.port:
+        raise serializers.ValidationError(MAP_URL_MESSAGE)
+    return value
+
+
 class BoardingPointSerializer(serializers.ModelSerializer):
     location_name = serializers.CharField(source="location.name", read_only=True)
+    # Champ texte : un seul message (clean_map_url) au lieu du « URL valide » générique.
+    map_url = serializers.CharField(required=False, allow_blank=True, max_length=500)
     is_used = serializers.SerializerMethodField()
 
     class Meta:
@@ -99,6 +125,7 @@ class BoardingPointSerializer(serializers.ModelSerializer):
             "name",
             "active",
             "order",
+            "map_url",
             "is_used",
             "created_at",
             "updated_at",
@@ -110,6 +137,9 @@ class BoardingPointSerializer(serializers.ModelSerializer):
         if not value:
             raise serializers.ValidationError("Le nom du point d'embarquement est obligatoire.")
         return value
+
+    def validate_map_url(self, value):
+        return clean_map_url(value)
 
     def get_is_used(self, obj):
         return (
@@ -124,7 +154,7 @@ def _active_boarding_points_payload(location):
     if not location:
         return []
     return [
-        {"id": pt.id, "name": pt.name, "order": pt.order, "active": pt.active}
+        {"id": pt.id, "name": pt.name, "order": pt.order, "active": pt.active, "map_url": pt.map_url}
         for pt in location.boarding_points.filter(active=True).order_by("order", "name", "id")
     ]
 
@@ -524,7 +554,6 @@ def ticket_print_info(ticket):
         "paid": paid,
         "sale": sale,
         "payment_mode": payment_mode,
-        "buyer_ifu": booking.buyer_ifu if booking else "",
         "boarding_place": (origin.address or "").strip() if origin else "",
         "origin": origin.name if origin else "",
         "destination": destination.name if destination else "",
@@ -553,6 +582,7 @@ class TicketSerializer(serializers.ModelSerializer):
     status_history = TicketStatusHistorySerializer(many=True, read_only=True)
     controls = TicketControlSerializer(many=True, read_only=True)
     public_url = serializers.SerializerMethodField()
+    whatsapp_number = serializers.SerializerMethodField()
     print_info = serializers.SerializerMethodField()
     origin_detail = LocationSerializer(source="boarding_location", read_only=True)
     destination_detail = LocationSerializer(source="alighting_location", read_only=True)
@@ -574,6 +604,7 @@ class TicketSerializer(serializers.ModelSerializer):
             "print_info",
             "booking",
             "public_url",
+            "whatsapp_number",
             "trip",
             "trip_detail",
             "origin",
@@ -614,6 +645,9 @@ class TicketSerializer(serializers.ModelSerializer):
 
     def get_public_url(self, obj):
         return public_ticket_url(obj)
+
+    def get_whatsapp_number(self, obj):
+        return ticket_whatsapp_number(obj)
 
     def get_print_info(self, obj):
         return ticket_print_info(obj)
@@ -697,7 +731,6 @@ class BookingCreateSerializer(serializers.Serializer):
     alighting_point = serializers.IntegerField(required=False, allow_null=True)
     contact_phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
-    buyer_ifu = serializers.CharField(max_length=30, required=False, allow_blank=True)
     passengers = BookingCreatePassengerSerializer(many=True, allow_empty=False, min_length=1, max_length=8)
 
     def validate(self, attrs):
@@ -756,7 +789,6 @@ class BookingSerializer(serializers.ModelSerializer):
             "customer_detail",
             "contact_phone",
             "contact_email",
-            "buyer_ifu",
             "status",
             "status_display",
             "client_status_display",
@@ -833,8 +865,23 @@ class ParcelSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class RentalZoneSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RentalZone
+        fields = ["id", "name", "active", "position"]
+
+
+# Champs exigés pour toute nouvelle demande de location (mêmes libellés sur le site et dans l'application).
+RENTAL_REQUIRED_FIELDS = {
+    "renter_full_name": "Indiquez le nom et les prénoms.",
+    "cip_number": "Indiquez le numéro du CIP.",
+    "licence_number": "Indiquez le numéro du permis de conduire.",
+}
+
+
 class RentalBookingSerializer(serializers.ModelSerializer):
     vehicle_detail = PublicVehicleSerializer(source="vehicle", read_only=True)
+    zone_name = serializers.CharField(source="zone.name", read_only=True, default="")
     customer_detail = UserSerializer(source="customer", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
 
@@ -853,6 +900,19 @@ class RentalBookingSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
+        if self.instance is None:
+            errors = {}
+            for field, message in RENTAL_REQUIRED_FIELDS.items():
+                attrs[field] = str(attrs.get(field) or "").strip()
+                if not attrs[field]:
+                    errors[field] = message
+            zone = attrs.get("zone")
+            if zone is None:
+                errors["zone"] = "Choisissez la zone de circulation du véhicule."
+            elif not zone.active:
+                errors["zone"] = "Cette zone de circulation n'est plus proposée."
+            if errors:
+                raise serializers.ValidationError(errors)
         # Nouvelle demande : le début ne peut pas être déjà passé.
         if self.instance is None and attrs.get("starts_at") and attrs["starts_at"] <= timezone.now():
             raise serializers.ValidationError({"starts_at": "Le début de la location doit être dans le futur."})
@@ -925,6 +985,7 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
     destination = serializers.SerializerMethodField()
     boarding_point_name = serializers.CharField(read_only=True)
     alighting_point_name = serializers.CharField(read_only=True)
+    boarding_map_url = serializers.SerializerMethodField()
     boarding_display = serializers.CharField(read_only=True)
     alighting_display = serializers.CharField(read_only=True)
     departure_at = serializers.SerializerMethodField()
@@ -952,6 +1013,7 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
             "destination",
             "boarding_point_name",
             "alighting_point_name",
+            "boarding_map_url",
             "boarding_display",
             "alighting_display",
             "segment_label",
@@ -970,6 +1032,10 @@ class PublicTicketDetailSerializer(serializers.ModelSerializer):
 
     def get_print_info(self, obj):
         return ticket_print_info(obj)
+
+    def get_boarding_map_url(self, obj):
+        point = getattr(obj, "boarding_point", None)
+        return point.map_url if point is not None else ""
 
     def get_arrival_at(self, obj):
         return serializers.DateTimeField().to_representation(obj.trip.arrival_at) if obj.trip.arrival_at else None
@@ -1136,3 +1202,11 @@ class AgencySettingChangeSerializer(serializers.ModelSerializer):
 
     def get_changed_by_name(self, obj):
         return _display_name(obj.changed_by) or "—"
+
+
+def ticket_whatsapp_number(ticket):
+    """Numéro WhatsApp du billet : téléphone du passager, sinon celui du compte client qui l'a acheté."""
+    customer = ticket.customer or getattr(ticket.booking, "customer", None)
+    # Jamais le téléphone d'un agent : seul un compte client compte (une vente au guichet n'a pas de client).
+    customer_phone = customer.phone if customer is not None and customer.role == User.Role.CLIENT else ""
+    return whatsapp_number(ticket.passenger_phone, customer_phone)

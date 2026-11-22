@@ -20,7 +20,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<SegmentOffer> _segments = [];
   List<Ticket> _tickets = [];
-  TripBanner? _banner;
   SegmentDirection _direction = SegmentDirection.forward;
   bool _segmentsLoading = true;
   String? _segmentsError;
@@ -70,10 +69,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     var tickets = await api.store.readCachedTickets();
     if (mounted) setState(() => _tickets = tickets);
     final segments = _loadSegments();
-    try {
-      final banner = await api.tripBanner();
-      if (mounted) setState(() => _banner = banner);
-    } catch (_) {}
     try {
       final user = await api.me();
       if (user.isClient) {
@@ -141,21 +136,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           borderRadius: BorderRadius.circular(AxisRadius.small),
                           child: InkWell(
                             onTap: () {
+                              // Seule notification : le rappel d'e-mail tant qu'il n'est pas vérifié.
+                              final remind =
+                                  ref.read(sessionProvider).user?.needsEmailReminder ?? false;
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Aucune notification'),
-                                  duration: Duration(seconds: 2),
-                                ),
+                                remind
+                                    ? SnackBar(
+                                        key: const Key('email-reminder'),
+                                        content: const Text(emailReminderText),
+                                        duration: const Duration(seconds: 8),
+                                        action: SnackBarAction(
+                                          label: 'Ajouter',
+                                          onPressed: () =>
+                                              context.push('/mon-profil'),
+                                        ),
+                                      )
+                                    : const SnackBar(
+                                        content: Text('Aucune notification'),
+                                        duration: Duration(seconds: 2),
+                                      ),
                               );
                             },
                             borderRadius: BorderRadius.circular(AxisRadius.small),
                             child: SizedBox(
                               width: AxisSizes.minTarget,
                               height: AxisSizes.minTarget,
-                              child: Icon(
-                                Icons.notifications_none_rounded,
-                                color: theme.colorScheme.onPrimary,
-                                size: AxisSizes.icon,
+                              child: Badge(
+                                key: const Key('email-reminder-badge'),
+                                isLabelVisible:
+                                    ref.read(sessionProvider).user?.needsEmailReminder ?? false,
+                                child: Icon(
+                                  Icons.notifications_none_rounded,
+                                  color: theme.colorScheme.onPrimary,
+                                  size: AxisSizes.icon,
+                                ),
                               ),
                             ),
                           ),
@@ -198,42 +212,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ],
           ),
-
-          // Bandeau dynamique du jour (si fourni par l'API)
-          if (_banner != null && _banner!.bannerText.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AxisSpacing.screen,
-                AxisSpacing.s14,
-                AxisSpacing.screen,
-                0,
-              ),
-              child: AxisCard(
-                backgroundColor: axis.surfaceSoft,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AxisSpacing.s14,
-                  vertical: AxisSpacing.s12,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.directions_bus_outlined,
-                      color: theme.colorScheme.primary,
-                      size: AxisSizes.icon,
-                    ),
-                    const SizedBox(width: AxisSpacing.s10),
-                    Expanded(
-                      child: Text(
-                        _banner!.bannerText,
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: axis.ink,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
 
           // Bandeau d'information d'embarquement (départ − 30 min)
           Padding(

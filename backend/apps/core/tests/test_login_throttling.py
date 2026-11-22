@@ -147,8 +147,11 @@ class RegisterThrottlingTests(APITestCase):
     def setUp(self):
         cache.clear()
 
-    def register(self, username, **extra):
-        return self.client.post(REGISTER, {"username": username, "password": "Mot-de-passe-123"}, format="json", **extra)
+    # Inscription par téléphone : un numéro fictif par nom.
+    PHONES = {"un": "0100000021", "deux": "0100000022", "trois": "0100000023"}
+
+    def register(self, name, **extra):
+        return self.client.post(REGISTER, {"phone": self.PHONES[name], "password": "Mot-de-passe-123"}, format="json", **extra)
 
     def test_signup_is_limited_per_address_with_a_clear_message(self):
         with rates(register_address="2/hour"):
@@ -161,6 +164,6 @@ class RegisterThrottlingTests(APITestCase):
         self.assertEqual(User.objects.filter(role=User.Role.CLIENT).count(), 3)
 
     def test_signup_still_creates_only_clients(self):
-        response = self.client.post(REGISTER, {"username": "pirate", "password": "Mot-de-passe-123", "role": "ADMIN"}, format="json")
+        response = self.client.post(REGISTER, {"phone": "0100000024", "password": "Mot-de-passe-123", "role": "ADMIN"}, format="json")
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(User.objects.get(username="pirate").role, User.Role.CLIENT)
+        self.assertEqual(User.objects.get(username="+2290100000024").role, User.Role.CLIENT)

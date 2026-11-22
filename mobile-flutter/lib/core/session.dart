@@ -15,7 +15,8 @@ class SessionRouterNotifier extends ChangeNotifier {
     if (_session.user?.id != newSession.user?.id ||
         _session.user?.role != newSession.user?.role ||
         _session.ready != newSession.ready ||
-        _session.expired != newSession.expired) {
+        _session.expired != newSession.expired ||
+        _session.adminRefused != newSession.adminRefused) {
       _session = newSession;
       notifyListeners();
     }
@@ -25,7 +26,12 @@ class SessionRouterNotifier extends ChangeNotifier {
 final sessionRouterNotifier = SessionRouterNotifier();
 
 class SessionState {
-  const SessionState({this.user, this.ready = false, this.expired = false});
+  const SessionState({
+    this.user,
+    this.ready = false,
+    this.expired = false,
+    this.adminRefused = false,
+  });
 
   final User? user;
   final bool ready;
@@ -33,11 +39,15 @@ class SessionState {
   /// Vrai quand la session vient d'expirer pendant l'utilisation (et non à l'ouverture de l'application).
   final bool expired;
 
+  /// Vrai quand un compte administrateur vient d'être refusé : la connexion affiche le message.
+  final bool adminRefused;
+
   SessionState copyWith({User? user, bool? ready, bool clearUser = false}) {
     return SessionState(
       user: clearUser ? null : user ?? this.user,
       ready: ready ?? this.ready,
       expired: expired,
+      adminRefused: adminRefused,
     );
   }
 }
@@ -47,6 +57,7 @@ class SessionNotifier extends Notifier<SessionState> {
   SessionState build() {
     // Session perdue en cours d'utilisation : retour à la connexion avec un message (voir globalRoleRedirect).
     _api.onSessionLost = _sessionLost;
+    _api.onPasswordChangeRequired = _passwordChangeRequired;
     Future.microtask(restore);
     sessionRouterNotifier.update(const SessionState());
     return const SessionState();
@@ -58,6 +69,13 @@ class SessionNotifier extends Notifier<SessionState> {
     try {
       // L'interface affichée dépend uniquement du rôle renvoyé par le serveur.
       final user = await _api.me();
+      // Un administrateur n'utilise jamais l'application (le serveur refuse aussi sa connexion).
+      if (user.isAdmin) {
+        await _api.logout();
+        state = const SessionState(ready: true, adminRefused: true);
+        sessionRouterNotifier.update(state);
+        return;
+      }
       if (!user.isClient && !user.isStaff) {
         await _api.logout();
         state = const SessionState(ready: true);
@@ -85,8 +103,28 @@ class SessionNotifier extends Notifier<SessionState> {
     }
   }
 
+  bool _rereading = false;
+
+  /// Relit le compte (GET /auth/me/ reste permis) : must_change_password passe à vrai et le routeur
+  /// ouvre l'écran de changement de mot de passe. Un seul relecture à la fois.
+  Future<void> _passwordChangeRequired() async {
+    if (_rereading || state.user == null || state.user!.mustChangePassword) return;
+    _rereading = true;
+    try {
+      await restore();
+    } finally {
+      _rereading = false;
+    }
+  }
+
   void _sessionLost() {
     if (state.user == null) return;
+    if (_api.lastLossWasAdminRefusal) {
+      _api.lastLossWasAdminRefusal = false;
+      state = const SessionState(ready: true, adminRefused: true);
+      sessionRouterNotifier.update(state);
+      return;
+    }
     state = const SessionState(ready: true, expired: true);
     sessionRouterNotifier.update(state);
   }
@@ -94,27 +132,18 @@ class SessionNotifier extends Notifier<SessionState> {
   Future<void> login(String username, String password) async {
     await _api.login(username, password);
     await restore();
+    if (state.adminRefused) throw ApiException(adminNotAllowedMessage);
     if (state.user == null) {
       throw ApiException('Ce compte ne peut pas utiliser l\'application.');
     }
   }
 
   Future<void> register({
-    required String username,
-    required String password,
-    required String firstName,
     required String phone,
-    String? lastName,
+    required String password,
     String? email,
   }) async {
-    await _api.register(
-      username: username,
-      password: password,
-      firstName: firstName,
-      phone: phone,
-      lastName: lastName,
-      email: email,
-    );
+    await _api.register(phone: phone, password: password, email: email);
     await restore();
   }
 

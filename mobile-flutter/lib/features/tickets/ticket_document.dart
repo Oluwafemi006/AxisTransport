@@ -19,7 +19,7 @@ String _orMissing(String? value) {
 }
 
 /// Les lignes du billet, uniquement tirées de la réponse du serveur.
-/// Une information facultative absente (arrivée, lieu d'embarquement, IFU…) est masquée.
+/// Une information facultative absente (arrivée, lieu d'embarquement…) est masquée.
 List<(String, String)> ticketFields(Ticket ticket) {
   final info = ticket.printInfo;
   final origin = (info != null && info.origin.isNotEmpty)
@@ -66,8 +66,6 @@ List<(String, String)> ticketFields(Ticket ticket) {
     if (info != null && info.sale.isNotEmpty) ('Vente', info.sale),
     if (info != null && info.paymentMode.isNotEmpty)
       ('Mode de paiement', info.paymentMode),
-    if (info != null && info.buyerIfu.trim().isNotEmpty)
-      ('IFU de l\'acheteur', info.buyerIfu.trim()),
   ];
 }
 
@@ -128,8 +126,6 @@ Future<Uint8List> buildSaleTicketPdf(SaleTicket ticket) {
       if (info != null && info.sale.isNotEmpty) ('Vente', info.sale),
       if (info != null && info.paymentMode.isNotEmpty)
         ('Mode de paiement', info.paymentMode),
-      if (info != null && info.buyerIfu.trim().isNotEmpty)
-        ('IFU de l\'acheteur', info.buyerIfu.trim()),
     ],
     footer: ticketFooterLines(info),
   );

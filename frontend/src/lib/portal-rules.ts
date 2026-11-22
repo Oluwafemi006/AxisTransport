@@ -82,11 +82,13 @@ export function whatsappHref(text: string | null | undefined): string | null {
   return match ? `https://wa.me/${match[1]}` : null;
 }
 
-// Envoi d'un billet par WhatsApp : message et lien du billet préremplis. Numéro du passager seulement s'il est
-// au format international ; sinon WhatsApp demande à l'agent de choisir le contact (aucun indicatif deviné).
-export function soldTicketWhatsappHref(ticket: { reference: string; passenger_name: string; passenger_phone: string }, link: string): string {
+// Envoi d'un billet par WhatsApp : message et lien du billet préremplis. Numéro calculé par le serveur
+// (`whatsapp_number`, phone.py) ; à défaut, numéro du passager déjà au format international ; sinon, repli :
+// WhatsApp demande à l'agent de choisir le contact (aucun indicatif deviné ici).
+export function soldTicketWhatsappHref(ticket: { reference: string; passenger_name: string; passenger_phone: string; whatsapp_number?: string | null }, link: string): string {
   const text = `Bonjour ${ticket.passenger_name}, voici votre billet AXIS Transport ${ticket.reference} : ${link}`;
-  const base = whatsappHref(ticket.passenger_phone) ?? "https://wa.me/";
+  const server = /^\d{8,15}$/.test(ticket.whatsapp_number ?? "") ? `https://wa.me/${ticket.whatsapp_number}` : null;
+  const base = server ?? whatsappHref(ticket.passenger_phone) ?? "https://wa.me/";
   return `${base}?text=${encodeURIComponent(text)}`;
 }
 
@@ -397,3 +399,66 @@ export function parcelBusText(bus: { departure_at: string; last_stop: string | n
   }
   return `Aucune arrivée confirmée pour l’instant. Départ prévu le ${formatBeninDateTime(bus.departure_at)}.`;
 }
+
+// Rappel « ajoutez votre e-mail » : client connecté sans e-mail vérifié (mêmes textes dans l'application).
+export const EMAIL_REMINDER_TEXT = "Ajoutez votre e-mail pour pouvoir récupérer votre compte si vous oubliez votre mot de passe. Sans e-mail, vous devrez contacter l’agence.";
+export function needsEmailReminder(user: { role: string; email_verified?: boolean } | null): boolean {
+  return Boolean(user && user.role === "CLIENT" && !user.email_verified);
+}
+
+// Recherche du guichet : référence AX-… ou téléphone (complet, ou 6 chiffres au moins). Jamais par nom (règle du serveur).
+export function counterSearchError(query: string): string | null {
+  const text = query.trim();
+  if (/^AX-[A-Z0-9-]+$/i.test(text)) return null;
+  const digits = text.replace(/[\s.()+-]/g, "");
+  if (/^\d{6,}$/.test(digits)) return null;
+  return "Saisissez la référence du billet (AX-…) ou le téléphone : au moins 6 chiffres. La recherche par nom n’est pas possible.";
+}
+
+// Filtre des listes admin : un jour (par défaut aujourd'hui), une période, ou tous les jours.
+export type ListPeriod = { mode: "day" | "period" | "all"; day: string; start: string; end: string };
+
+export function todayPeriod(today: string = beninDateKey()): ListPeriod {
+  return { mode: "day", day: today, start: today, end: today };
+}
+
+// Paramètres envoyés au serveur (c'est lui qui filtre) ; null si la période saisie est incomplète ou inversée.
+export function periodParams(period: ListPeriod, status = ""): string | null {
+  const params = new URLSearchParams();
+  if (period.mode === "day") {
+    if (!period.day) return null;
+    params.set("start", period.day);
+  } else if (period.mode === "period") {
+    if (!period.start || !period.end || period.end < period.start) return null;
+    params.set("start", period.start);
+    params.set("end", period.end);
+  }
+  if (status) params.set("status", status);
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
+
+// Demande de location : champs obligatoires, mêmes libellés et messages que le serveur et l'application.
+export type RentalIdentity = { renter_full_name: string; cip_number: string; licence_number: string; zone: string };
+export const RENTAL_IDENTITY_LABELS: Record<keyof RentalIdentity, string> = {
+  renter_full_name: "Nom et prénoms",
+  cip_number: "Numéro du CIP",
+  licence_number: "Numéro du permis de conduire",
+  zone: "Zone de circulation",
+};
+const RENTAL_IDENTITY_MESSAGES: Record<keyof RentalIdentity, string> = {
+  renter_full_name: "Indiquez le nom et les prénoms.",
+  cip_number: "Indiquez le numéro du CIP.",
+  licence_number: "Indiquez le numéro du permis de conduire.",
+  zone: "Choisissez la zone de circulation du véhicule.",
+};
+
+export function rentalIdentityError(values: RentalIdentity): string | null {
+  for (const key of Object.keys(RENTAL_IDENTITY_MESSAGES) as Array<keyof RentalIdentity>) {
+    if (!String(values[key] || "").trim()) return RENTAL_IDENTITY_MESSAGES[key];
+  }
+  return null;
+}
+
+// Montée à un arrêt intermédiaire : mot pour mot le texte de l'application (trip_results_screen.dart).
+export const ONBOARD_ONLY_MESSAGE = "Montée à bord, auprès du contrôleur : cette montée ne s’achète pas en ligne.";

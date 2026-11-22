@@ -25,6 +25,8 @@ interface PublicTicketData {
   formatted_amount: string;
   qr_token: string;
   company_name: string;
+  boarding_point_name?: string;
+  boarding_map_url?: string;
   created_at: string;
 }
 
@@ -211,6 +213,17 @@ export default function PublicTicketPage() {
                 Télécharger le billet (image)
               </button>
             </>
+          )}
+          {/* Lien saisi par l'agence dans /admin (vérifié par le serveur) ; aucun lien dans le code. */}
+          {ticket.boarding_map_url && (
+            <a
+              href={ticket.boarding_map_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 block w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-sm font-bold text-slate-900"
+            >
+              Itinéraire{ticket.boarding_point_name ? ` vers ${ticket.boarding_point_name}` : ""}
+            </a>
           )}
         </div>
 

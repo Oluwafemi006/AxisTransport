@@ -12,6 +12,8 @@ export interface User {
   is_active?: boolean;
   // Mot de passe provisoire saisi par un administrateur : à remplacer avant tout le reste.
   must_change_password?: boolean;
+  // E-mail confirmé par un code : seule condition pour « mot de passe oublié ».
+  email_verified?: boolean;
 }
 
 export interface BoardingPoint {
@@ -21,6 +23,7 @@ export interface BoardingPoint {
   name: string;
   active: boolean;
   order: number;
+  map_url?: string;
   is_used?: boolean;
 }
 
@@ -161,12 +164,15 @@ export interface Ticket {
   status: string;
   status_display: string;
   qr_token: string;
+  // Lien public du billet ; vide tant que l'adresse du site n'est pas configurée.
+  public_url?: string;
   channel: string;
   channel_display: string;
   reservation_expires_at: string | null;
   amount: string;
   currency: string;
   created_at: string;
+  whatsapp_number?: string | null;
 }
 
 export interface BookingPassenger {
@@ -190,7 +196,6 @@ export interface Booking {
   departure_label?: string;
   effective_departure_at?: string | null;
   contact_phone: string;
-  buyer_ifu: string;
   status: "HELD" | "CONFIRMED" | "CANCELLED" | "EXPIRED" | "REFUND_DUE" | string;
   status_display: string;
   client_status_display?: string;
@@ -256,6 +261,11 @@ export interface RentalBooking {
   deposit_amount?: string | null;
   customer_detail?: User;
   created_at?: string;
+  renter_full_name?: string;
+  cip_number?: string;
+  licence_number?: string;
+  zone?: number | null;
+  zone_name?: string;
 }
 
 export interface PaymentMethod {
@@ -397,7 +407,6 @@ export interface TicketPrintInfo {
   paid: boolean;
   sale: string;
   payment_mode: string;
-  buyer_ifu: string;
   boarding_place: string;
   origin?: string;
   destination?: string;
@@ -505,6 +514,7 @@ export interface SoldTicket {
   seat: string;
   passenger_name: string;
   passenger_phone: string;
+  whatsapp_number?: string | null;
   amount_fcfa: number;
   status: string;
   status_display: string;

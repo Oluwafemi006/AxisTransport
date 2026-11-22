@@ -96,6 +96,13 @@ Future<_Api> _open(WidgetTester tester, {String? role, bool mustChange = false})
 void main() {
   setUpAll(() => initializeDateFormatting('fr_FR'));
 
+  testWidgets('un compte ADMIN est refusé : écran de connexion avec le message, pas d’espace du personnel', (tester) async {
+    await _open(tester, role: 'ADMIN');
+    expect(find.text('Scanner un billet'), findsNothing);
+    expect(find.text('Vendre'), findsNothing);
+    expect(find.byKey(const Key('admin-refused-banner')), findsOneWidget);
+  });
+
   testWidgets(
     'un client arrive sur l’interface client, sans Scanner ni Vendre',
     (tester) async {
@@ -110,7 +117,7 @@ void main() {
     },
   );
 
-  for (final role in ['CONTROLLER', 'COUNTER', 'ADMIN']) {
+  for (final role in ['CONTROLLER', 'COUNTER']) {
     testWidgets('un compte $role arrive sur l’interface du personnel', (
       tester,
     ) async {

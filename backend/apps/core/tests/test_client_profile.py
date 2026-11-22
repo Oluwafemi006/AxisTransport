@@ -19,7 +19,7 @@ class ClientProfileTests(APITestCase):
         }, format="json")
         self.assertEqual(response.status_code, 200, response.data)
         self.user.refresh_from_db()
-        self.assertEqual((self.user.first_name, self.user.last_name, self.user.phone), ("Awa", "TEST", "+229 01 97 00 00 12"))
+        self.assertEqual((self.user.first_name, self.user.last_name, self.user.phone), ("Awa", "TEST", "+2290197000012"))
         change = AccountChange.objects.get(target=self.user)
         self.assertEqual(change.actor, self.user)
         self.assertIn("téléphone", change.detail)

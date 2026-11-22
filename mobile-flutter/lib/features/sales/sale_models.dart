@@ -190,7 +190,11 @@ class SaleTicket {
     this.alightingDisplay = '',
     this.printInfo,
     this.qrToken = '',
+    this.whatsappNumber = '',
   });
+
+  /// Numéro WhatsApp calculé par le serveur (passager ou compte client), chiffres seuls ; vide si inconnu.
+  final String whatsappNumber;
 
   /// Jeton lu par le scanner ; vide tant que le billet n'est pas émis.
   final String qrToken;
@@ -211,7 +215,7 @@ class SaleTicket {
   final String boardingDisplay;
   final String alightingDisplay;
 
-  /// Données imprimées sur le billet (fiscalité, IFU acheteur, mode de paiement).
+  /// Données imprimées sur le billet (fiscalité, mode de paiement).
   final TicketPrintInfo? printInfo;
 
   bool get isIssued => status == 'ISSUED';
@@ -238,6 +242,7 @@ class SaleTicket {
       amount: _num(json['amount']),
       currency: json['currency'] as String? ?? 'XOF',
       publicUrl: json['public_url'] as String? ?? '',
+      whatsappNumber: json['whatsapp_number'] as String? ?? '',
       boardingDisplay: bDisp.isNotEmpty ? bDisp : (info?.boardingDisplay.trim() ?? ''),
       alightingDisplay: aDisp.isNotEmpty ? aDisp : (info?.alightingDisplay.trim() ?? ''),
       printInfo: info,
@@ -329,8 +334,6 @@ String saleShareText(SaleTicket ticket, String Function(DateTime) formatDate) {
           : 'Vendeur : ${info.sale.trim()}',
     if (info != null && info.paymentMode.trim().isNotEmpty)
       'Mode de paiement : ${info.paymentMode.trim()}',
-    if (info != null && info.buyerIfu.trim().isNotEmpty)
-      'IFU de l\'acheteur : ${info.buyerIfu.trim()}',
     if (ticket.publicUrl.isNotEmpty) ...[
       '',
       'Votre billet : ${ticket.publicUrl}',

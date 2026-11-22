@@ -350,3 +350,42 @@ test("suivi colis : dernière ville confirmée, ou départ prévu, à l'heure du
   const planned = parcelBusText({ departure_at: "2026-11-18T06:00:00Z", last_stop: null, last_confirmed_at: null });
   assert.match(planned, /^Aucune arrivée confirmée pour l’instant\. Départ prévu le .*07:00\.$/, "UTC 06:00 = 07:00 au Bénin");
 });
+
+test("rappel e-mail : client sans e-mail vérifié seulement", async () => {
+  const { needsEmailReminder, EMAIL_REMINDER_TEXT } = await import(pathToFileURL(compiled).href);
+  assert.equal(needsEmailReminder({ role: "CLIENT", email_verified: false }), true);
+  assert.equal(needsEmailReminder({ role: "CLIENT" }), true);
+  assert.equal(needsEmailReminder({ role: "CLIENT", email_verified: true }), false);
+  assert.equal(needsEmailReminder({ role: "COUNTER", email_verified: false }), false);
+  assert.equal(needsEmailReminder(null), false);
+  assert.match(EMAIL_REMINDER_TEXT, /Sans e-mail, vous devrez contacter l’agence\.$/);
+});
+
+test("filtre des listes admin : jour par défaut, période, tous les jours", async () => {
+  const rules = await import(pathToFileURL(compiled).href);
+  const today = rules.todayPeriod("2026-11-20");
+  assert.equal(rules.periodParams(today), "?start=2026-11-20");
+  assert.equal(rules.periodParams({ ...today, mode: "all" }), "");
+  assert.equal(rules.periodParams({ ...today, mode: "all" }, "ARRIVED"), "?status=ARRIVED");
+  assert.equal(rules.periodParams({ mode: "period", day: "", start: "2026-11-01", end: "2026-11-20" }, "PAID"), "?start=2026-11-01&end=2026-11-20&status=PAID");
+  assert.equal(rules.periodParams({ mode: "period", day: "", start: "2026-11-20", end: "2026-11-01" }), null);
+  assert.equal(rules.periodParams({ ...today, day: "" }), null);
+});
+
+test("location : champs obligatoires, mêmes messages que le serveur", async () => {
+  const rules = await import(pathToFileURL(compiled).href);
+  const full = { renter_full_name: "Locataire TEST", cip_number: "CIP-TEST", licence_number: "PERMIS-TEST", zone: "1" };
+  assert.equal(rules.rentalIdentityError(full), null);
+  assert.equal(rules.rentalIdentityError({ ...full, renter_full_name: "  " }), "Indiquez le nom et les prénoms.");
+  assert.equal(rules.rentalIdentityError({ ...full, cip_number: "" }), "Indiquez le numéro du CIP.");
+  assert.equal(rules.rentalIdentityError({ ...full, licence_number: "" }), "Indiquez le numéro du permis de conduire.");
+  assert.equal(rules.rentalIdentityError({ ...full, zone: "" }), "Choisissez la zone de circulation du véhicule.");
+});
+
+test("WhatsApp : numéro du serveur d'abord, repli sur le choix du contact", async () => {
+  const rules = await import(pathToFileURL(compiled).href);
+  const ticket = { reference: "AX-TEST", passenger_name: "Passager TEST", passenger_phone: "01 00 00 00 09" };
+  assert.ok(rules.soldTicketWhatsappHref({ ...ticket, whatsapp_number: "2290100000009" }, "https://site.test/t/AX-TEST").startsWith("https://wa.me/2290100000009?text="));
+  assert.ok(rules.soldTicketWhatsappHref({ ...ticket, whatsapp_number: null }, "https://site.test/t/AX-TEST").startsWith("https://wa.me/?text="));
+  assert.ok(decodeURIComponent(rules.soldTicketWhatsappHref({ ...ticket, whatsapp_number: "2290100000009" }, "https://site.test/t/AX-TEST")).includes("Bonjour Passager TEST, voici votre billet AXIS Transport AX-TEST : https://site.test/t/AX-TEST"));
+});

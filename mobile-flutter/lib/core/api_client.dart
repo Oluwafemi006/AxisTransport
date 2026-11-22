@@ -14,6 +14,24 @@ const segmentFareMissingCode = 'segment_fare_missing';
 const segmentFareMissingMessage =
     "Tarif non disponible pour ce trajet. Choisissez un autre trajet ou contactez l'agence.";
 
+/// En-tête qui identifie l'application auprès du serveur (le site ne l'envoie pas).
+const mobileAppHeader = 'X-Axis-Client';
+const mobileAppHeaderValue = 'app-mobile';
+
+/// Refus du serveur : un compte administrateur ne se connecte pas dans l'application.
+const adminNotAllowedCode = 'admin_not_allowed_in_app';
+const adminNotAllowedMessage =
+    'Un compte administrateur ne se connecte pas dans l\'application : utilisez le portail /admin du site.';
+
+/// Refus du serveur : mot de passe provisoire à remplacer avant toute autre action.
+const passwordChangeRequiredCode = 'password_change_required';
+
+bool isAdminRefusal(Object error) {
+  if (error is! ApiException) return false;
+  final data = error.data;
+  return data is Map && data['code'] == adminNotAllowedCode;
+}
+
 class ApiException implements Exception {
   ApiException(this.message, {this.statusCode, this.data});
   final String message;
@@ -57,7 +75,10 @@ class ApiClient {
             baseUrl: AppConfig.apiUrl,
             connectTimeout: const Duration(seconds: 12),
             receiveTimeout: const Duration(seconds: 20),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              mobileAppHeader: mobileAppHeaderValue,
+            },
           ),
         );
     _dio.interceptors.add(
@@ -73,6 +94,16 @@ class ApiClient {
         },
         onError: (error, handler) async {
           final request = error.requestOptions;
+          // Mot de passe réinitialisé par l'admin pendant la session : on prévient la session,
+          // qui relit le compte et ouvre l'écran de changement (au lieu d'un écran vide).
+          final body = error.response?.data;
+          if (error.response?.statusCode == 403 &&
+              body is Map &&
+              body['code'] == passwordChangeRequiredCode) {
+            onPasswordChangeRequired?.call();
+            handler.next(error);
+            return;
+          }
           final alreadyRetried = request.extra['retried'] == true;
           if (error.response?.statusCode != 401 ||
               request.extra['auth'] != true ||
@@ -120,31 +151,36 @@ class ApiClient {
     );
   }
 
+  /// Inscription allégée : téléphone et mot de passe, e-mail facultatif. Le serveur fait du numéro l'identifiant.
   Future<void> register({
-    required String username,
-    required String password,
-    required String firstName,
     required String phone,
-    String? lastName,
+    required String password,
     String? email,
   }) async {
-    final payload = <String, dynamic>{
-      'username': username,
-      'password': password,
-      'first_name': firstName,
-      'phone': phone,
-    };
-    if (lastName != null && lastName.isNotEmpty) {
-      payload['last_name'] = lastName;
-    }
+    final payload = <String, dynamic>{'phone': phone, 'password': password};
     if (email != null && email.isNotEmpty) {
       payload['email'] = email;
     }
-    await _request<dynamic>(
-      '/auth/register/',
-      data: payload,
+    await _request<dynamic>('/auth/register/', data: payload);
+    // La connexion accepte le numéro sous toutes ses formes (le serveur le retrouve).
+    await login(phone, password);
+  }
+
+  /// Envoie un code à l'e-mail du compte. Le serveur répond 503 avec un message clair si rien n'est parti.
+  Future<String> sendEmailCode() async {
+    final payload = await _request<Map<String, dynamic>>(
+      '/auth/email/send-code/',
+      auth: true,
     );
-    await login(username, password);
+    return payload['detail'] as String? ?? 'Code envoyé.';
+  }
+
+  Future<void> verifyEmailCode(String code) async {
+    await _request<dynamic>(
+      '/auth/email/verify/',
+      data: {'code': code},
+      auth: true,
+    );
   }
 
   Future<void> updateEmail(String email) async {
@@ -319,6 +355,11 @@ class ApiClient {
     return _list('/client/locations/', (json) => Place.fromJson(json));
   }
 
+  /// Zones de circulation actives (liste publique gérée dans /admin).
+  Future<List<RentalZone>> rentalZones() {
+    return _list('/rental-zones/', (json) => RentalZone.fromJson(json));
+  }
+
   Future<List<Vehicle>> rentalVehicles() {
     return _list('/client/vehicles/', (json) => Vehicle.fromJson(json));
   }
@@ -390,6 +431,10 @@ class ApiClient {
     required DateTime startsAt,
     required DateTime endsAt,
     required bool withDriver,
+    required String renterFullName,
+    required String cipNumber,
+    required String licenceNumber,
+    required int zone,
   }) async {
     final payload = await _request<Map<String, dynamic>>(
       '/client/rentals/',
@@ -398,6 +443,10 @@ class ApiClient {
         'starts_at': startsAt.toUtc().toIso8601String(),
         'ends_at': endsAt.toUtc().toIso8601String(),
         'with_driver': withDriver,
+        'renter_full_name': renterFullName.trim(),
+        'cip_number': cipNumber.trim(),
+        'licence_number': licenceNumber.trim(),
+        'zone': zone,
       },
       auth: true,
     );
@@ -427,7 +476,6 @@ class ApiClient {
     required int trip,
     required String contactPhone,
     String contactEmail = '',
-    String buyerIfu = '',
     String? origin,
     String? destination,
     int? boardingPointId,
@@ -440,7 +488,6 @@ class ApiClient {
         'trip': trip,
         'contact_phone': contactPhone,
         'contact_email': contactEmail,
-        'buyer_ifu': buyerIfu.trim(),
         if (origin != null && origin.isNotEmpty) 'origin': origin,
         if (destination != null && destination.isNotEmpty) 'destination': destination,
         // ignore: use_null_aware_elements
@@ -699,6 +746,12 @@ class ApiClient {
   /// Appelé quand le renouvellement de la session échoue (jeton expiré ou fermé) : l'interface prévient l'utilisateur.
   void Function()? onSessionLost;
 
+  /// Appelé quand le serveur exige un nouveau mot de passe (compte réinitialisé par l'admin).
+  void Function()? onPasswordChangeRequired;
+
+  /// Vrai si la dernière session perdue l'a été parce que le serveur refuse un compte administrateur.
+  bool lastLossWasAdminRefusal = false;
+
   Future<bool> _refreshSession() async {
     if (_refreshLock != null) return _refreshLock!.future;
     final lock = Completer<bool>();
@@ -720,7 +773,8 @@ class ApiClient {
       );
       lock.complete(true);
       return true;
-    } catch (_) {
+    } catch (error) {
+      lastLossWasAdminRefusal = isAdminRefusal(error);
       await logout();
       lock.complete(false);
       onSessionLost?.call();

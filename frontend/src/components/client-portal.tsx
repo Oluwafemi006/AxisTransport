@@ -3,15 +3,15 @@
 import { PasswordInput } from "./password-input";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail } from "@/lib/api";
-import { BOARDING_POINT_HELP, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, boardingFieldLabel, resizePassengers, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, parcelBusText, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
-import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, TripBanner, User, Vehicle } from "@/lib/types";
+import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail, sendEmailCode, verifyEmailCode } from "@/lib/api";
+import { BOARDING_POINT_HELP, ONBOARD_ONLY_MESSAGE, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, boardingFieldLabel, resizePassengers, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, parcelBusText, needsEmailReminder, EMAIL_REMINDER_TEXT, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
+import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { ClientTabBar, type ClientTab } from "./client-tab-bar";
 import { BOOKING_STEPS, bookingStep, clientLocationSearch, hasCompleteSearch, readClientLocation, searchSummary, shiftDayKey } from "@/lib/search-url";
 import { SwapIcon } from "./icons";
 import { Rentals } from "./client-rentals";
-import { BusIcon, CarIcon, CheckCircleIcon, CheckIcon, PackageIcon, PhoneIcon, TicketIcon } from "./icons";
+import { CarIcon, CheckCircleIcon, CheckIcon, PackageIcon, PhoneIcon, TicketIcon } from "./icons";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
 import { useSessionGuard } from "@/lib/use-session";
 import { ForcedPasswordChange } from "./forced-password-change";
@@ -32,7 +32,6 @@ export function ClientPortal() {
   const [parcels, setParcels] = useState<Parcel[]>([]);
   const [rentals, setRentals] = useState<RentalBooking[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [banner, setBanner] = useState<TripBanner | null>(null);
   const [nextAvailable, setNextAvailable] = useState<NextAvailable | null>(null);
   // Coordonnées lues dans les réglages admin ; vides tant qu'elles ne sont pas renseignées.
   const [contact, setContact] = useState<Contact>({ contact_phone: "", contact_whatsapp: "" });
@@ -86,7 +85,6 @@ export function ClientPortal() {
       setLocations(activeLocations);
       setVehicles(rentalVehicles);
       setPaymentMethods(methods);
-      apiFetch<TripBanner>("/client/trips/banner/", {}, false).then(setBanner).catch(() => undefined);
       apiFetch<Contact>("/client/contact/", {}, false).then(setContact).catch(() => undefined);
       await loadPrivate();
     } catch (reason) {
@@ -287,7 +285,7 @@ export function ClientPortal() {
     <div className="client-site">
       <div className="top">
         <div className="wrap">
-          <span>{banner?.banner_text ? banner.banner_text.split('.')[0] : "Voyages interurbains au Bénin"}</span>
+          <span>Voyages interurbains au Bénin</span>
           {contact.contact_phone && <span>Téléphone : <PhoneText value={contact.contact_phone} /></span>}
           <WhatsAppIcon value={contact.contact_whatsapp} />
           <span>Voyagez en toute confiance</span>
@@ -332,20 +330,12 @@ export function ClientPortal() {
         <>
           {tab === "accueil" && (
             <>
+              {user && <div className="wrap" style={{ paddingTop: '16px' }}><EmailReminder user={user} onOpenProfile={() => setTab("profil")} /></div>}
               <div className="hero has-bg">
                 <div className="wrap">
                   <small>AXIS TRANSPORT</small>
                   <h1>Voyagez simplement avec AXIS Transport</h1>
                   <p>Réservez votre place en ligne, payez par Mobile Money et voyagez avec un billet électronique.</p>
-                  {banner?.banner_text ? (
-                    <div className="axe" style={{ padding: '12px 20px', fontSize: '15px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '10px', lineHeight: 1.4 }}>
-                      {/* Icône dans la même bulle que le texte : sinon, sur téléphone, le texte long passe sous l'icône. */}
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
-                        <BusIcon size={22} style={{ flex: 'none' }} />
-                        <span style={{ background: 'none', border: 'none', padding: 0 }}>{banner.banner_text}</span>
-                      </span>
-                    </div>
-                  ) : null}
                 </div>
               </div>
 
@@ -791,7 +781,6 @@ function Tickets({
   ]);
   const selectedSeatIds = passengers.map((p) => p.seatId).filter((id): id is number => id !== null);
   const [contactPhone, setContactPhone] = useState("");
-  const [buyerIfu, setBuyerIfu] = useState("");
   const [pendingBooking, setPendingBooking] = useState<BookingPayload | null>(null);
   const [pendingTickets, setPendingTickets] = useState<Ticket[]>([]);
   const [checkout, setCheckout] = useState<Checkout | null>(null);
@@ -810,6 +799,9 @@ function Tickets({
   const [message, setMessage] = useState("");
   const selectedTrip = segmentTrips.find((trip) => String(trip.id) === tripId) || trips.find((trip) => String(trip.id) === tripId);
   const effectiveOriginId = originId || searchOrigin || (selectedTrip ? String(selectedTrip.route_detail.origin) : "");
+  // Même règle que l'application et le serveur (services.reserve_booking, terminus_boarding_only) :
+  // en ligne, la montée se fait au départ du parcours ; ailleurs, elle se paie à bord.
+  const onboardOnly = !!selectedTrip && !!effectiveOriginId && String(selectedTrip.route_detail.origin) !== effectiveOriginId;
   const effectiveDestId = destinationId || searchDestination || (selectedTrip ? String(selectedTrip.route_detail.destination) : "");
 
   const getActivePointsForCity = useCallback((cityIdStr: string) => {
@@ -1111,7 +1103,6 @@ function Tickets({
     const payload = {
       trip: Number(tripId),
       contact_phone: contactPhone || passengers[0]?.phone || "",
-      buyer_ifu: buyerIfu.trim(),
       origin: orig || undefined,
       destination: dest || undefined,
       boarding_point_id: boardingPointId ? Number(boardingPointId) : undefined,
@@ -1181,6 +1172,7 @@ function Tickets({
 
   // Action unique : réserver les sièges puis ouvrir le paiement, dans un seul enchaînement.
   async function payNow(event: FormEvent) {
+    if (onboardOnly) { event.preventDefault(); return; }
     event.preventDefault();
     if (locked.current || held || !singleQuote) return;
     locked.current = true;
@@ -1199,6 +1191,7 @@ function Tickets({
 
   // Plusieurs moyens de paiement en ligne (ou aucun) : la réservation d'abord, le choix du moyen ensuite.
   async function reserveOnly(event: FormEvent) {
+    if (onboardOnly) { event.preventDefault(); return; }
     event.preventDefault();
     if (locked.current || held) return;
     locked.current = true;
@@ -1364,7 +1357,7 @@ function Tickets({
 
             {chosenSegment && !chosenSegment.online_boarding && (
               <p role="status" style={{ marginTop: '10px', padding: '12px 14px', borderRadius: '12px', background: 'var(--warnbg)', color: 'var(--warn)', fontWeight: 600 }}>
-                {chosenSegment.origin} → {chosenSegment.destination} : {money(chosenSegment.price_fcfa)}. Montée à bord, auprès du contrôleur.
+                {chosenSegment.origin} → {chosenSegment.destination} : {money(chosenSegment.price_fcfa)}. {ONBOARD_ONLY_MESSAGE}
               </p>
             )}
 
@@ -1411,6 +1404,13 @@ function Tickets({
                         <small style={{ color: 'var(--mute)', display: 'block', marginTop: '4px' }}>{BOARDING_POINT_HELP}</small>
                       </>
                     )}
+                    {(() => {
+                      // Itinéraire du point choisi (lien saisi dans /admin) ; nouvel onglet.
+                      const chosen = activeBoardingPoints.length === 1 ? activeBoardingPoints[0] : activeBoardingPoints.find((p) => String(p.id) === boardingPointId);
+                      return chosen?.map_url ? (
+                        <a href={chosen.map_url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: '6px', fontSize: '13px', fontWeight: 700 }}>Itinéraire</a>
+                      ) : null;
+                    })()}
                   </div>
                 )}
                 {activeAlightingPoints.length > 0 && (
@@ -1451,8 +1451,6 @@ function Tickets({
               onClearSeat={handleClearSeat}
               contactPhone={contactPhone}
               onContactPhoneChange={setContactPhone}
-              buyerIfu={buyerIfu}
-              onBuyerIfuChange={setBuyerIfu}
               isUserLoggedIn={Boolean(user)}
             />
 
@@ -1503,7 +1501,12 @@ function Tickets({
                 </div>
               </div>
             )}
-            {!held && !issued && (singleQuote ? (
+            {onboardOnly && !held && !issued && (
+              <p role="status" style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '12px', background: 'var(--warnbg)', color: 'var(--warn)', fontWeight: 600 }}>
+                {ONBOARD_ONLY_MESSAGE}
+              </p>
+            )}
+            {!held && !issued && !onboardOnly && (singleQuote ? (
               <button className="btn p" style={{ marginTop: '16px', width: '100%' }} disabled={busy || !tripId || passengers.length === 0}>
                 {busy ? "Patientez…" : !tripId ? "Choisissez un départ" : `Payer ${money(singleQuote.total, singleQuote.currency)}${passengers.length > 1 ? ` (${passengers.length} billets)` : ""}`}
               </button>
@@ -1892,6 +1895,7 @@ function Profile({ user, tickets, parcels, rentals, onAuthenticated, onLogout }:
         </div>
       </div>
       
+      <EmailReminder user={user} />
       <AccountSettings user={user} onSaved={onAuthenticated} />
 
       <button className="btn" style={{ width: '100%', borderColor: 'var(--warn)', color: 'var(--warn)' }} onClick={onLogout}>Se déconnecter</button>
@@ -1900,12 +1904,33 @@ function Profile({ user, tickets, parcels, rentals, onAuthenticated, onLogout }:
 }
 
 // E-mail (pour le mot de passe oublié) et changement de mot de passe du titulaire.
+// Rappel fermable (mémorisé dans ce navigateur) tant que l'e-mail du client n'est pas vérifié.
+function EmailReminder({ user, onOpenProfile }: { user: User | null; onOpenProfile?: () => void }) {
+  const key = user ? `axis_email_reminder_closed_${user.id}` : "";
+  const [closed, setClosed] = useState(true);
+  useEffect(() => {
+    try { setClosed(Boolean(key) && window.localStorage.getItem(key) === "1"); } catch { setClosed(false); }
+  }, [key]);
+  if (!needsEmailReminder(user) || closed) return null;
+  return (
+    <div role="status" data-testid="email-reminder" style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', background: 'var(--tint)', color: 'var(--navy)', padding: '14px 16px', borderRadius: '12px', margin: '0 0 20px' }}>
+      <p style={{ margin: 0, flex: 1, fontSize: '14px' }}>
+        {EMAIL_REMINDER_TEXT}
+        {onOpenProfile && <> <button type="button" className="text-button" style={{ padding: 0 }} onClick={onOpenProfile}>Ajouter mon e-mail</button></>}
+      </p>
+      <button type="button" aria-label="Fermer le rappel" style={{ background: 'none', border: 0, fontSize: '20px', lineHeight: 1, cursor: 'pointer', color: 'inherit' }} onClick={() => { setClosed(true); try { window.localStorage.setItem(key, "1"); } catch { /* stockage indisponible */ } }}>×</button>
+    </div>
+  );
+}
+
 function AccountSettings({ user, onSaved }: { user: User; onSaved: () => Promise<void> }) {
   const [email, setEmail] = useState(user.email || "");
   const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [emailNotice, setEmailNotice] = useState({ ok: "", error: "" });
+  const [code, setCode] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
   const [passwordNotice, setPasswordNotice] = useState({ ok: "", error: "" });
   const [busy, setBusy] = useState(false);
 
@@ -1913,11 +1938,41 @@ function AccountSettings({ user, onSaved }: { user: User; onSaved: () => Promise
     event.preventDefault();
     setBusy(true);
     try {
-      await updateMyEmail(email.trim());
-      setEmailNotice({ ok: "E-mail enregistré.", error: "" });
+      const saved = await updateMyEmail(email.trim());
       await onSaved();
+      if (saved.email && !saved.email_verified) await askCode();
+      else setEmailNotice({ ok: "E-mail enregistré.", error: "" });
     } catch (reason) {
       setEmailNotice({ ok: "", error: reason instanceof Error ? reason.message : "Enregistrement impossible." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Le message vient du serveur : « Code envoyé à … » ou la raison exacte s'il n'est pas parti.
+  async function askCode() {
+    setBusy(true);
+    try {
+      const result = await sendEmailCode();
+      setCodeSent(true);
+      setEmailNotice({ ok: result.detail, error: "" });
+    } catch (reason) {
+      setEmailNotice({ ok: "", error: reason instanceof Error ? reason.message : "L’e-mail n’a pas pu être envoyé." });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmCode(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await verifyEmailCode(code.trim());
+      setCode(""); setCodeSent(false);
+      setEmailNotice({ ok: "E-mail vérifié : il servira si vous oubliez votre mot de passe.", error: "" });
+      await onSaved();
+    } catch (reason) {
+      setEmailNotice({ ok: "", error: reason instanceof Error ? reason.message : "Code incorrect." });
     } finally {
       setBusy(false);
     }
@@ -1945,12 +2000,24 @@ function AccountSettings({ user, onSaved }: { user: User; onSaved: () => Promise
     <div style={{ display: 'grid', gap: '24px', marginBottom: '32px' }}>
       {user.role === "CLIENT" && (
         <form onSubmit={saveEmail}>
-          <h4 style={{ fontSize: '17px', marginBottom: '4px' }}>E-mail</h4>
-          <p style={{ color: 'var(--mute)', fontSize: '13px', marginBottom: '8px' }}>Il sert à recevoir un code si vous oubliez votre mot de passe.</p>
+          <h4 style={{ fontSize: '17px', marginBottom: '4px' }}>E-mail {user.email && <span data-testid="email-state" style={{ fontSize: '12px', fontWeight: 'normal', color: user.email_verified ? 'var(--ok)' : 'var(--warn)' }}>{user.email_verified ? "· vérifié" : "· non vérifié"}</span>}</h4>
+          <p style={{ color: 'var(--mute)', fontSize: '13px', marginBottom: '8px' }}>Une fois vérifié, il sert à recevoir un lien si vous oubliez votre mot de passe.</p>
           <input type="email" className="field" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           {emailNotice.error && <p className="notice notice-error mt-2" role="alert">{emailNotice.error}</p>}
           {emailNotice.ok && <p className="notice mt-2" role="status">{emailNotice.ok}</p>}
-          <button className="btn mt-2" disabled={busy}>Enregistrer l’e-mail</button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            <button className="btn mt-2" disabled={busy}>Enregistrer l’e-mail</button>
+            {user.email && !user.email_verified && email.trim() === user.email && (
+              <button type="button" className="btn mt-2" disabled={busy} onClick={() => void askCode()}>{codeSent ? "Renvoyer le code" : "Recevoir un code de vérification"}</button>
+            )}
+          </div>
+        </form>
+      )}
+      {user.role === "CLIENT" && codeSent && !user.email_verified && (
+        <form onSubmit={confirmCode}>
+          <label className="field-label" htmlFor="emailCode">Code reçu par e-mail (6 chiffres)</label>
+          <input id="emailCode" className="field" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} required />
+          <button className="primary-button mt-2 w-full" disabled={busy}>Vérifier mon e-mail</button>
         </form>
       )}
       <form onSubmit={savePassword}>
