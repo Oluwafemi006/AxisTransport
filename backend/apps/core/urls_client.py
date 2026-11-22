@@ -435,7 +435,10 @@ class ClientBookingViewSet(FrenchThrottleMixin, viewsets.GenericViewSet):
         return [AllowAny()]
 
     def throttled(self, request, wait):
-        raise TooManyAttempts(wait, prefix=BOOKING_LIMIT_PREFIX)
+        # Message propre à la création ; les autres actions (vérifier le paiement…) gardent le message commun.
+        if self.action == "create":
+            raise TooManyAttempts(wait, prefix=BOOKING_LIMIT_PREFIX)
+        raise TooManyAttempts(wait)
 
     def get_throttles(self):
         # Limites anti-abus seulement sur la création (pas sur la consultation ni le paiement).
