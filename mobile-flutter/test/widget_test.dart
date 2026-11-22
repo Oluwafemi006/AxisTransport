@@ -315,8 +315,12 @@ void main() {
     expect(find.text('AX-44'), findsOneWidget);
     await tester.tap(find.text('AX-44'));
     await tester.pumpAndSettle();
-    expect(find.text('Passager : Awa Test'), findsOneWidget);
-    expect(find.text('Siège : 2A'), findsOneWidget);
+    // Libellé une fois (« PASSAGER », « SIÈGE »), valeur seule en dessous.
+    expect(find.text('PASSAGER'), findsOneWidget);
+    expect(find.text('Awa Test'), findsWidgets);
+    expect(find.text('SIÈGE'), findsOneWidget);
+    expect(find.text('2A'), findsWidgets);
+    expect(find.text('Passager : Awa Test'), findsNothing);
     expect(find.byType(PrettyQrView), findsOneWidget);
     await tester.scrollUntilVisible(
       find.textContaining('consultable hors connexion'),

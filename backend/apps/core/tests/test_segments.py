@@ -296,6 +296,23 @@ class StaffSaleSegmentTests(SegmentsTestCase):
         self.assertIn(response.status_code, (200, 201), response.data)
         self.assertEqual(Booking.objects.get().amount, 3000)
 
+    def test_controller_ticket_save_to_cotonou_shows_the_booked_segment(self):
+        seat = self.trip.seats.order_by("number").first()
+        response = self.client.post(
+            "/api/v1/staff/sales/sell/",
+            {"idempotency_key": "controle-save-cotonou", "trip": self.trip.pk, "seat": seat.pk, "passenger_name": "TEST",
+             "payment_method": self.cash.pk, "origin": str(self.places["Savè"].pk), "destination": str(self.places["Cotonou"].pk)},
+            format="json",
+        )
+        self.assertIn(response.status_code, (200, 201), response.data)
+        ticket = Booking.objects.get().tickets.get()
+        public = self.client.get(f"/api/v1/client/tickets/public/{ticket.reference}/").json()
+        # Le billet montre le tronçon vendu (Savè → Cotonou), pas la ligne du départ (Parakou → Cotonou).
+        self.assertEqual((public["origin"], public["destination"], public["segment_label"]), ("Savè", "Cotonou", "Savè → Cotonou"))
+        self.assertEqual((public["print_info"]["origin"], public["print_info"]["destination"]), ("Savè", "Cotonou"))
+        staff = self.client.get(f"/api/v1/tickets/{ticket.pk}/", {"trip": self.trip.pk}).json()
+        self.assertEqual((staff["origin_name"], staff["segment_label"]), ("Savè", "Savè → Cotonou"))
+
     def test_day_summary_counts_the_sale_of_this_agent(self):
         self.test_segment_sale_is_charged_at_the_segment_price()
         body = self.client.get("/api/v1/staff/sales/summary/").json()

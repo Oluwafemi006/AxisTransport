@@ -454,7 +454,8 @@ class _TicketsScreenState extends ConsumerState<TicketsScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '${ticket.trip.route.label} · siège ${ticket.seat.number}',
+                      // Tronçon réservé (ex. Savè → Cotonou), pas la ligne complète du départ.
+                      '${(ticket.segmentLabel ?? '').isNotEmpty ? ticket.segmentLabel : ticket.trip.route.label} · siège ${ticket.seat.number}',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: AxisColors.muted,
                       ),

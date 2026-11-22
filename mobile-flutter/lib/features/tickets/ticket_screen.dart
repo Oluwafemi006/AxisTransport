@@ -483,7 +483,7 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                           flex: 1,
                           child: _TicketCell(
                             label: 'Siège',
-                            value: 'Siège : $seatNumber',
+                            value: seatNumber,
                           ),
                         ),
                         const SizedBox(width: AxisSpacing.s8),
@@ -491,7 +491,7 @@ class _TicketScreenState extends ConsumerState<TicketScreen> {
                           flex: 2,
                           child: _TicketCell(
                             label: 'Passager',
-                            value: 'Passager : $passengerName',
+                            value: passengerName,
                           ),
                         ),
                       ],
@@ -741,11 +741,18 @@ class _TicketCell extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label.toUpperCase(),
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: labelColor ?? axis.textMuted,
-            letterSpacing: 0.5,
+        // Libellé sur une seule ligne, réduit si la case est étroite (« EMBARQUEMENT » se coupait à 360 px).
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            label.toUpperCase(),
+            maxLines: 1,
+            softWrap: false,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: labelColor ?? axis.textMuted,
+              letterSpacing: 0.5,
+            ),
           ),
         ),
         const SizedBox(height: 2),
