@@ -8,7 +8,7 @@ import { BOARDING_POINT_HELP, ONBOARD_ONLY_MESSAGE, SEGMENT_FARE_MISSING_MESSAGE
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { ClientTabBar, type ClientTab } from "./client-tab-bar";
-import { BOOKING_STEPS, bookingStep, clientLocationSearch, hasCompleteSearch, readClientLocation, searchSummary, shiftDayKey } from "@/lib/search-url";
+import { clientLocationSearch, hasCompleteSearch, readClientLocation, searchSummary, shiftDayKey } from "@/lib/search-url";
 import { SwapIcon } from "./icons";
 import { Rentals } from "./client-rentals";
 import { CarIcon, CheckCircleIcon, CheckIcon, PackageIcon, PhoneIcon, TicketIcon } from "./icons";
@@ -698,6 +698,11 @@ function Tickets({
   const [segmentTrips, setSegmentTrips] = useState<Trip[]>([]);
   const [segmentTripsLoading, setSegmentTripsLoading] = useState(false);
   const [pickedDay, setPickedDay] = useState("");
+  // Étapes du formulaire, comme les sites de car : 1 départ, 2 passagers, 3 récapitulatif (puis paiement).
+  const [formStep, setFormStep] = useState<1 | 2 | 3>(1);
+  const [showSeatMap, setShowSeatMap] = useState(false);
+  // Plus de départ choisi (nouveau trajet, nouvelle réservation) : retour à la première étape.
+  useEffect(() => { if (!tripId) setFormStep(1); }, [tripId]);
   const keyOf = (segment: SegmentOffer) => `${segment.origin_id}-${segment.destination_id}`;
   const chosenSegment = routeSegments.find((segment) => keyOf(segment) === segmentKey) || null;
 
@@ -1250,20 +1255,21 @@ function Tickets({
   const heldQuote = payableQuotes.find((item) => item.payment_method === checkout?.payment_method) ?? (payableQuotes.length === 1 ? payableQuotes[0] : null);
   const countdown = remainingSeconds === null ? "—" : `${Math.floor(remainingSeconds / 60)} min ${String(remainingSeconds % 60).padStart(2, "0")} s`;
 
-  const currentStep = bookingStep({ tripChosen: Boolean(tripId), held, issued });
+  const currentStep = issued ? 5 : held ? 4 : formStep;
+  const stepLabels = ["Départ", "Passagers", "Récapitulatif", "Paiement", "Billet"];
   // Recherche venue de l'accueil : résumé à la place des choix de sens, trajet et date (jamais à ressaisir).
   const summaryMode = Boolean(searchLabel) && dayTrips !== null;
   const noDeparture = summaryMode && (dayTrips?.length ?? 0) === 0 && !held && !issued;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }} className="responsive-grid">
+    <div className="booking-layout">
       <div className="card">
         <h3>Réserver un billet</h3>
         {/* Indicateur d'étapes */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
             gap: "8px",
             marginTop: "12px",
             marginBottom: "16px",
@@ -1271,7 +1277,7 @@ function Tickets({
             fontWeight: 700,
           }}
         >
-          {BOOKING_STEPS.map((label, index) => [index + 1, `${index + 1}. ${label}`] as const).map(([stepNum, stepLabel]) => {
+          {stepLabels.map((label, index) => [index + 1, `${index + 1}. ${label}`] as const).map(([stepNum, stepLabel]) => {
             const active = currentStep === stepNum;
             const done = currentStep > (stepNum as number);
             return (
@@ -1314,12 +1320,13 @@ function Tickets({
           </div>
         ) : trips.length === 0 ? <p>Aucun trajet disponible.</p> : (
           <form onSubmit={singleQuote ? payNow : reserveOnly} className="f">
+            {formStep === 1 && <>
             {summaryMode && (dayTrips?.length ?? 0) > 1 && (
               <>
                 <label style={{ marginTop: '10px' }}>Heure du départ</label>
                 <div className="day-trips">
                   {(dayTrips ?? []).map((trip) => (
-                    <button key={trip.id} type="button" className={String(trip.id) === tripId ? "btn p" : "btn"} onClick={() => setTripId(String(trip.id))}>
+                    <button key={trip.id} type="button" className={String(trip.id) === tripId ? "btn p" : "btn"} onClick={() => { setTripId(String(trip.id)); setFormStep(2); }}>
                       {formatDate(trip.departure_at)}
                     </button>
                   ))}
@@ -1400,6 +1407,7 @@ function Tickets({
                                 onClick={() => {
                                   setTripId(String(trip.id));
                                   setPassengers([{ seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" }]);
+                                  setFormStep(2);
                                 }}>
                                 <span className="trip-card-when">Départ {time(trip.departure_at)}</span>
                                 <span className="trip-card-seats">{full ? "Complet" : `${trip.available_seats} place${trip.available_seats > 1 ? "s" : ""}`}</span>
@@ -1416,7 +1424,15 @@ function Tickets({
             )}
 
             </>)}
+            {tripId && (
+              <button type="button" className="btn p" style={{ marginTop: '16px', width: '100%' }} onClick={() => setFormStep(2)}>Continuer</button>
+            )}
+            </>}
 
+            {formStep === 2 && <>
+            {selectedTrip && (
+              <p className="step-recall">{formatDate(selectedTrip.departure_at)} · <button type="button" className="text-button" onClick={() => setFormStep(1)}>Changer de départ</button></p>
+            )}
             {selectedTrip && (activeBoardingPoints.length > 0 || activeAlightingPoints.length > 0) && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginTop: '10px' }}>
                 {activeBoardingPoints.length > 0 && (
@@ -1465,13 +1481,19 @@ function Tickets({
               </div>
             )}
             
+            {/* Place attribuée automatiquement ; le plan reste au choix de celui qui le veut. */}
             {seats.length > 0 && (
-              <BusSeatMap
-                seats={seats}
-                selectedSeatIds={selectedSeatIds}
-                onToggleSeat={handleToggleSeat}
-                disabled={busy}
-              />
+              <div className="seat-choice">
+                <button type="button" className="text-button" aria-expanded={showSeatMap} onClick={() => setShowSeatMap(!showSeatMap)}>
+                  {showSeatMap ? "Masquer le plan des places" : "Choisir ma place (facultatif)"}
+                </button>
+                {!showSeatMap && <small>Sans choix, la place est attribuée automatiquement.</small>}
+                {showSeatMap && (
+                  <div className="seat-map-compact">
+                    <BusSeatMap seats={seats} selectedSeatIds={selectedSeatIds} onToggleSeat={handleToggleSeat} disabled={busy} />
+                  </div>
+                )}
+              </div>
             )}
 
             <PassengerForm
@@ -1484,6 +1506,17 @@ function Tickets({
               onContactPhoneChange={setContactPhone}
               isUserLoggedIn={Boolean(user)}
             />
+            <div className="step-actions">
+              <button type="button" className="btn" onClick={() => setFormStep(1)}>Retour</button>
+              <button type="button" className="btn p" onClick={() => {
+                if (passengers.some((p) => !p.fullName.trim())) { setMessage("Indiquez le nom et le prénom de chaque passager."); return; }
+                setMessage("");
+                setFormStep(3);
+              }}>Continuer</button>
+            </div>
+            </>}
+
+            {formStep === 3 && <>
 
             {singleQuote && !held && !issued && (
               <div
@@ -1546,6 +1579,8 @@ function Tickets({
                 {busy ? "Patientez…" : !tripId ? "Choisissez un départ" : <>Réserver {selectedTrip?.current_fare ? ` · ${passengers.length} place(s)` : ""}</>}
               </button>
             ))}
+            {!held && !issued && <button type="button" className="text-button" style={{ marginTop: '10px' }} onClick={() => setFormStep(2)}>← Retour aux passagers</button>}
+            </>}
           </form>
         )}
         

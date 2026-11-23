@@ -1070,3 +1070,10 @@ footer {
 .day-chip-top { font-size: 12px; text-transform: capitalize; opacity: .8; white-space: nowrap; }
 .day-chip-day { font-size: 22px; font-weight: 800; line-height: 1.1; }
 .day-chip-month { font-size: 12px; text-transform: capitalize; }
+/* Réservation : une colonne centrée (formulaire, puis mes réservations), plus d'espace vide à côté. */
+.booking-layout { display: grid; gap: 24px; max-width: 760px; margin: 0 auto; }
+.step-recall { margin: 4px 0 8px; font-weight: 700; color: var(--ink); }
+.step-actions { display: grid; grid-template-columns: auto 1fr; gap: 10px; margin-top: 18px; }
+.seat-choice { margin-top: 14px; display: grid; gap: 6px; justify-items: start; }
+.seat-choice small { color: var(--mute); }
+.seat-map-compact { width: 100%; max-width: 360px; }
