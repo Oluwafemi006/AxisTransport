@@ -1047,3 +1047,33 @@ footer {
 .no-departure { display: grid; gap: 12px; padding: 18px; border: 1px dashed var(--line); border-radius: 14px; background: #fff; }
 .no-departure-title { font-weight: 800; color: var(--navy); font-size: 16px; }
 .day-nav, .day-trips { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Réservation : départ / arrivée côte à côte, puis départs en cartes (une colonne sur téléphone). */
+.trip-picker { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: end; margin-top: 10px; }
+.trip-picker > div { min-width: 0; }
+.trip-picker select { width: 100%; }
+.trip-picker .swap-btn { height: 44px; margin-bottom: 2px; }
+@media (max-width: 480px) {
+  .trip-picker { grid-template-columns: 1fr; }
+  .trip-picker .swap-btn { justify-self: center; height: 36px; }
+}
+.trip-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.trip-card { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; text-align: left; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: #fff; font: inherit; cursor: pointer; min-width: 0; }
+.trip-card.on { border: 2px solid var(--blue); background: #eef4ff; }
+.trip-card:disabled { opacity: .55; cursor: not-allowed; }
+.trip-card-when { grid-column: 1 / -1; font-weight: 800; color: var(--ink); }
+.trip-card-seats { color: var(--mute); font-size: 14px; }
+.trip-card-price { font-weight: 800; color: var(--navy); white-space: nowrap; }
+.day-strip { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 10px; margin-bottom: 4px; scroll-snap-type: x mandatory; }
+.day-chip { flex: 0 0 auto; width: 74px; display: grid; justify-items: center; gap: 2px; padding: 10px 6px; border-radius: 14px; border: 1px solid var(--line); background: #fff; font: inherit; cursor: pointer; scroll-snap-align: start; }
+.day-chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.day-chip-top { font-size: 12px; text-transform: capitalize; opacity: .8; white-space: nowrap; }
+.day-chip-day { font-size: 22px; font-weight: 800; line-height: 1.1; }
+.day-chip-month { font-size: 12px; text-transform: capitalize; }
+/* Réservation : une colonne centrée (formulaire, puis mes réservations), plus d'espace vide à côté. */
+.booking-layout { display: grid; gap: 24px; max-width: 760px; margin: 0 auto; }
+.step-recall { margin: 4px 0 8px; font-weight: 700; color: var(--ink); }
+.step-actions { display: grid; grid-template-columns: auto 1fr; gap: 10px; margin-top: 18px; }
+.seat-choice { margin-top: 14px; display: grid; gap: 6px; justify-items: start; }
+.seat-choice small { color: var(--mute); }
+.seat-map-compact { width: 100%; max-width: 360px; }

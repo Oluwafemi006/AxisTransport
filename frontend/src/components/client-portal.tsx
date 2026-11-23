@@ -8,7 +8,7 @@ import { BOARDING_POINT_HELP, ONBOARD_ONLY_MESSAGE, SEGMENT_FARE_MISSING_MESSAGE
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
 import { ClientTabBar, type ClientTab } from "./client-tab-bar";
-import { BOOKING_STEPS, bookingStep, clientLocationSearch, hasCompleteSearch, readClientLocation, searchSummary, shiftDayKey } from "@/lib/search-url";
+import { clientLocationSearch, hasCompleteSearch, readClientLocation, searchSummary, shiftDayKey } from "@/lib/search-url";
 import { SwapIcon } from "./icons";
 import { Rentals } from "./client-rentals";
 import { CarIcon, CheckCircleIcon, CheckIcon, PackageIcon, PhoneIcon, TicketIcon } from "./icons";
@@ -129,18 +129,20 @@ export function ClientPortal() {
   const searchDateValue = searchDate;
 
   // « Nos trajets » : tronçons d'un sens, comme dans l'app ; un clic préremplit et lance la recherche.
-  const [segmentDirection, setSegmentDirection] = useState<SegmentDirection>("aller");
   const [segments, setSegments] = useState<SegmentOffer[]>([]);
   const [segmentsState, setSegmentsState] = useState<"loading" | "ready" | "error">("loading");
   const [segmentsRetry, setSegmentsRetry] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setSegmentsState("loading");
-    apiFetch<{ segments: SegmentOffer[] }>(`/client/segments/?direction=${segmentDirection}&scope=all`, {}, false)
-      .then((payload) => { if (!cancelled) { setSegments(payload.segments || []); setSegmentsState("ready"); } })
+    // Les deux sens, sans onglet : le client voit tous les trajets et leur prix d'un coup d'œil.
+    const read = (direction: SegmentDirection) =>
+      apiFetch<{ segments: SegmentOffer[] }>(`/client/segments/?direction=${direction}&scope=all`, {}, false).then((payload) => payload.segments || []);
+    Promise.all([read("aller"), read("retour")])
+      .then(([outward, back]) => { if (!cancelled) { setSegments([...outward, ...back]); setSegmentsState("ready"); } })
       .catch(() => { if (!cancelled) { setSegments([]); setSegmentsState("error"); } });
     return () => { cancelled = true; };
-  }, [segmentDirection, segmentsRetry]);
+  }, [segmentsRetry]);
 
   function pickSegment(segment: SegmentOffer) {
     const origin = String(segment.origin_id);
@@ -382,20 +384,7 @@ export function ClientPortal() {
                       <h2 id="nos-trajets">Nos trajets</h2>
                     </div>
                   </div>
-                  <div role="tablist" style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                    {([["aller", "Parakou → Cotonou"], ["retour", "Cotonou → Parakou"]] as const).map(([value, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        role="tab"
-                        aria-selected={segmentDirection === value}
-                        onClick={() => setSegmentDirection(value)}
-                        style={{ padding: '12px 20px', borderRadius: '14px', fontWeight: 700, fontSize: '15px', cursor: 'pointer', border: segmentDirection === value ? '1px solid var(--ink)' : '1px solid var(--line)', background: segmentDirection === value ? 'var(--ink)' : '#fff', color: segmentDirection === value ? '#fff' : 'var(--ink)' }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                  <p className="sub" style={{ marginBottom: '14px' }}>Touchez un trajet pour voir ses départs.</p>
                   {segmentsState === "loading" && segments.length === 0 ? (
                     <p style={{ color: 'var(--mute)' }}>Chargement des trajets…</p>
                   ) : segmentsState === "error" ? (
@@ -407,7 +396,7 @@ export function ClientPortal() {
                   ) : segments.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '28px 20px', background: '#fff', borderRadius: '16px', border: '1px dashed var(--line)', color: 'var(--mute)' }}>
                       <p style={{ color: 'var(--ink)', fontWeight: 700 }}>Aucun trajet disponible</p>
-                      <p>Aucun tronçon n’est proposé dans ce sens pour le moment.</p>
+                      <p>Aucun trajet n’est proposé pour le moment.</p>
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
@@ -704,28 +693,48 @@ function Tickets({
   const [originId, setOriginId] = useState(searchOrigin || "");
   const [destinationId, setDestinationId] = useState(searchDestination || "");
   // Tronçons de la page de réservation : tous ceux qui ont un tarif (scope=all), montée intermédiaire signalée.
-  const [routeDirection, setRouteDirection] = useState<SegmentDirection>("aller");
   const [routeSegments, setRouteSegments] = useState<SegmentOffer[]>([]);
   const [segmentKey, setSegmentKey] = useState("");
   const [segmentTrips, setSegmentTrips] = useState<Trip[]>([]);
   const [segmentTripsLoading, setSegmentTripsLoading] = useState(false);
-  const flippedForPreselection = useRef(false);
+  const [pickedDay, setPickedDay] = useState("");
+  // Étapes du formulaire, comme les sites de car : 1 départ, 2 passagers, 3 récapitulatif (puis paiement).
+  const [formStep, setFormStep] = useState<1 | 2 | 3>(1);
+  const [showSeatMap, setShowSeatMap] = useState(false);
+  // Plus de départ choisi (nouveau trajet, nouvelle réservation) : retour à la première étape.
+  useEffect(() => { if (!tripId) setFormStep(1); }, [tripId]);
   const keyOf = (segment: SegmentOffer) => `${segment.origin_id}-${segment.destination_id}`;
   const chosenSegment = routeSegments.find((segment) => keyOf(segment) === segmentKey) || null;
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<{ segments: SegmentOffer[] }>(`/client/segments/?direction=${routeDirection}&scope=all`, {}, false)
-      .then((payload) => { if (!cancelled) setRouteSegments(payload.segments || []); })
+    // Les deux sens d'un coup : le client choisit seulement sa ville de départ et sa ville d'arrivée.
+    const read = (direction: SegmentDirection) =>
+      apiFetch<{ segments: SegmentOffer[] }>(`/client/segments/?direction=${direction}&scope=all`, {}, false).then((payload) => payload.segments || []);
+    Promise.all([read("aller"), read("retour")])
+      .then(([outward, back]) => { if (!cancelled) setRouteSegments([...outward, ...back]); })
       .catch(() => { if (!cancelled) setRouteSegments([]); });
     return () => { cancelled = true; };
-  }, [routeDirection]);
+  }, []);
+  // Villes de départ (ordre de la ligne), puis arrivées possibles depuis la ville choisie.
+  const departureCities = routeSegments.reduce<{ id: number; name: string }[]>((list, segment) => (
+    list.some((city) => city.id === segment.origin_id) ? list : [...list, { id: segment.origin_id, name: segment.origin }]
+  ), []);
+  const arrivalSegments = routeSegments.filter((segment) => String(segment.origin_id) === originId);
+  function pickCities(origin: string, destination: string) {
+    setOriginId(origin);
+    setDestinationId(destination);
+    const segment = routeSegments.find((item) => String(item.origin_id) === origin && String(item.destination_id) === destination);
+    if (segment) chooseSegment(keyOf(segment));
+    else { setSegmentKey(""); setTripId(""); setSegmentTrips([]); }
+  }
 
   // Choix d'un tronçon : ses départs viennent du serveur ; une montée intermédiaire ne se vend pas en ligne.
   function chooseSegment(key: string) {
     setSegmentKey(key);
     setTripId("");
     setSegmentTrips([]);
+    setPickedDay("");
     const segment = routeSegments.find((item) => keyOf(item) === key);
     if (!segment) return;
     setOriginId(String(segment.origin_id));
@@ -750,10 +759,6 @@ function Tickets({
     if (segment) {
       chooseSegment(keyOf(segment));
       setTripId(preselectedTripId);
-    } else if (!flippedForPreselection.current) {
-      // Le départ choisi est dans l'autre sens : on bascule une seule fois.
-      flippedForPreselection.current = true;
-      setRouteDirection((current) => (current === "aller" ? "retour" : "aller"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preselectedTripId, routeSegments]);
@@ -1250,20 +1255,21 @@ function Tickets({
   const heldQuote = payableQuotes.find((item) => item.payment_method === checkout?.payment_method) ?? (payableQuotes.length === 1 ? payableQuotes[0] : null);
   const countdown = remainingSeconds === null ? "—" : `${Math.floor(remainingSeconds / 60)} min ${String(remainingSeconds % 60).padStart(2, "0")} s`;
 
-  const currentStep = bookingStep({ tripChosen: Boolean(tripId), held, issued });
+  const currentStep = issued ? 5 : held ? 4 : formStep;
+  const stepLabels = ["Départ", "Passagers", "Récapitulatif", "Paiement", "Billet"];
   // Recherche venue de l'accueil : résumé à la place des choix de sens, trajet et date (jamais à ressaisir).
   const summaryMode = Boolean(searchLabel) && dayTrips !== null;
   const noDeparture = summaryMode && (dayTrips?.length ?? 0) === 0 && !held && !issued;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }} className="responsive-grid">
+    <div className="booking-layout">
       <div className="card">
         <h3>Réserver un billet</h3>
         {/* Indicateur d'étapes */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
+            gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
             gap: "8px",
             marginTop: "12px",
             marginBottom: "16px",
@@ -1271,7 +1277,7 @@ function Tickets({
             fontWeight: 700,
           }}
         >
-          {BOOKING_STEPS.map((label, index) => [index + 1, `${index + 1}. ${label}`] as const).map(([stepNum, stepLabel]) => {
+          {stepLabels.map((label, index) => [index + 1, `${index + 1}. ${label}`] as const).map(([stepNum, stepLabel]) => {
             const active = currentStep === stepNum;
             const done = currentStep > (stepNum as number);
             return (
@@ -1314,12 +1320,13 @@ function Tickets({
           </div>
         ) : trips.length === 0 ? <p>Aucun trajet disponible.</p> : (
           <form onSubmit={singleQuote ? payNow : reserveOnly} className="f">
+            {formStep === 1 && <>
             {summaryMode && (dayTrips?.length ?? 0) > 1 && (
               <>
                 <label style={{ marginTop: '10px' }}>Heure du départ</label>
                 <div className="day-trips">
                   {(dayTrips ?? []).map((trip) => (
-                    <button key={trip.id} type="button" className={String(trip.id) === tripId ? "btn p" : "btn"} onClick={() => setTripId(String(trip.id))}>
+                    <button key={trip.id} type="button" className={String(trip.id) === tripId ? "btn p" : "btn"} onClick={() => { setTripId(String(trip.id)); setFormStep(2); }}>
                       {formatDate(trip.departure_at)}
                     </button>
                   ))}
@@ -1327,32 +1334,27 @@ function Tickets({
               </>
             )}
             {!summaryMode && (<>
-            {/* Comme l'app : sens, puis tronçon avec son prix, puis date du départ. */}
-            <label style={{ marginTop: '10px' }}>Sens</label>
-            <div role="tablist" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {([["aller", "Parakou → Cotonou"], ["retour", "Cotonou → Parakou"]] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="tab"
-                  aria-selected={routeDirection === value}
-                  onClick={() => { setRouteDirection(value); chooseSegment(""); }}
-                  style={{ padding: '10px 16px', borderRadius: '12px', fontWeight: 700, cursor: 'pointer', border: routeDirection === value ? '1px solid var(--ink)' : '1px solid var(--line)', background: routeDirection === value ? 'var(--ink)' : '#fff', color: routeDirection === value ? '#fff' : 'var(--ink)' }}
-                >
-                  {label}
-                </button>
-              ))}
+            {/* Départ, arrivée, puis les départs disponibles en cartes (heure, places, prix). */}
+            <div className="trip-picker">
+              <div>
+                <label htmlFor="pick-origin">Départ</label>
+                <select id="pick-origin" value={originId} onChange={(e) => pickCities(e.target.value, "")} required>
+                  <option value="">{routeSegments.length ? "Ville de départ" : "Chargement…"}</option>
+                  {departureCities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}
+                </select>
+              </div>
+              <button type="button" className="swap-btn" aria-label="Inverser le départ et l’arrivée" disabled={!originId || !destinationId}
+                onClick={() => pickCities(destinationId, originId)}>
+                <SwapIcon size={16} />
+              </button>
+              <div>
+                <label htmlFor="pick-destination">Arrivée</label>
+                <select id="pick-destination" value={destinationId} onChange={(e) => pickCities(originId, e.target.value)} disabled={!originId} required>
+                  <option value="">{originId ? "Ville d’arrivée" : "Choisissez d’abord le départ"}</option>
+                  {arrivalSegments.map((segment) => <option key={segment.destination_id} value={segment.destination_id}>{segment.destination} · {money(segment.price_fcfa)}</option>)}
+                </select>
+              </div>
             </div>
-
-            <label style={{ marginTop: '10px' }}>Trajet</label>
-            <select value={segmentKey} onChange={(e) => chooseSegment(e.target.value)} required>
-              <option value="">{routeSegments.length ? "Choisir un trajet" : "Chargement des trajets…"}</option>
-              {routeSegments.map((segment) => (
-                <option key={keyOf(segment)} value={keyOf(segment)}>
-                  {segment.origin} → {segment.destination} — {money(segment.price_fcfa)}
-                </option>
-              ))}
-            </select>
 
             {chosenSegment && !chosenSegment.online_boarding && (
               <p role="status" style={{ marginTop: '10px', padding: '12px 14px', borderRadius: '12px', background: 'var(--warnbg)', color: 'var(--warn)', fontWeight: 600 }}>
@@ -1362,29 +1364,75 @@ function Tickets({
 
             {chosenSegment?.online_boarding && (
               <>
-                <label style={{ marginTop: '10px' }}>Date du départ</label>
+                <label style={{ marginTop: '14px' }}>Départs disponibles</label>
                 {segmentTripsLoading ? (
                   <p style={{ color: 'var(--mute)' }}>Recherche des départs…</p>
                 ) : segmentTrips.length === 0 ? (
                   <p style={{ color: 'var(--mute)' }}>Aucun départ programmé pour ce trajet.</p>
                 ) : (
-                  <select
-                    value={tripId}
-                    onChange={(e) => {
-                      setTripId(e.target.value);
-                      setPassengers([{ seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" }]);
-                    }}
-                    required
-                  >
-                    <option value="">Choisir une date</option>
-                    {segmentTrips.map((trip) => <option key={trip.id} value={trip.id}>{formatDate(trip.departure_at)}</option>)}
-                  </select>
+                  (() => {
+                    // Jours qui ont au moins un départ (heure du Bénin), puis les heures du jour choisi.
+                    const dayOf = (iso: string) => beninDateKey(new Date(iso));
+                    const days = Array.from(new Set(segmentTrips.map((trip) => dayOf(trip.departure_at))));
+                    const selectedDay = selectedTrip ? dayOf(selectedTrip.departure_at) : (pickedDay && days.includes(pickedDay) ? pickedDay : days[0]);
+                    const today = beninDateKey();
+                    const tomorrow = shiftDayKey(today, 1);
+                    const dayLabel = (key: string) => {
+                      const date = new Date(`${key}T12:00:00Z`);
+                      const top = key === today ? "Aujourd’hui" : key === tomorrow ? "Demain" : date.toLocaleDateString("fr-FR", { weekday: "short", timeZone: "UTC" });
+                      return { top, day: date.toLocaleDateString("fr-FR", { day: "numeric", timeZone: "UTC" }), month: date.toLocaleDateString("fr-FR", { month: "short", timeZone: "UTC" }) };
+                    };
+                    const time = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Porto-Novo" });
+                    return (
+                      <>
+                        <div className="day-strip" role="tablist" aria-label="Jour du départ">
+                          {days.map((key) => {
+                            const label = dayLabel(key);
+                            return (
+                              <button key={key} type="button" role="tab" aria-selected={key === selectedDay} className={key === selectedDay ? "day-chip on" : "day-chip"}
+                                onClick={() => { setPickedDay(key); setTripId(""); }}>
+                                <span className="day-chip-top">{label.top}</span>
+                                <span className="day-chip-day">{label.day}</span>
+                                <span className="day-chip-month">{label.month}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="trip-cards">
+                          {segmentTrips.filter((trip) => dayOf(trip.departure_at) === selectedDay).map((trip) => {
+                            const full = trip.available_seats <= 0;
+                            const chosen = String(trip.id) === tripId;
+                            return (
+                              <button key={trip.id} type="button" disabled={full} aria-pressed={chosen} className={chosen ? "trip-card on" : "trip-card"}
+                                onClick={() => {
+                                  setTripId(String(trip.id));
+                                  setPassengers([{ seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" }]);
+                                  setFormStep(2);
+                                }}>
+                                <span className="trip-card-when">Départ {time(trip.departure_at)}</span>
+                                <span className="trip-card-seats">{full ? "Complet" : `${trip.available_seats} place${trip.available_seats > 1 ? "s" : ""}`}</span>
+                                <span className="trip-card-price">{money(chosenSegment.price_fcfa)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    );
+                  })()
                 )}
               </>
             )}
 
             </>)}
+            {tripId && (
+              <button type="button" className="btn p" style={{ marginTop: '16px', width: '100%' }} onClick={() => setFormStep(2)}>Continuer</button>
+            )}
+            </>}
 
+            {formStep === 2 && <>
+            {selectedTrip && (
+              <p className="step-recall">{formatDate(selectedTrip.departure_at)} · <button type="button" className="text-button" onClick={() => setFormStep(1)}>Changer de départ</button></p>
+            )}
             {selectedTrip && (activeBoardingPoints.length > 0 || activeAlightingPoints.length > 0) && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginTop: '10px' }}>
                 {activeBoardingPoints.length > 0 && (
@@ -1433,13 +1481,19 @@ function Tickets({
               </div>
             )}
             
+            {/* Place attribuée automatiquement ; le plan reste au choix de celui qui le veut. */}
             {seats.length > 0 && (
-              <BusSeatMap
-                seats={seats}
-                selectedSeatIds={selectedSeatIds}
-                onToggleSeat={handleToggleSeat}
-                disabled={busy}
-              />
+              <div className="seat-choice">
+                <button type="button" className="text-button" aria-expanded={showSeatMap} onClick={() => setShowSeatMap(!showSeatMap)}>
+                  {showSeatMap ? "Masquer le plan des places" : "Choisir ma place (facultatif)"}
+                </button>
+                {!showSeatMap && <small>Sans choix, la place est attribuée automatiquement.</small>}
+                {showSeatMap && (
+                  <div className="seat-map-compact">
+                    <BusSeatMap seats={seats} selectedSeatIds={selectedSeatIds} onToggleSeat={handleToggleSeat} disabled={busy} />
+                  </div>
+                )}
+              </div>
             )}
 
             <PassengerForm
@@ -1452,6 +1506,19 @@ function Tickets({
               onContactPhoneChange={setContactPhone}
               isUserLoggedIn={Boolean(user)}
             />
+            <div className="step-actions">
+              <button type="button" className="btn" onClick={() => setFormStep(1)}>Retour</button>
+              <button type="button" className="btn p" onClick={(event) => {
+                // Champs obligatoires de cette étape (points de montée et de descente, contact) : contrôle du navigateur.
+                if (!event.currentTarget.form?.reportValidity()) return;
+                if (passengers.some((p) => !p.fullName.trim())) { setMessage("Indiquez le nom et le prénom de chaque passager."); return; }
+                setMessage("");
+                setFormStep(3);
+              }}>Continuer</button>
+            </div>
+            </>}
+
+            {formStep === 3 && <>
 
             {singleQuote && !held && !issued && (
               <div
@@ -1514,6 +1581,8 @@ function Tickets({
                 {busy ? "Patientez…" : !tripId ? "Choisissez un départ" : <>Réserver {selectedTrip?.current_fare ? ` · ${passengers.length} place(s)` : ""}</>}
               </button>
             ))}
+            {!held && !issued && <button type="button" className="text-button" style={{ marginTop: '10px' }} onClick={() => setFormStep(2)}>← Retour aux passagers</button>}
+            </>}
           </form>
         )}
         
