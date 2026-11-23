@@ -1064,3 +1064,9 @@ footer {
 .trip-card-when { grid-column: 1 / -1; font-weight: 800; color: var(--ink); }
 .trip-card-seats { color: var(--mute); font-size: 14px; }
 .trip-card-price { font-weight: 800; color: var(--navy); white-space: nowrap; }
+.day-strip { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 10px; margin-bottom: 4px; scroll-snap-type: x mandatory; }
+.day-chip { flex: 0 0 auto; width: 74px; display: grid; justify-items: center; gap: 2px; padding: 10px 6px; border-radius: 14px; border: 1px solid var(--line); background: #fff; font: inherit; cursor: pointer; scroll-snap-align: start; }
+.day-chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.day-chip-top { font-size: 12px; text-transform: capitalize; opacity: .8; white-space: nowrap; }
+.day-chip-day { font-size: 22px; font-weight: 800; line-height: 1.1; }
+.day-chip-month { font-size: 12px; text-transform: capitalize; }

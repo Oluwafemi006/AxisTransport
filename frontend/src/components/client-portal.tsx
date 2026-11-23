@@ -697,6 +697,7 @@ function Tickets({
   const [segmentKey, setSegmentKey] = useState("");
   const [segmentTrips, setSegmentTrips] = useState<Trip[]>([]);
   const [segmentTripsLoading, setSegmentTripsLoading] = useState(false);
+  const [pickedDay, setPickedDay] = useState("");
   const keyOf = (segment: SegmentOffer) => `${segment.origin_id}-${segment.destination_id}`;
   const chosenSegment = routeSegments.find((segment) => keyOf(segment) === segmentKey) || null;
 
@@ -728,6 +729,7 @@ function Tickets({
     setSegmentKey(key);
     setTripId("");
     setSegmentTrips([]);
+    setPickedDay("");
     const segment = routeSegments.find((item) => keyOf(item) === key);
     if (!segment) return;
     setOriginId(String(segment.origin_id));
@@ -1361,23 +1363,54 @@ function Tickets({
                 ) : segmentTrips.length === 0 ? (
                   <p style={{ color: 'var(--mute)' }}>Aucun départ programmé pour ce trajet.</p>
                 ) : (
-                  <div className="trip-cards">
-                    {segmentTrips.map((trip) => {
-                      const full = trip.available_seats <= 0;
-                      const chosen = String(trip.id) === tripId;
-                      return (
-                        <button key={trip.id} type="button" disabled={full} aria-pressed={chosen} className={chosen ? "trip-card on" : "trip-card"}
-                          onClick={() => {
-                            setTripId(String(trip.id));
-                            setPassengers([{ seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" }]);
-                          }}>
-                          <span className="trip-card-when">{formatDate(trip.departure_at)}</span>
-                          <span className="trip-card-seats">{full ? "Complet" : `${trip.available_seats} place${trip.available_seats > 1 ? "s" : ""}`}</span>
-                          <span className="trip-card-price">{money(chosenSegment.price_fcfa)}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  (() => {
+                    // Jours qui ont au moins un départ (heure du Bénin), puis les heures du jour choisi.
+                    const dayOf = (iso: string) => beninDateKey(new Date(iso));
+                    const days = Array.from(new Set(segmentTrips.map((trip) => dayOf(trip.departure_at))));
+                    const selectedDay = selectedTrip ? dayOf(selectedTrip.departure_at) : (pickedDay && days.includes(pickedDay) ? pickedDay : days[0]);
+                    const today = beninDateKey();
+                    const tomorrow = shiftDayKey(today, 1);
+                    const dayLabel = (key: string) => {
+                      const date = new Date(`${key}T12:00:00Z`);
+                      const top = key === today ? "Aujourd’hui" : key === tomorrow ? "Demain" : date.toLocaleDateString("fr-FR", { weekday: "short", timeZone: "UTC" });
+                      return { top, day: date.toLocaleDateString("fr-FR", { day: "numeric", timeZone: "UTC" }), month: date.toLocaleDateString("fr-FR", { month: "short", timeZone: "UTC" }) };
+                    };
+                    const time = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Porto-Novo" });
+                    return (
+                      <>
+                        <div className="day-strip" role="tablist" aria-label="Jour du départ">
+                          {days.map((key) => {
+                            const label = dayLabel(key);
+                            return (
+                              <button key={key} type="button" role="tab" aria-selected={key === selectedDay} className={key === selectedDay ? "day-chip on" : "day-chip"}
+                                onClick={() => { setPickedDay(key); setTripId(""); }}>
+                                <span className="day-chip-top">{label.top}</span>
+                                <span className="day-chip-day">{label.day}</span>
+                                <span className="day-chip-month">{label.month}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="trip-cards">
+                          {segmentTrips.filter((trip) => dayOf(trip.departure_at) === selectedDay).map((trip) => {
+                            const full = trip.available_seats <= 0;
+                            const chosen = String(trip.id) === tripId;
+                            return (
+                              <button key={trip.id} type="button" disabled={full} aria-pressed={chosen} className={chosen ? "trip-card on" : "trip-card"}
+                                onClick={() => {
+                                  setTripId(String(trip.id));
+                                  setPassengers([{ seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" }]);
+                                }}>
+                                <span className="trip-card-when">Départ {time(trip.departure_at)}</span>
+                                <span className="trip-card-seats">{full ? "Complet" : `${trip.available_seats} place${trip.available_seats > 1 ? "s" : ""}`}</span>
+                                <span className="trip-card-price">{money(chosenSegment.price_fcfa)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    );
+                  })()
                 )}
               </>
             )}
