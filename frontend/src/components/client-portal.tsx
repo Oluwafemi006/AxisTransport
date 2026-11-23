@@ -129,18 +129,20 @@ export function ClientPortal() {
   const searchDateValue = searchDate;
 
   // « Nos trajets » : tronçons d'un sens, comme dans l'app ; un clic préremplit et lance la recherche.
-  const [segmentDirection, setSegmentDirection] = useState<SegmentDirection>("aller");
   const [segments, setSegments] = useState<SegmentOffer[]>([]);
   const [segmentsState, setSegmentsState] = useState<"loading" | "ready" | "error">("loading");
   const [segmentsRetry, setSegmentsRetry] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setSegmentsState("loading");
-    apiFetch<{ segments: SegmentOffer[] }>(`/client/segments/?direction=${segmentDirection}&scope=all`, {}, false)
-      .then((payload) => { if (!cancelled) { setSegments(payload.segments || []); setSegmentsState("ready"); } })
+    // Les deux sens, sans onglet : le client voit tous les trajets et leur prix d'un coup d'œil.
+    const read = (direction: SegmentDirection) =>
+      apiFetch<{ segments: SegmentOffer[] }>(`/client/segments/?direction=${direction}&scope=all`, {}, false).then((payload) => payload.segments || []);
+    Promise.all([read("aller"), read("retour")])
+      .then(([outward, back]) => { if (!cancelled) { setSegments([...outward, ...back]); setSegmentsState("ready"); } })
       .catch(() => { if (!cancelled) { setSegments([]); setSegmentsState("error"); } });
     return () => { cancelled = true; };
-  }, [segmentDirection, segmentsRetry]);
+  }, [segmentsRetry]);
 
   function pickSegment(segment: SegmentOffer) {
     const origin = String(segment.origin_id);
@@ -382,20 +384,7 @@ export function ClientPortal() {
                       <h2 id="nos-trajets">Nos trajets</h2>
                     </div>
                   </div>
-                  <div role="tablist" style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                    {([["aller", "Parakou → Cotonou"], ["retour", "Cotonou → Parakou"]] as const).map(([value, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        role="tab"
-                        aria-selected={segmentDirection === value}
-                        onClick={() => setSegmentDirection(value)}
-                        style={{ padding: '12px 20px', borderRadius: '14px', fontWeight: 700, fontSize: '15px', cursor: 'pointer', border: segmentDirection === value ? '1px solid var(--ink)' : '1px solid var(--line)', background: segmentDirection === value ? 'var(--ink)' : '#fff', color: segmentDirection === value ? '#fff' : 'var(--ink)' }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                  <p className="sub" style={{ marginBottom: '14px' }}>Touchez un trajet pour voir ses départs.</p>
                   {segmentsState === "loading" && segments.length === 0 ? (
                     <p style={{ color: 'var(--mute)' }}>Chargement des trajets…</p>
                   ) : segmentsState === "error" ? (
@@ -407,7 +396,7 @@ export function ClientPortal() {
                   ) : segments.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '28px 20px', background: '#fff', borderRadius: '16px', border: '1px dashed var(--line)', color: 'var(--mute)' }}>
                       <p style={{ color: 'var(--ink)', fontWeight: 700 }}>Aucun trajet disponible</p>
-                      <p>Aucun tronçon n’est proposé dans ce sens pour le moment.</p>
+                      <p>Aucun trajet n’est proposé pour le moment.</p>
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
@@ -704,22 +693,35 @@ function Tickets({
   const [originId, setOriginId] = useState(searchOrigin || "");
   const [destinationId, setDestinationId] = useState(searchDestination || "");
   // Tronçons de la page de réservation : tous ceux qui ont un tarif (scope=all), montée intermédiaire signalée.
-  const [routeDirection, setRouteDirection] = useState<SegmentDirection>("aller");
   const [routeSegments, setRouteSegments] = useState<SegmentOffer[]>([]);
   const [segmentKey, setSegmentKey] = useState("");
   const [segmentTrips, setSegmentTrips] = useState<Trip[]>([]);
   const [segmentTripsLoading, setSegmentTripsLoading] = useState(false);
-  const flippedForPreselection = useRef(false);
   const keyOf = (segment: SegmentOffer) => `${segment.origin_id}-${segment.destination_id}`;
   const chosenSegment = routeSegments.find((segment) => keyOf(segment) === segmentKey) || null;
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<{ segments: SegmentOffer[] }>(`/client/segments/?direction=${routeDirection}&scope=all`, {}, false)
-      .then((payload) => { if (!cancelled) setRouteSegments(payload.segments || []); })
+    // Les deux sens d'un coup : le client choisit seulement sa ville de départ et sa ville d'arrivée.
+    const read = (direction: SegmentDirection) =>
+      apiFetch<{ segments: SegmentOffer[] }>(`/client/segments/?direction=${direction}&scope=all`, {}, false).then((payload) => payload.segments || []);
+    Promise.all([read("aller"), read("retour")])
+      .then(([outward, back]) => { if (!cancelled) setRouteSegments([...outward, ...back]); })
       .catch(() => { if (!cancelled) setRouteSegments([]); });
     return () => { cancelled = true; };
-  }, [routeDirection]);
+  }, []);
+  // Villes de départ (ordre de la ligne), puis arrivées possibles depuis la ville choisie.
+  const departureCities = routeSegments.reduce<{ id: number; name: string }[]>((list, segment) => (
+    list.some((city) => city.id === segment.origin_id) ? list : [...list, { id: segment.origin_id, name: segment.origin }]
+  ), []);
+  const arrivalSegments = routeSegments.filter((segment) => String(segment.origin_id) === originId);
+  function pickCities(origin: string, destination: string) {
+    setOriginId(origin);
+    setDestinationId(destination);
+    const segment = routeSegments.find((item) => String(item.origin_id) === origin && String(item.destination_id) === destination);
+    if (segment) chooseSegment(keyOf(segment));
+    else { setSegmentKey(""); setTripId(""); setSegmentTrips([]); }
+  }
 
   // Choix d'un tronçon : ses départs viennent du serveur ; une montée intermédiaire ne se vend pas en ligne.
   function chooseSegment(key: string) {
@@ -750,10 +752,6 @@ function Tickets({
     if (segment) {
       chooseSegment(keyOf(segment));
       setTripId(preselectedTripId);
-    } else if (!flippedForPreselection.current) {
-      // Le départ choisi est dans l'autre sens : on bascule une seule fois.
-      flippedForPreselection.current = true;
-      setRouteDirection((current) => (current === "aller" ? "retour" : "aller"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preselectedTripId, routeSegments]);
@@ -1327,32 +1325,27 @@ function Tickets({
               </>
             )}
             {!summaryMode && (<>
-            {/* Comme l'app : sens, puis tronçon avec son prix, puis date du départ. */}
-            <label style={{ marginTop: '10px' }}>Sens</label>
-            <div role="tablist" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {([["aller", "Parakou → Cotonou"], ["retour", "Cotonou → Parakou"]] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="tab"
-                  aria-selected={routeDirection === value}
-                  onClick={() => { setRouteDirection(value); chooseSegment(""); }}
-                  style={{ padding: '10px 16px', borderRadius: '12px', fontWeight: 700, cursor: 'pointer', border: routeDirection === value ? '1px solid var(--ink)' : '1px solid var(--line)', background: routeDirection === value ? 'var(--ink)' : '#fff', color: routeDirection === value ? '#fff' : 'var(--ink)' }}
-                >
-                  {label}
-                </button>
-              ))}
+            {/* Départ, arrivée, puis les départs disponibles en cartes (heure, places, prix). */}
+            <div className="trip-picker">
+              <div>
+                <label htmlFor="pick-origin">Départ</label>
+                <select id="pick-origin" value={originId} onChange={(e) => pickCities(e.target.value, "")} required>
+                  <option value="">{routeSegments.length ? "Ville de départ" : "Chargement…"}</option>
+                  {departureCities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}
+                </select>
+              </div>
+              <button type="button" className="swap-btn" aria-label="Inverser le départ et l’arrivée" disabled={!originId || !destinationId}
+                onClick={() => pickCities(destinationId, originId)}>
+                <SwapIcon size={16} />
+              </button>
+              <div>
+                <label htmlFor="pick-destination">Arrivée</label>
+                <select id="pick-destination" value={destinationId} onChange={(e) => pickCities(originId, e.target.value)} disabled={!originId} required>
+                  <option value="">{originId ? "Ville d’arrivée" : "Choisissez d’abord le départ"}</option>
+                  {arrivalSegments.map((segment) => <option key={segment.destination_id} value={segment.destination_id}>{segment.destination} · {money(segment.price_fcfa)}</option>)}
+                </select>
+              </div>
             </div>
-
-            <label style={{ marginTop: '10px' }}>Trajet</label>
-            <select value={segmentKey} onChange={(e) => chooseSegment(e.target.value)} required>
-              <option value="">{routeSegments.length ? "Choisir un trajet" : "Chargement des trajets…"}</option>
-              {routeSegments.map((segment) => (
-                <option key={keyOf(segment)} value={keyOf(segment)}>
-                  {segment.origin} → {segment.destination} — {money(segment.price_fcfa)}
-                </option>
-              ))}
-            </select>
 
             {chosenSegment && !chosenSegment.online_boarding && (
               <p role="status" style={{ marginTop: '10px', padding: '12px 14px', borderRadius: '12px', background: 'var(--warnbg)', color: 'var(--warn)', fontWeight: 600 }}>
@@ -1362,23 +1355,29 @@ function Tickets({
 
             {chosenSegment?.online_boarding && (
               <>
-                <label style={{ marginTop: '10px' }}>Date du départ</label>
+                <label style={{ marginTop: '14px' }}>Départs disponibles</label>
                 {segmentTripsLoading ? (
                   <p style={{ color: 'var(--mute)' }}>Recherche des départs…</p>
                 ) : segmentTrips.length === 0 ? (
                   <p style={{ color: 'var(--mute)' }}>Aucun départ programmé pour ce trajet.</p>
                 ) : (
-                  <select
-                    value={tripId}
-                    onChange={(e) => {
-                      setTripId(e.target.value);
-                      setPassengers([{ seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" }]);
-                    }}
-                    required
-                  >
-                    <option value="">Choisir une date</option>
-                    {segmentTrips.map((trip) => <option key={trip.id} value={trip.id}>{formatDate(trip.departure_at)}</option>)}
-                  </select>
+                  <div className="trip-cards">
+                    {segmentTrips.map((trip) => {
+                      const full = trip.available_seats <= 0;
+                      const chosen = String(trip.id) === tripId;
+                      return (
+                        <button key={trip.id} type="button" disabled={full} aria-pressed={chosen} className={chosen ? "trip-card on" : "trip-card"}
+                          onClick={() => {
+                            setTripId(String(trip.id));
+                            setPassengers([{ seatId: null, seatNumber: null, fullName: defaultUserFullName, phone: user?.phone || "" }]);
+                          }}>
+                          <span className="trip-card-when">{formatDate(trip.departure_at)}</span>
+                          <span className="trip-card-seats">{full ? "Complet" : `${trip.available_seats} place${trip.available_seats > 1 ? "s" : ""}`}</span>
+                          <span className="trip-card-price">{money(chosenSegment.price_fcfa)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </>
             )}
