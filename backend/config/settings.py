@@ -233,3 +233,19 @@ AXIS_PASSWORD_LINK_HOURS = int(os.environ.get("AXIS_PASSWORD_LINK_HOURS", "24"))
 # Réservations en ligne non payées en cours, par téléphone (sans compte) ou par compte client.
 AXIS_BOOKING_MAX_HELD = int(os.environ.get("AXIS_BOOKING_MAX_HELD", "2"))
 AXIS_BOOKING_MAX_HELD_SEATS = int(os.environ.get("AXIS_BOOKING_MAX_HELD_SEATS", "8"))
+
+# ─── Durcissement ────────────────────────────────────────────────────────────
+# Taille d'une requête hors fichiers (formulaires, JSON) ; les fichiers sont aussi bornés par Caddy (request_body).
+DATA_UPLOAD_MAX_MEMORY_SIZE = 2_621_440  # 2,5 Mo (valeur Django par défaut, écrite pour être visible)
+DATA_UPLOAD_MAX_NUMBER_FILES = 5
+
+# HTTPS derrière Caddy (variante B) : cookies sécurisés et HSTS. Laissé désactivé en HTTP (variante A, essais).
+AXIS_HTTPS = os.environ.get("AXIS_HTTPS", "false").lower() == "true"
+if AXIS_HTTPS:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = int(os.environ.get("AXIS_HSTS_SECONDS", "31536000"))
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"

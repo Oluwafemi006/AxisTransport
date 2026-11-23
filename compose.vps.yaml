@@ -27,6 +27,8 @@ x-backend-environment: &backend-environment
   FEDAPAY_WEBHOOK_TOLERANCE_SECONDS: ${FEDAPAY_WEBHOOK_TOLERANCE_SECONDS:-300}
   FEDAPAY_CALLBACK_URL: ${FEDAPAY_CALLBACK_URL:-}
   PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
+  # HTTPS (variante B) : cookies sécurisés et HSTS côté Django ; à laisser à false en HTTP (variante A).
+  AXIS_HTTPS: ${AXIS_HTTPS:-false}
   # Un seul proxy (Caddy) devant l'API : sert à lire la vraie adresse IP du visiteur pour les limites de requêtes.
   AXIS_NUM_PROXIES: ${AXIS_NUM_PROXIES:-1}
   AXIS_CACHE_DIR: /tmp/axis-cache
