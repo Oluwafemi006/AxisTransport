@@ -66,55 +66,79 @@ ${body}
 export function privacyPage(contact: PrivacyContact): string {
   const name = companyName(contact);
   return page("Politique de confidentialité", `
-<p>Cette page décrit les données utilisées par le site et l’application ${name} : billets de car, colis et location de véhicules.</p>
-<h2>Responsable et contact</h2>
-<p>${name}.${toValidate("personne responsable des données personnelles")}</p>
+<p>Dernière mise à jour : 23 novembre 2026.</p>
+<p>Cette politique explique quelles données ${name} utilise sur son site et dans son application (billets de car, colis, location de véhicules), pourquoi, avec qui elles sont partagées, combien de temps elles sont gardées et comment exercer vos droits.</p>
+
+<h2>1. Responsable et contact</h2>
+<p>Le responsable des données est ${name}.${toValidate("personne responsable des données personnelles")}</p>
 ${contactBlock(contact)}
-<h2>Données que nous utilisons</h2>
+
+<h2>2. Données que nous utilisons et pourquoi</h2>
 <ul>
-<li><strong>Compte client</strong> : identifiant, prénom, nom, téléphone, e-mail et mot de passe (gardé sous forme chiffrée, jamais lisible).</li>
-<li><strong>Billets</strong> : nom et téléphone de chaque passager, téléphone et e-mail de contact, trajet, siège, points de montée et de descente, montant.</li>
-<li><strong>Colis</strong> : nom et téléphone de l’expéditeur et du destinataire, description du colis, photos du colis prises par le personnel, identité de la personne qui le retire.</li>
-<li><strong>Locations</strong> : véhicule, dates, option chauffeur, nom et prénoms du conducteur, numéros du CIP et du permis de conduire, zone de circulation, montant et caution fixés par l’agence.</li>
-<li><strong>Paiements</strong> : montant, numéro de la transaction Mobile Money et statut du paiement.</li>
-<li><strong>Contrôle des billets</strong> : heure du contrôle et agent qui l’a fait.</li>
-<li><strong>Historique</strong> : les modifications faites sur un compte, une location ou un billet sont enregistrées, avec leur date et leur auteur.</li>
+<li><strong>Votre compte</strong> : identifiant, prénom, nom, téléphone, e-mail et mot de passe (gardé sous forme chiffrée, jamais lisible). Pour vous connecter, retrouver vos billets et vous envoyer les codes et liens de sécurité (vérification de l’e-mail, mot de passe oublié).</li>
+<li><strong>Billets</strong> : nom et téléphone de chaque passager, téléphone et e-mail de contact, trajet, date, siège, points de montée et de descente, montant. Pour émettre le billet, le contrôler à la montée et vous joindre en cas de changement.</li>
+<li><strong>Réservation sans compte</strong> : les mêmes informations ; votre navigateur garde un lien vers la réservation pendant le paiement.</li>
+<li><strong>Colis</strong> : nom et téléphone de l’expéditeur et du destinataire, description, 1 à 3 photos prises au dépôt, départ et arrivée, identité de la personne qui retire le colis. Pour suivre le colis et le remettre à la bonne personne.</li>
+<li><strong>Locations</strong> : véhicule, dates, option chauffeur, nom et prénoms du conducteur, numéros du CIP et du permis de conduire, et le cas échéant une photo de ces pièces enregistrée par l’agence, zone de circulation, montant et caution. Pour vérifier l’identité du conducteur et suivre le véhicule loué.</li>
+<li><strong>Paiements</strong> : montant, mode de paiement, numéro de la transaction Mobile Money et statut. Pour n’émettre un billet qu’après un paiement vérifié et pour la comptabilité.</li>
+<li><strong>Contrôle et historique</strong> : heure du contrôle d’un billet et agent qui l’a fait ; date et auteur des modifications d’un compte, d’un billet, d’un colis ou d’une location. Pour la sécurité et le règlement des litiges.</li>
+<li><strong>Protection contre les abus</strong> : l’adresse IP et le numéro de téléphone utilisés pour réserver ou se connecter sont gardés en mémoire le temps de limiter les essais répétés.</li>
 </ul>
-<h2>Ce que nous n’utilisons pas</h2>
+
+<h2>3. Ce que nous n’utilisons pas</h2>
 <ul>
 <li>Aucune localisation de votre téléphone.</li>
 <li>Aucune notification envoyée sur votre téléphone.</li>
-<li>Aucun outil de mesure d’audience ni de publicité.</li>
+<li>Aucun outil de mesure d’audience ni de publicité, aucun cookie publicitaire.</li>
 <li>Aucun enregistrement du son.</li>
+<li>Nous ne vendons pas vos données.</li>
 </ul>
-<h2>Sur votre téléphone ou votre navigateur</h2>
+
+<h2>4. Sur votre téléphone ou votre navigateur</h2>
 <ul>
 <li>Votre session de connexion et une copie de vos billets confirmés (pour les montrer sans réseau) restent sur votre appareil.</li>
 <li>Le verrouillage par empreinte ou visage est vérifié par votre téléphone : l’application ne reçoit jamais votre empreinte ni votre visage.</li>
 <li>La caméra sert seulement au personnel, pour scanner les billets et photographier les colis.</li>
+<li>Les boutons WhatsApp, appel et itinéraire ouvrent WhatsApp, votre téléphone ou Google Maps seulement quand vous les touchez ; ces services appliquent alors leurs propres règles.</li>
 </ul>
-<h2>Qui y a accès</h2>
+
+<h2>5. Qui y a accès</h2>
 <ul>
 <li>Vous, depuis votre compte.</li>
-<li>Le personnel de l’agence (guichet, contrôle, administration), selon son rôle.</li>
-<li>Toute personne qui connaît la référence d’un billet peut voir la page publique du billet : nom du passager, trajet et siège.</li>
+<li>Le personnel de l’agence, selon son rôle : le guichet et le contrôle voient ce qui est utile à leur service ; les numéros de CIP et de permis sont masqués au guichet.</li>
+<li>Toute personne qui connaît la référence d’un billet (ou scanne son code) peut voir la page publique du billet : nom du passager, trajet et siège. Ne partagez votre billet qu’avec le voyageur.</li>
 </ul>
-<h2>Prestataires</h2>
+
+<h2>6. Prestataires</h2>
+<p>Ils traitent les données seulement pour le service indiqué :</p>
 <ul>
-<li><strong>FedaPay</strong>, pour le paiement Mobile Money : nous lui transmettons le montant et la référence de la réservation, du billet ou du colis, jamais votre nom ni votre téléphone. Vous saisissez votre numéro de paiement directement sur sa page.</li>
+<li><strong>Le prestataire de paiement Mobile Money</strong> : nous lui transmettons le montant et la référence de la réservation, du billet ou du colis, jamais votre nom ni votre téléphone. Vous saisissez votre numéro de paiement directement sur sa page.</li>
 <li><strong>Cloudinary</strong>, pour conserver les photos des colis et des véhicules.</li>
-<li><strong>Un service d’envoi d’e-mails</strong>, pour les liens « mot de passe oublié ».${toValidate("nom du service")}</li>
+<li><strong>Google (Gmail)</strong>, pour envoyer les e-mails de vérification et de mot de passe oublié.</li>
 <li><strong>L’hébergeur du serveur.</strong>${toValidate("nom et pays de l’hébergeur")}</li>
 </ul>
-<h2>Sécurité</h2>
-<p>Les échanges entre l’application, le site et le serveur passent par une connexion chiffrée (HTTPS). Un lien « mot de passe oublié » ne sert qu’une fois et expire après une durée limitée (24 heures par défaut).</p>
-<h2>Durée de conservation</h2>
+<p>Certains de ces prestataires peuvent conserver les données hors du Bénin.${toValidate("pays de conservation des données")}</p>
+
+<h2>7. Sécurité</h2>
+<p>Les échanges entre l’application, le site et le serveur sont chiffrés (HTTPS). Les mots de passe sont chiffrés. L’accès du personnel dépend de son rôle et les actions sensibles sont enregistrées. Un lien « mot de passe oublié » ne sert qu’une fois et expire après une durée limitée.</p>
+
+<h2>8. Durée de conservation</h2>
 <ul>
 <li>Sauvegardes de la base de données : 14 jours.</li>
-<li>Comptes, billets, colis, locations et paiements : aucune durée n’est encore fixée.${toValidate("durée de conservation, en particulier pour la comptabilité")}</li>
+<li>Compte : tant que vous ne le supprimez pas.</li>
+<li>Billets, colis, locations et paiements : gardés pour la comptabilité, sans nom ni coordonnées après la suppression du compte.${toValidate("durée de conservation comptable")}</li>
 </ul>
-<h2>Vos droits</h2>
-<p>Vous pouvez corriger votre prénom, votre nom, votre téléphone et votre e-mail dans le profil de l’application. Vous pouvez supprimer votre compte dans l’application (« Profil », puis « Supprimer mon compte ») ; voir la page <a href="/suppression-compte">Suppression de compte</a>.</p>`);
+
+<h2>9. Vos droits</h2>
+<ul>
+<li><strong>Accès et correction</strong> : vous corrigez votre prénom, votre nom, votre téléphone et votre e-mail dans votre profil, sur le site ou dans l’application.</li>
+<li><strong>Suppression</strong> : sur le site ou dans l’application, « Profil », puis « Supprimer mon compte ». Voir la page <a href="/suppression-compte">Suppression de compte</a>.</li>
+<li><strong>Autres demandes</strong> (copie de vos données, opposition) : écrivez-nous avec les coordonnées ci-dessus.</li>
+<li><strong>Réclamation</strong> : vous pouvez saisir l’Autorité de Protection des Données à caractère Personnel (APDP) du Bénin.${toValidate("texte de loi applicable (Code du numérique, loi n° 2017-20) et coordonnées de l’APDP")}</li>
+</ul>
+
+<h2>10. Modifications</h2>
+<p>Nous mettons cette page à jour quand le service change ; la date en haut de page indique la dernière version.</p>`);
 }
 
 // Emplacement laissé vide tant que la compagnie n'a pas fixé la durée : aucune durée n'est inventée.
@@ -128,7 +152,7 @@ export function accountDeletionPage(contact: PrivacyContact): string {
 <p><strong>Axis Transport</strong> : suppression d’un compte client créé dans l’application ou sur le site.</p>
 <h2>Comment supprimer votre compte</h2>
 <ul>
-<li><strong>Dans l’application</strong> : ouvrez « Profil », puis « Supprimer mon compte », lisez ce qui est supprimé et conservé, saisissez votre mot de passe et confirmez.</li>
+<li><strong>Dans l’application ou sur le site</strong> : ouvrez « Profil », puis « Supprimer mon compte », lisez ce qui est supprimé et conservé, saisissez votre mot de passe et confirmez.</li>
 <li><strong>Si vous ne pouvez plus vous connecter</strong> : écrivez ${email}, depuis l’adresse ou avec le numéro de téléphone de votre compte, en indiquant votre identifiant.</li>
 </ul>
 <h2>Quand la suppression est refusée</h2>
@@ -153,6 +177,7 @@ export function accountDeletionPage(contact: PrivacyContact): string {
 <li>Les colis et les locations déjà enregistrés, sans nom, téléphone ni numéro de CIP ou de permis.</li>
 </ul>
 <p>Ces données ne permettent plus de vous identifier par votre nom ou vos coordonnées. Elles sont gardées pour la comptabilité de l’agence.</p>
+<p>Limite : les photos du CIP ou du permis éventuellement enregistrées par l’agence pour une location ne sont pas encore effacées automatiquement.${toValidate("effacement de ces photos")}</p>
 <p>Limite : les notes libres écrites par le personnel dans l’historique d’un billet ou d’un colis ne sont pas modifiées.</p>
 <h2>Durée de conservation</h2>
 <p>Données anonymisées (billets, paiements, colis, locations) : ${TO_CONFIRM}.</p>
