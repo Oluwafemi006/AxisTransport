@@ -11,6 +11,7 @@ import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
 import { useSessionGuard } from "@/lib/use-session";
 import { HeadlineCards, ReportPanel } from "./admin-report";
 import { PeriodFilter } from "./period-filter";
+import { ParcelRegister } from "./parcel-register";
 import type { Headline } from "./admin-report";
 
 // Valeur de repli quand l'API du tableau de bord échoue : zéros, jamais une valeur inventée.
@@ -142,7 +143,7 @@ export function AdminPortal() {
           {tab === "guichet" && <><CounterPanel onChanged={load} space="admin" onHome={() => setTab("dashboard")} /><SoldToday /></>}
           {tab === "billets" && <TicketsPanel settings={settings} onChanged={load} />}
           {tab === "points" && <BoardingPointsPanel locations={locations} onChanged={load} />}
-          {tab === "colis" && <ParcelPanel parcels={parcels} trips={trips} onChanged={load} />}
+          {tab === "colis" && <><ParcelRegister /><ParcelPanel parcels={parcels} trips={trips} onChanged={load} /></>}
           {tab === "locations" && <><RentalPanel /><RentalZonesPanel /></>}
           {tab === "flotte" && <FleetPanel locations={locations} vehicles={vehicles} onChanged={load} />}
           {tab === "tarifs" && <PricingPanel routes={routes} fares={fares} flags={flags} payments={payments} settings={settings} onChanged={load} />}
