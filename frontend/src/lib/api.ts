@@ -189,6 +189,12 @@ export async function changeMyPassword(currentPassword: string, newPassword: str
   return result;
 }
 
+/** Suppression du compte client (anonymisation côté serveur), confirmée par le mot de passe. */
+export async function deleteMyAccount(password: string) {
+  await apiFetch<null>("/auth/me/", { method: "DELETE", body: JSON.stringify({ password }) });
+  clearTokens();
+}
+
 export async function requestPasswordReset(email: string) {
   return await apiFetch<{ detail: string }>("/auth/password-reset/request/", { method: "POST", body: JSON.stringify({ email }) }, false);
 }

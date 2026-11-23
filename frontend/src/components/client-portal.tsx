@@ -3,7 +3,7 @@
 import { PasswordInput } from "./password-input";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { apiFetch, apiList, changeMyPassword, clearTokens, formatDate, getAccessToken, money, updateMyEmail, sendEmailCode, verifyEmailCode } from "@/lib/api";
+import { apiFetch, apiList, changeMyPassword, clearTokens, deleteMyAccount, formatDate, getAccessToken, money, updateMyEmail, sendEmailCode, verifyEmailCode } from "@/lib/api";
 import { BOARDING_POINT_HELP, ONBOARD_ONLY_MESSAGE, SEGMENT_FARE_MISSING_MESSAGE, actionErrorText, beninDateKey, boardingFieldLabel, resizePassengers, segmentDepartureLabel, segmentSearchDate, type SegmentDirection, type SegmentOffer, isSegmentFareMissing, parcelBusText, needsEmailReminder, EMAIL_REMINDER_TEXT, phoneHref, placeChoices, searchDateError, searchError, whatsappHref } from "@/lib/portal-rules";
 import type { Booking, Checkout, Contact, Location, NextAvailable, Parcel, ParcelTracking, PaymentMethod, RentalBooking, Seat, Ticket, Trip, User, Vehicle } from "@/lib/types";
 import { LoginCard } from "./login-card";
@@ -1898,7 +1898,54 @@ function Profile({ user, tickets, parcels, rentals, onAuthenticated, onLogout }:
       <AccountSettings user={user} onSaved={onAuthenticated} />
 
       <button className="btn" style={{ width: '100%', borderColor: 'var(--warn)', color: 'var(--warn)' }} onClick={onLogout}>Se déconnecter</button>
+      {user.role === "CLIENT" && <DeleteAccount onDeleted={onLogout} />}
     </div>
+  );
+}
+
+// Suppression du compte : mêmes règles que l'application (mot de passe, refus tant qu'un service est en cours).
+function DeleteAccount({ onDeleted }: { onDeleted: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+
+  async function confirm(event: FormEvent) {
+    event.preventDefault();
+    if (!password) { setError("Saisissez votre mot de passe."); return; }
+    setBusy(true); setError("");
+    try {
+      await deleteMyAccount(password);
+      setDone(true);
+      window.setTimeout(onDeleted, 2500);
+    } catch (reason) { setError(actionErrorText(reason, "La suppression n’a pas abouti.")); }
+    finally { setBusy(false); }
+  }
+
+  if (done) return <p role="status" style={{ marginTop: "16px", fontWeight: 600 }}>Votre compte est supprimé. Vous allez être déconnecté.</p>;
+  if (!open) return <button type="button" className="text-button danger" style={{ marginTop: "16px" }} onClick={() => setOpen(true)}>Supprimer mon compte</button>;
+  return (
+    <form onSubmit={confirm} style={{ marginTop: '20px', borderTop: '1px solid var(--line, #e5e7eb)', paddingTop: '16px' }}>
+      <h4 style={{ fontSize: '17px', marginBottom: '8px' }}>Supprimer mon compte</h4>
+      <p style={{ fontSize: '14px', color: 'var(--mute)', marginBottom: '8px' }}>
+        Votre nom, votre téléphone, votre e-mail et votre identifiant sont effacés, et la connexion devient impossible.
+        Les billets, paiements, colis et locations restent pour la comptabilité de l’agence, sans votre nom ni vos coordonnées.
+        Cette action est définitive. <a href="/suppression-compte" target="_blank" rel="noopener">En savoir plus</a>
+      </p>
+      <p style={{ fontSize: '14px', color: 'var(--mute)', marginBottom: '12px' }}>
+        Elle est refusée tant que vous avez un billet payé pour un voyage pas encore parti, un colis pas encore retiré,
+        une location en cours ou un paiement Mobile Money en attente.
+      </p>
+      <label className="block"><span className="field-label">Mot de passe</span>
+        <input className="field" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      </label>
+      {error && <p role="alert" style={{ color: 'var(--warn)', fontSize: '14px', marginTop: '8px' }}>{error}</p>}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+        <button className="btn" style={{ borderColor: 'var(--warn)', color: 'var(--warn)' }} disabled={busy}>{busy ? "Suppression…" : "Supprimer définitivement"}</button>
+        <button type="button" className="text-button" onClick={() => { setOpen(false); setPassword(""); setError(""); }}>Annuler</button>
+      </div>
+    </form>
   );
 }
 
