@@ -389,3 +389,13 @@ test("WhatsApp : numéro du serveur d'abord, repli sur le choix du contact", asy
   assert.ok(rules.soldTicketWhatsappHref({ ...ticket, whatsapp_number: null }, "https://site.test/t/AX-TEST").startsWith("https://wa.me/?text="));
   assert.ok(decodeURIComponent(rules.soldTicketWhatsappHref({ ...ticket, whatsapp_number: "2290100000009" }, "https://site.test/t/AX-TEST")).includes("Bonjour Passager TEST, voici votre billet AXIS Transport AX-TEST : https://site.test/t/AX-TEST"));
 });
+
+test("colis au guichet : champs, villes distinctes, 1 à 3 photos", async () => {
+  const rules = await import(pathToFileURL(compiled).href);
+  const ok = { sender_name: "Expéditeur TEST", sender_phone: "0100000009", recipient_name: "Destinataire TEST", recipient_phone: "0100000008", origin: "1", destination: "2", description: "" };
+  assert.equal(rules.parcelFormError(ok, 1), null);
+  assert.equal(rules.parcelFormError({ ...ok, sender_phone: "" }, 1), "Indiquez le nom et le téléphone de l’expéditeur.");
+  assert.equal(rules.parcelFormError({ ...ok, destination: "1" }, 1), "Le départ et la destination du colis doivent être différents.");
+  assert.equal(rules.parcelFormError(ok, 0), "Ajoutez 1 à 3 photos du colis.");
+  assert.equal(rules.parcelFormError(ok, 4), "Ajoutez 1 à 3 photos du colis.");
+});

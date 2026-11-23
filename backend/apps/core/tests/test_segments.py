@@ -506,6 +506,18 @@ class ParcelOriginDestinationTests(StaffSaleSegmentTests):
         rows = self.client.get("/api/v1/staff/sales/parcels/").json()
         self.assertEqual(rows[0]["route"], "Savè → Cotonou")
 
+    def test_counter_registers_and_cashes_a_parcel_from_the_website(self):
+        """Site, espace guichet : sans départ choisi, comme l'app publiée ; puis encaissement en espèces."""
+        counter = User.objects.create_user(username="test-guichet-colis", password="secret", role=User.Role.COUNTER)
+        self.client.force_authenticate(counter)
+        SystemSetting.objects.update_or_create(key="parcel_base_price_fcfa", defaults={"value": 2000})
+        response = self.parcel("Parakou", "Cotonou")
+        self.assertEqual(response.status_code, 201, response.data)
+        paid = self.client.post(f"/api/v1/parcels/{response.data['id']}/pay/", {"payment_method": self.cash.pk}, format="json")
+        self.assertEqual(paid.status_code, 200, paid.data)
+        self.assertTrue(paid.data["receipt"]["paid"])
+        self.assertEqual(Parcel.objects.get().status_history.first().changed_by, counter)
+
     def test_wrong_direction_is_refused(self):
         response = self.parcel("Cotonou", "Savè", trip=self.trip.pk)
         self.assertEqual(response.status_code, 400)

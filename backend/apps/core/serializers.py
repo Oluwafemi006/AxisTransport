@@ -882,6 +882,16 @@ RENTAL_REQUIRED_FIELDS = {
 class RentalBookingSerializer(serializers.ModelSerializer):
     vehicle_detail = PublicVehicleSerializer(source="vehicle", read_only=True)
     zone_name = serializers.CharField(source="zone.name", read_only=True, default="")
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Numéros de pièces : complets pour l'admin et le client concerné ; masqués pour le guichet.
+        request = self.context.get("request")
+        if request is not None and getattr(request.user, "role", None) == User.Role.COUNTER:
+            for key in ("cip_number", "licence_number"):
+                value = data.get(key) or ""
+                data[key] = f"•••{value[-3:]}" if value else ""
+        return data
     customer_detail = UserSerializer(source="customer", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
 
@@ -892,6 +902,9 @@ class RentalBookingSerializer(serializers.ModelSerializer):
             "reference",
             "customer",
             "status",
+            # Pièces jointes : aucun écran ne les envoie ; en lecture seule, plus d'envoi de fichier sans limite.
+            "identity_document",
+            "driving_licence",
             "deposit_amount",
             "total_amount",
             "currency",

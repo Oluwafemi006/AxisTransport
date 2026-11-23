@@ -1,11 +1,33 @@
 # Variante B — nom de domaine et HTTPS. Le domaine vient de la variable AXIS_DOMAIN (jamais écrit ici).
 # Caddy obtient et renouvelle les certificats tout seul ; il redirige aussi le port 80 vers le 443.
 # Prérequis : les enregistrements DNS de AXIS_DOMAIN et de api.AXIS_DOMAIN pointent vers ce serveur.
+
+# En-têtes de sécurité communs au site et à l'API.
+# La CSP se limite à ce qui ne casse pas le site (scripts en ligne de Next) : interdiction d'être encadré,
+# pas de plugins, base d'URL fixée. Une CSP stricte des scripts demanderait des « nonces » côté Next.
+(securite) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+		-Server
+	}
+}
+
 {$AXIS_DOMAIN} {
+	import securite
 	reverse_proxy frontend:3000
 }
 
 api.{$AXIS_DOMAIN} {
+	import securite
+	# Taille maximale d'une requête vers l'API : 3 photos de 5 Mo au plus, avec une marge.
+	request_body {
+		max_size 20MB
+	}
 	reverse_proxy backend:8000
 }
 

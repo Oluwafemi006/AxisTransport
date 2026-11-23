@@ -1718,6 +1718,10 @@ class TicketViewSet(viewsets.ModelViewSet):
         trip = self.request.query_params.get("trip")
         if self.request.user.role == User.Role.CONTROLLER and not trip:
             return queryset.none()
+        # Guichet : pas de liste de tous les billets (noms, téléphones) ; il cherche par référence ou téléphone
+        # (counter-search) et vend par /staff/sales/. La consultation d'un billet précis reste possible.
+        if self.request.user.role == User.Role.COUNTER and self.action == "list" and not trip:
+            return queryset.none()
         if trip:
             queryset = queryset.filter(trip_id=trip)
         if self.request.user.role == User.Role.ADMIN and self.action == "list":
@@ -2043,6 +2047,9 @@ class ParcelViewSet(viewsets.ModelViewSet):
         tracking = self.request.query_params.get("tracking_number")
         if tracking:
             return queryset.filter(tracking_number=tracking)
+        # Guichet : liste limitée aux colis encore à traiter (ni retirés ni annulés).
+        if self.request.user.role == User.Role.COUNTER and self.action == "list":
+            queryset = queryset.exclude(status__in=[Parcel.Status.PICKED_UP, Parcel.Status.CANCELLED])
         if self.request.user.role == User.Role.ADMIN and self.action == "list":
             bounds = _list_period(self.request)
             if bounds:
@@ -2224,8 +2231,10 @@ class RentalBookingViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         if self.request.user.role == User.Role.CLIENT:
             return queryset.filter(customer=self.request.user)
-        # Guichet : consultation seulement (la gestion « manage » et les montants restent à l'admin).
-        if self.request.user.role in {User.Role.ADMIN, User.Role.COUNTER}:
+        # Guichet : consultation des demandes encore ouvertes seulement ; numéros de pièces masqués (serializers.py).
+        if self.request.user.role == User.Role.COUNTER:
+            return queryset.filter(status__in=[RentalBooking.Status.REQUESTED, RentalBooking.Status.CONFIRMED, RentalBooking.Status.ACTIVE])
+        if self.request.user.role == User.Role.ADMIN:
             if self.action == "list":
                 bounds = _list_period(self.request)
                 if bounds:

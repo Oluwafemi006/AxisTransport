@@ -4,6 +4,10 @@
 :80 {
 	@backend path /api/* /django-admin/* /static/*
 	handle @backend {
+		# Taille maximale d'une requête vers l'API : 3 photos de 5 Mo au plus, avec une marge.
+		request_body {
+			max_size 20MB
+		}
 		reverse_proxy backend:8000
 	}
 	handle {

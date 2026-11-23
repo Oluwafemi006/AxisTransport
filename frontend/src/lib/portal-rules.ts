@@ -462,3 +462,15 @@ export function rentalIdentityError(values: RentalIdentity): string | null {
 
 // Montée à un arrêt intermédiaire : mot pour mot le texte de l'application (trip_results_screen.dart).
 export const ONBOARD_ONLY_MESSAGE = "Montée à bord, auprès du contrôleur : cette montée ne s’achète pas en ligne.";
+
+// Colis enregistré au guichet : mêmes exigences que le serveur (/staff/sales/parcel/) et l'application.
+export type ParcelDraft = { sender_name: string; sender_phone: string; recipient_name: string; recipient_phone: string; origin: string; destination: string; description: string };
+
+export function parcelFormError(draft: ParcelDraft, photoCount: number): string | null {
+  if (!draft.sender_name.trim() || !draft.sender_phone.trim()) return "Indiquez le nom et le téléphone de l’expéditeur.";
+  if (!draft.recipient_name.trim() || !draft.recipient_phone.trim()) return "Indiquez le nom et le téléphone du destinataire.";
+  if (!draft.origin || !draft.destination) return "Choisissez la ville de départ et la ville d’arrivée.";
+  if (draft.origin === draft.destination) return "Le départ et la destination du colis doivent être différents.";
+  if (photoCount < 1 || photoCount > 3) return "Ajoutez 1 à 3 photos du colis.";
+  return null;
+}

@@ -81,6 +81,7 @@ Points d'attention :
 | `AXIS_PAYMENT_REFRESH_RATE` | Bouton « Vérifier mon paiement » (site et app) : demandes par adresse IP, chacune interroge FedaPay. | `20/min` (proposition) |
 | `AXIS_CACHE_DIR` | Dossier du cache (compteurs de limite de requêtes). | Dossier accessible en écriture ; par défaut le dossier temporaire du système |
 | `AXIS_NUM_PROXIES` | Nombre de proxys devant l'API, pour lire la vraie adresse IP du client. | `1` derrière un seul proxy |
+| `AXIS_HTTPS` | `true` derrière Caddy en HTTPS (variante B) : cookies sécurisés, HSTS. `false` en HTTP. | `true` en production |
 | `AXIS_BOOKING_RATE_ADDRESS` | Réservations en ligne : tentatives par adresse IP (une IP peut regrouper tout un réseau mobile). | `60/hour` |
 | `AXIS_BOOKING_RATE_PHONE` | Réservations en ligne **créées** par compte client ou téléphone ; un essai refusé ne compte pas. | `10/hour` |
 | `AXIS_PAYMENT_SIMULATION` | Paiement simulé. Sans effet quand `DJANGO_DEBUG` est faux. | absente |
