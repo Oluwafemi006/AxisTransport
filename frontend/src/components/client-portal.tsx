@@ -1508,7 +1508,9 @@ function Tickets({
             />
             <div className="step-actions">
               <button type="button" className="btn" onClick={() => setFormStep(1)}>Retour</button>
-              <button type="button" className="btn p" onClick={() => {
+              <button type="button" className="btn p" onClick={(event) => {
+                // Champs obligatoires de cette étape (points de montée et de descente, contact) : contrôle du navigateur.
+                if (!event.currentTarget.form?.reportValidity()) return;
                 if (passengers.some((p) => !p.fullName.trim())) { setMessage("Indiquez le nom et le prénom de chaque passager."); return; }
                 setMessage("");
                 setFormStep(3);
