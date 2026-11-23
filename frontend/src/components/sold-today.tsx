@@ -6,6 +6,45 @@ import { apiFetch, money } from "@/lib/api";
 import { soldTicketWhatsappHref } from "@/lib/portal-rules";
 import type { SoldTicket } from "@/lib/types";
 
+type DaySummary = { sold_tickets: number; parcels: number; cash_fcfa: number; mobile_money_fcfa: number; scanned_tickets: number };
+
+// Résumé du jour de l'agent connecté : chiffres calculés par le serveur (/staff/sales/summary/), jamais ici.
+export function DaySummaryCard({ refreshKey = 0 }: { refreshKey?: number }) {
+  const [data, setData] = useState<DaySummary | null>(null);
+  const [failed, setFailed] = useState(false);
+  const load = useCallback(async () => {
+    try { setData(await apiFetch<DaySummary>("/staff/sales/summary/")); setFailed(false); }
+    catch { setFailed(true); }
+  }, []);
+  useEffect(() => { void load(); }, [load, refreshKey]);
+
+  const tiles: [string, string][] = data ? [
+    ["Billets vendus", String(data.sold_tickets)],
+    ["Colis enregistrés", String(data.parcels)],
+    ["Encaissé en espèces", money(data.cash_fcfa)],
+    ["Encaissé en Mobile Money", money(data.mobile_money_fcfa)],
+  ] : [];
+  return (
+    <section className="card mt-5">
+      <SectionHeading eyebrow="Mes ventes du jour" title="Ma journée" />
+      {failed ? <Notice notice={{ text: "Le résumé du jour n’a pas pu être chargé. Réessayez.", tone: "error" }} /> : data === null ? <Loading /> : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {tiles.map(([label, value]) => (
+              <div key={label} className="min-w-0 rounded-lg border border-slate-200 p-3">
+                <p className="text-xs text-slate-500">{label}</p>
+                <p className="mt-1 text-lg font-extrabold break-words">{value}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-sm">Total encaissé pour les billets : <b>{money(data.cash_fcfa + data.mobile_money_fcfa)}</b></p>
+        </>
+      )}
+      <button className="secondary-button mt-3" onClick={() => void load()}>Actualiser</button>
+    </section>
+  );
+}
+
 // Billets vendus aujourd'hui (lecture seule) : l'agent voit ses ventes, l'administrateur toutes (décidé par le serveur).
 export function SoldToday({ refreshKey = 0 }: { refreshKey?: number }) {
   const [rows, setRows] = useState<SoldTicket[] | null>(null);

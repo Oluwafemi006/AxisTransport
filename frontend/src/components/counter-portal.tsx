@@ -5,7 +5,7 @@ import { CounterPanel } from "./admin-portal";
 import { TicketFinder } from "./ticket-finder";
 import { CounterRentals } from "./counter-rentals";
 import { ParcelRegister } from "./parcel-register";
-import { SoldToday } from "./sold-today";
+import { DaySummaryCard, SoldToday } from "./sold-today";
 import { LoginCard } from "./login-card";
 import { SessionExpiredDialog } from "./session-expired";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/session";
@@ -65,6 +65,7 @@ export function CounterPortal() {
       {message && <Notice notice={{ text: message, tone: "error" }} className="mb-5" />}
       {user ? <CounterPanel onChanged={load} space="guichet" /> : <Loading />}
       {user && <TicketFinder />}
+      {user && <DaySummaryCard />}
       {user && <SoldToday />}
       {user && <ParcelRegister />}
       {user && <ParcelPrices />}
