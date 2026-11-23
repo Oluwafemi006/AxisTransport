@@ -47,6 +47,18 @@ export function ParcelRegister() {
     apiList<PaymentMethod>("/payment-methods/").then((rows) => setMethods(rows.filter((row) => row.active))).catch(() => undefined);
   }, []);
 
+  // Aperçus des photos choisies (libérés quand la liste change).
+  const [previews, setPreviews] = useState<string[]>([]);
+  useEffect(() => {
+    const urls = photos.map((photo) => URL.createObjectURL(photo));
+    setPreviews(urls);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [photos]);
+  function addPhotos(files: FileList | null) {
+    if (!files?.length) return;
+    setPhotos((current) => [...current, ...Array.from(files)].slice(0, 3));
+  }
+
   const set = (key: keyof ParcelDraft) => (value: string) => setDraft({ ...draft, [key]: value });
 
   async function register(event: FormEvent) {
@@ -119,10 +131,30 @@ export function ParcelRegister() {
           <label className="block sm:col-span-2"><span className="field-label">Description du colis</span>
             <input className="field" value={draft.description} onChange={(e) => set("description")(e.target.value)} placeholder="Ex. : carton, sac, contenu" />
           </label>
-          <label className="block sm:col-span-2"><span className="field-label">Photos du colis (1 à 3)</span>
-            <input className="field" type="file" accept="image/*" capture="environment" multiple onChange={(e) => setPhotos(Array.from(e.target.files ?? []).slice(0, 3))} />
-            <span className="mt-1 block text-xs text-slate-500">{photos.length ? `${photos.length} photo(s) choisie(s).` : "Prenez ou choisissez au moins une photo."}</span>
-          </label>
+          {/* Deux boutons : la caméra du téléphone, ou une image déjà prise (ordinateur, galerie). Les photos s'ajoutent (3 au plus). */}
+          <div className="block sm:col-span-2">
+            <span className="field-label">Photos du colis (1 à 3)</span>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <label className={`secondary-button cursor-pointer ${photos.length >= 3 ? "pointer-events-none opacity-50" : ""}`}>
+                Prendre une photo
+                <input className="sr-only" type="file" accept="image/*" capture="environment" disabled={photos.length >= 3} onChange={(e) => { addPhotos(e.target.files); e.target.value = ""; }} />
+              </label>
+              <label className={`secondary-button cursor-pointer ${photos.length >= 3 ? "pointer-events-none opacity-50" : ""}`}>
+                Choisir une image
+                <input className="sr-only" type="file" accept="image/*" multiple disabled={photos.length >= 3} onChange={(e) => { addPhotos(e.target.files); e.target.value = ""; }} />
+              </label>
+            </div>
+            {photos.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {photos.map((photo, index) => (
+                  <div key={`${photo.name}-${index}`} className="relative">
+                    <img src={previews[index]} alt={`Photo ${index + 1} du colis`} className="h-20 w-20 rounded object-cover" />
+                    <button type="button" aria-label={`Retirer la photo ${index + 1}`} className="absolute -right-2 -top-2 h-6 w-6 rounded-full bg-red-600 text-xs font-bold text-white" onClick={() => setPhotos(photos.filter((_, i) => i !== index))}>×</button>
+                  </div>
+                ))}
+              </div>
+            ) : <span className="mt-1 block text-xs text-slate-500">Prenez ou choisissez au moins une photo.</span>}
+          </div>
           <button className="primary-button sm:col-span-2" disabled={busy}>{busy ? "Enregistrement…" : "Enregistrer le colis"}</button>
         </form>
       ) : (
