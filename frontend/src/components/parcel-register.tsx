@@ -10,6 +10,23 @@ import { SectionHeading, useActionFeedback } from "./ui";
 type Receipt = { tracking_number: string; origin: string; destination: string; amount: number | null; currency: string; paid: boolean; payment_mode: string };
 type Created = { id: number; tracking_number: string; amount: string | number | null };
 
+// Réduction des photos avant l'envoi (comme l'application) : une photo de téléphone dépasse souvent 5 Mo,
+// limite du serveur. Plus grand côté 1600 px, JPEG ; en cas d'échec du navigateur, le fichier part tel quel.
+const MAX_SIDE_PX = 1600;
+async function shrinkPhoto(file: File): Promise<File> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_SIDE_PX / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+    return blob ? new File([blob], "colis.jpg", { type: "image/jpeg" }) : file;
+  } catch { return file; }
+}
+
 const emptyDraft: ParcelDraft = { sender_name: "", sender_phone: "", recipient_name: "", recipient_phone: "", origin: "", destination: "", description: "" };
 
 // Enregistrement d'un colis au guichet (et dans l'admin) : même route et mêmes règles que l'application
@@ -38,9 +55,9 @@ export function ParcelRegister() {
     if (problem) { feedback.failure(null, problem); return; }
     const body = new FormData();
     Object.entries(draft).forEach(([key, value]) => body.append(key, value.trim()));
-    photos.forEach((photo) => body.append("photos", photo));
     setBusy(true);
     try {
+      (await Promise.all(photos.map(shrinkPhoto))).forEach((photo) => body.append("photos", photo));
       const result = await apiFetch<Created>("/staff/sales/parcel/", { method: "POST", body });
       setCreated(result);
       feedback.success(`Colis ${result.tracking_number} enregistré. Encaissez-le maintenant.`);
